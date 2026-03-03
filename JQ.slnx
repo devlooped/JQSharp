@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/JQ.csproj" />
+  <Project Path="tests/Tests.csproj" />
+</Solution>
