@@ -196,6 +196,9 @@ public sealed class JqParser
     {
         SkipWhitespace();
 
+        if (TryConsumeKeyword("if"))
+            return ParseIfExpression();
+
         if (TryConsumeSequence(".."))
             return new RecurseFilter();
 
@@ -220,6 +223,39 @@ public sealed class JqParser
             return literal;
 
         throw Error($"Unexpected character '{Current}'.");
+    }
+
+    private JqFilter ParseIfExpression()
+    {
+        var condition = ParsePipe();
+        SkipWhitespace();
+        ExpectKeyword("then");
+
+        var thenBranch = ParsePipe();
+        var elseBranch = ParseIfElseBranch();
+
+        SkipWhitespace();
+        ExpectKeyword("end");
+        return new ConditionalFilter(condition, thenBranch, elseBranch);
+    }
+
+    private JqFilter ParseIfElseBranch()
+    {
+        SkipWhitespace();
+        if (TryConsumeKeyword("elif"))
+        {
+            var condition = ParsePipe();
+            SkipWhitespace();
+            ExpectKeyword("then");
+            var thenBranch = ParsePipe();
+            var elseBranch = ParseIfElseBranch();
+            return new ConditionalFilter(condition, thenBranch, elseBranch);
+        }
+
+        if (TryConsumeKeyword("else"))
+            return ParsePipe();
+
+        return new IdentityFilter();
     }
 
     private JqFilter ParseBracketOperation()
@@ -703,6 +739,12 @@ public sealed class JqParser
 
         position = end;
         return true;
+    }
+
+    private void ExpectKeyword(string keyword)
+    {
+        if (!TryConsumeKeyword(keyword))
+            throw Error($"Expected keyword '{keyword}'.");
     }
 
     private void Expect(char ch)
