@@ -280,7 +280,7 @@ public class JqSelectorTests
             return false;
 
         // These characters indicate features not yet implemented
-        const string disallowedChars = "$;@`\\";
+        const string disallowedChars = "$;@`";
         if (program.Any(ch => disallowedChars.IndexOf(ch) >= 0))
             return false;
 

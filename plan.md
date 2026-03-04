@@ -43,7 +43,7 @@ Parser and evaluator infrastructure to recognize bare identifiers as builtin fun
 - **String:** `trim`, `ltrim`, `rtrim`
 - **Other:** `recurse` (0-arg), `halt`, `env`, `builtins`, `first`, `last` (array accessors)
 
-### - [ ] Phase 4 — String Interpolation
+### - [x] Phase 4 — String Interpolation
 
 - `\(exp)` inside string literals — parser change to handle nested expressions within strings
 

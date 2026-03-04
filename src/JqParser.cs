@@ -445,8 +445,7 @@ public sealed class JqParser
         if (Peek() == '"')
         {
             Consume();
-            var text = ParseStringContent();
-            return new LiteralFilter(CreateStringLiteral(text));
+            return ParseString();
         }
 
         if (IsIdentifierStart(Peek()))
@@ -489,6 +488,12 @@ public sealed class JqParser
                 position++;
                 if (escaped)
                 {
+                    if (ch == '(')
+                    {
+                        // \( starts string interpolation — exit string mode and track the paren
+                        inString = false;
+                        parenDepth++;
+                    }
                     escaped = false;
                     continue;
                 }
@@ -583,7 +588,7 @@ public sealed class JqParser
         if (Peek() == '"')
         {
             Consume();
-            literal = new LiteralFilter(CreateStringLiteral(ParseStringContent()));
+            literal = ParseString();
             return true;
         }
 
@@ -729,6 +734,73 @@ public sealed class JqParser
 
             if (IsAtEnd)
                 throw Error("Invalid string escape.");
+
+            var escaped = Consume();
+            builder.Append(escaped switch
+            {
+                '"' => '"',
+                '\\' => '\\',
+                '/' => '/',
+                'b' => '\b',
+                'f' => '\f',
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                'u' => ParseUnicodeEscape(),
+                _ => throw Error($"Unsupported escape sequence '\\{escaped}'."),
+            });
+        }
+
+        throw Error("Unterminated string literal.");
+    }
+
+    private JqFilter ParseString()
+    {
+        var builder = new StringBuilder();
+        var parts = new List<(string? Literal, JqFilter? Expression)>();
+        var hasInterpolation = false;
+
+        while (!IsAtEnd)
+        {
+            var ch = Consume();
+            if (ch == '"')
+            {
+                if (!hasInterpolation)
+                    return new LiteralFilter(CreateStringLiteral(builder.ToString()));
+
+                if (builder.Length > 0)
+                    parts.Add((builder.ToString(), null));
+
+                return new StringInterpolationFilter(parts.ToArray());
+            }
+
+            if (ch != '\\')
+            {
+                builder.Append(ch);
+                continue;
+            }
+
+            if (IsAtEnd)
+                throw Error("Invalid string escape.");
+
+            if (Peek() == '(')
+            {
+                Consume(); // consume '('
+                hasInterpolation = true;
+
+                if (builder.Length > 0)
+                {
+                    parts.Add((builder.ToString(), null));
+                    builder.Clear();
+                }
+
+                var expr = ParsePipe();
+                SkipWhitespace();
+                Expect(')');
+
+                parts.Add((null, expr));
+                continue;
+            }
 
             var escaped = Consume();
             builder.Append(escaped switch
