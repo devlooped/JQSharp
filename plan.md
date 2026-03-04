@@ -24,7 +24,7 @@ Each phase builds on the previous ones and unlocks subsequent capabilities.
 
 - `#` line comments (with `\` continuation to next line)
 
-### - [ ] Phase 2 — Logical Operators & Alternative Operator
+### - [x] Phase 2 — Logical Operators & Alternative Operator
 
 - `and`, `or` as infix keyword operators (new precedence levels between comma and comparison)
 - `not` as a builtin filter (piped: `true | not`)

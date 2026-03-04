@@ -13,4 +13,6 @@ public enum BinaryOp
     GreaterThan,
     LessOrEqual,
     GreaterOrEqual,
+    And,
+    Or,
 }

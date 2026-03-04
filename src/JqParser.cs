@@ -46,15 +46,47 @@ public sealed class JqParser
 
     private JqFilter ParseComma()
     {
-        var left = ParseComparison();
+        var left = ParseOr();
         while (true)
         {
             SkipWhitespace();
             if (!TryConsume(','))
                 break;
 
-            var right = ParseComparison();
+            var right = ParseOr();
             left = new CommaFilter(left, right);
+        }
+
+        return left;
+    }
+
+    private JqFilter ParseOr()
+    {
+        var left = ParseAnd();
+        while (true)
+        {
+            SkipWhitespace();
+            if (!TryConsumeKeyword("or"))
+                break;
+
+            var right = ParseAnd();
+            left = new BinaryOpFilter(left, BinaryOp.Or, right);
+        }
+
+        return left;
+    }
+
+    private JqFilter ParseAnd()
+    {
+        var left = ParseComparison();
+        while (true)
+        {
+            SkipWhitespace();
+            if (!TryConsumeKeyword("and"))
+                break;
+
+            var right = ParseComparison();
+            left = new BinaryOpFilter(left, BinaryOp.And, right);
         }
 
         return left;
@@ -62,7 +94,7 @@ public sealed class JqParser
 
     private JqFilter ParseComparison()
     {
-        var left = ParseAdditive();
+        var left = ParseAlternative();
         SkipWhitespace();
         BinaryOp op;
         if (TryConsumeSequence("=="))
@@ -80,8 +112,24 @@ public sealed class JqParser
         else
             return left;
 
-        var right = ParseAdditive();
+        var right = ParseAlternative();
         return new BinaryOpFilter(left, op, right);
+    }
+
+    private JqFilter ParseAlternative()
+    {
+        var left = ParseAdditive();
+        while (true)
+        {
+            SkipWhitespace();
+            if (!TryConsumeSequence("//"))
+                break;
+
+            var right = ParseAdditive();
+            left = new AlternativeFilter(left, right);
+        }
+
+        return left;
     }
 
     private JqFilter ParseAdditive()
@@ -221,6 +269,9 @@ public sealed class JqParser
 
         if (TryParseLiteral(out var literal))
             return literal;
+
+        if (TryConsumeKeyword("not"))
+            return new NotFilter();
 
         throw Error($"Unexpected character '{Current}'.");
     }

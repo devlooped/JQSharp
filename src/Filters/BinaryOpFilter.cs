@@ -96,6 +96,8 @@ public sealed class BinaryOpFilter : JqFilter
             BinaryOp.GreaterThan => CreateBooleanElement(CompareElements(leftValue, rightValue) > 0),
             BinaryOp.LessOrEqual => CreateBooleanElement(CompareElements(leftValue, rightValue) <= 0),
             BinaryOp.GreaterOrEqual => CreateBooleanElement(CompareElements(leftValue, rightValue) >= 0),
+            BinaryOp.And => CreateBooleanElement(IsTruthy(leftValue) && IsTruthy(rightValue)),
+            BinaryOp.Or => CreateBooleanElement(IsTruthy(leftValue) || IsTruthy(rightValue)),
             _ => throw new InvalidOperationException($"Unsupported operator '{op}'."),
         };
     }
@@ -328,6 +330,16 @@ public sealed class BinaryOpFilter : JqFilter
     }
 
     private static bool GetBooleanValue(JsonElement element) => element.ValueKind == JsonValueKind.True;
+
+    private static bool IsTruthy(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null => false,
+            JsonValueKind.False => false,
+            _ => true,
+        };
+    }
 
     private static JsonElement MergeObjects(JsonElement leftValue, JsonElement rightValue, bool recursive)
     {
