@@ -273,6 +273,16 @@ public sealed class JqParser
         if (TryConsumeKeyword("not"))
             return new NotFilter();
 
+        if (IsIdentifierStart(Peek()))
+        {
+            var saved = position;
+            var name = ParseIdentifier();
+            if (BuiltinFilter.IsBuiltin(name))
+                return new BuiltinFilter(name);
+
+            position = saved;
+        }
+
         throw Error($"Unexpected character '{Current}'.");
     }
 

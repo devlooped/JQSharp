@@ -24,14 +24,4 @@ public sealed class ConditionalFilter : JqFilter
                 yield return value;
         }
     }
-
-    private static bool IsTruthy(JsonElement value)
-    {
-        return value.ValueKind switch
-        {
-            JsonValueKind.Null => false,
-            JsonValueKind.False => false,
-            _ => true,
-        };
-    }
 }

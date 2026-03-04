@@ -22,17 +22,4 @@ public sealed class NegateFilter : JqFilter
             yield return CreateNumberElement(value);
         }
     }
-
-    private static JsonElement CreateNumberElement(double value)
-    {
-        if (value >= long.MinValue &&
-            value <= long.MaxValue &&
-            Math.Floor(value) == value)
-        {
-            var integer = (long)value;
-            return CreateElement(writer => writer.WriteNumberValue(integer));
-        }
-
-        return CreateElement(writer => writer.WriteNumberValue(value));
-    }
 }

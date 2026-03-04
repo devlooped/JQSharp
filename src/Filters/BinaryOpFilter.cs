@@ -25,62 +25,6 @@ public sealed class BinaryOpFilter : JqFilter
         }
     }
 
-    public static bool StructurallyEqual(JsonElement a, JsonElement b)
-    {
-        if (a.ValueKind != b.ValueKind)
-            return false;
-
-        switch (a.ValueKind)
-        {
-            case JsonValueKind.Null:
-                return true;
-            case JsonValueKind.True:
-            case JsonValueKind.False:
-                return a.ValueKind == b.ValueKind;
-            case JsonValueKind.Number:
-                return a.GetDouble().Equals(b.GetDouble());
-            case JsonValueKind.String:
-                return string.Equals(a.GetString(), b.GetString(), StringComparison.Ordinal);
-            case JsonValueKind.Array:
-            {
-                var leftItems = a.EnumerateArray().ToArray();
-                var rightItems = b.EnumerateArray().ToArray();
-                if (leftItems.Length != rightItems.Length)
-                    return false;
-
-                for (var i = 0; i < leftItems.Length; i++)
-                {
-                    if (!StructurallyEqual(leftItems[i], rightItems[i]))
-                        return false;
-                }
-
-                return true;
-            }
-            case JsonValueKind.Object:
-            {
-                var leftProperties = a.EnumerateObject().ToArray();
-                var rightProperties = b.EnumerateObject().ToArray();
-                if (leftProperties.Length != rightProperties.Length)
-                    return false;
-
-                var leftSorted = leftProperties.OrderBy(static property => property.Name, StringComparer.Ordinal).ToArray();
-                var rightSorted = rightProperties.OrderBy(static property => property.Name, StringComparer.Ordinal).ToArray();
-
-                for (var i = 0; i < leftSorted.Length; i++)
-                {
-                    if (!string.Equals(leftSorted[i].Name, rightSorted[i].Name, StringComparison.Ordinal))
-                        return false;
-                    if (!StructurallyEqual(leftSorted[i].Value, rightSorted[i].Value))
-                        return false;
-                }
-
-                return true;
-            }
-            default:
-                return false;
-        }
-    }
-
     private JsonElement EvaluatePair(JsonElement leftValue, JsonElement rightValue)
     {
         return op switch
@@ -249,98 +193,6 @@ public sealed class BinaryOpFilter : JqFilter
         return CreateStringElement(builder.ToString());
     }
 
-    private static int CompareElements(JsonElement leftValue, JsonElement rightValue)
-    {
-        var leftRank = GetRank(leftValue);
-        var rightRank = GetRank(rightValue);
-        if (leftRank != rightRank)
-            return leftRank.CompareTo(rightRank);
-
-        switch (leftValue.ValueKind)
-        {
-            case JsonValueKind.Null:
-                return 0;
-            case JsonValueKind.False:
-            case JsonValueKind.True:
-                return GetBooleanValue(leftValue).CompareTo(GetBooleanValue(rightValue));
-            case JsonValueKind.Number:
-                return leftValue.GetDouble().CompareTo(rightValue.GetDouble());
-            case JsonValueKind.String:
-                return string.Compare(leftValue.GetString(), rightValue.GetString(), StringComparison.Ordinal);
-            case JsonValueKind.Array:
-                return CompareArrays(leftValue, rightValue);
-            case JsonValueKind.Object:
-                return CompareObjects(leftValue, rightValue);
-            default:
-                return 0;
-        }
-    }
-
-    private static int CompareArrays(JsonElement leftValue, JsonElement rightValue)
-    {
-        var leftItems = leftValue.EnumerateArray().ToArray();
-        var rightItems = rightValue.EnumerateArray().ToArray();
-        var min = Math.Min(leftItems.Length, rightItems.Length);
-        for (var i = 0; i < min; i++)
-        {
-            var compared = CompareElements(leftItems[i], rightItems[i]);
-            if (compared != 0)
-                return compared;
-        }
-
-        return leftItems.Length.CompareTo(rightItems.Length);
-    }
-
-    private static int CompareObjects(JsonElement leftValue, JsonElement rightValue)
-    {
-        var leftSorted = leftValue.EnumerateObject()
-            .OrderBy(static property => property.Name, StringComparer.Ordinal)
-            .ToArray();
-        var rightSorted = rightValue.EnumerateObject()
-            .OrderBy(static property => property.Name, StringComparer.Ordinal)
-            .ToArray();
-        var min = Math.Min(leftSorted.Length, rightSorted.Length);
-        for (var i = 0; i < min; i++)
-        {
-            var keyCompare = string.Compare(leftSorted[i].Name, rightSorted[i].Name, StringComparison.Ordinal);
-            if (keyCompare != 0)
-                return keyCompare;
-
-            var valueCompare = CompareElements(leftSorted[i].Value, rightSorted[i].Value);
-            if (valueCompare != 0)
-                return valueCompare;
-        }
-
-        return leftSorted.Length.CompareTo(rightSorted.Length);
-    }
-
-    private static int GetRank(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.Null => 0,
-            JsonValueKind.False => 1,
-            JsonValueKind.True => 2,
-            JsonValueKind.Number => 3,
-            JsonValueKind.String => 4,
-            JsonValueKind.Array => 5,
-            JsonValueKind.Object => 6,
-            _ => 7,
-        };
-    }
-
-    private static bool GetBooleanValue(JsonElement element) => element.ValueKind == JsonValueKind.True;
-
-    private static bool IsTruthy(JsonElement value)
-    {
-        return value.ValueKind switch
-        {
-            JsonValueKind.Null => false,
-            JsonValueKind.False => false,
-            _ => true,
-        };
-    }
-
     private static JsonElement MergeObjects(JsonElement leftValue, JsonElement rightValue, bool recursive)
     {
         var merged = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
@@ -372,24 +224,6 @@ public sealed class BinaryOpFilter : JqFilter
             }
             writer.WriteEndObject();
         });
-    }
-
-    private static JsonElement CreateBooleanElement(bool value)
-    {
-        return CreateElement(writer => writer.WriteBooleanValue(value));
-    }
-
-    private static JsonElement CreateNumberElement(double value)
-    {
-        if (value >= long.MinValue &&
-            value <= long.MaxValue &&
-            Math.Floor(value) == value)
-        {
-            var integer = (long)value;
-            return CreateElement(writer => writer.WriteNumberValue(integer));
-        }
-
-        return CreateElement(writer => writer.WriteNumberValue(value));
     }
 
     private static JqException CreateTypeError(JsonElement leftValue, JsonElement rightValue, string verbForOp)

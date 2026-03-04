@@ -7,7 +7,17 @@ public static class Jq
     public static IEnumerable<JsonElement> Evaluate(string expression, JsonElement input)
     {
         var filter = Parse(expression);
-        foreach (var result in filter.Evaluate(input))
+        IEnumerable<JsonElement> results;
+        try
+        {
+            results = filter.Evaluate(input).ToList();
+        }
+        catch (JqHaltException)
+        {
+            yield break;
+        }
+
+        foreach (var result in results)
             yield return result.Clone();
     }
 

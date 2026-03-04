@@ -30,7 +30,7 @@ Each phase builds on the previous ones and unlocks subsequent capabilities.
 - `not` as a builtin filter (piped: `true | not`)
 - `//` (alternative operator — produces non-false/non-null values from left, or falls back to right)
 
-### - [ ] Phase 3 — Builtin Function Infrastructure & Zero-Argument Builtins
+### - [x] Phase 3 — Builtin Function Infrastructure & Zero-Argument Builtins
 
 Parser and evaluator infrastructure to recognize bare identifiers as builtin function calls. Implement all zero-argument builtins:
 
