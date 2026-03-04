@@ -204,7 +204,7 @@ public sealed class JqParser
             SkipWhitespace();
             if (TryConsume('?'))
             {
-                filter = new OptionalFilter(filter);
+                filter = new TryCatchFilter(filter, new BuiltinFilter("empty"));
                 continue;
             }
 
@@ -243,6 +243,9 @@ public sealed class JqParser
     private JqFilter ParsePrimary()
     {
         SkipWhitespace();
+
+        if (TryConsumeKeyword("try"))
+            return ParseTryExpression();
 
         if (TryConsumeKeyword("if"))
             return ParseIfExpression();
@@ -298,6 +301,19 @@ public sealed class JqParser
         SkipWhitespace();
         ExpectKeyword("end");
         return new ConditionalFilter(condition, thenBranch, elseBranch);
+    }
+
+    private JqFilter ParseTryExpression()
+    {
+        var body = ParsePostfix();
+        SkipWhitespace();
+        if (TryConsumeKeyword("catch"))
+        {
+            var catchBody = ParsePostfix();
+            return new TryCatchFilter(body, catchBody);
+        }
+
+        return new TryCatchFilter(body, new BuiltinFilter("empty"));
     }
 
     private JqFilter ParseIfElseBranch()

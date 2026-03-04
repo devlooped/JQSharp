@@ -19,7 +19,7 @@ public sealed class BuiltinFilter : JqFilter
         "tonumber", "tostring", "tojson", "fromjson",
         "explode", "implode", "ascii_downcase", "ascii_upcase",
         "abs", "floor", "sqrt",
-        "recurse", "halt", "env", "builtins",
+        "recurse", "halt", "error", "env", "builtins",
         "first", "last",
         "not",
     };
@@ -87,6 +87,7 @@ public sealed class BuiltinFilter : JqFilter
             "sqrt" => EvaluateSqrt(input),
             "recurse" => EvaluateRecurse(input),
             "halt" => throw new JqHaltException(0),
+            "error" => throw new JqException(input),
             "env" => EvaluateEnv(),
             "builtins" => EvaluateBuiltins(),
             "first" => EvaluateFirst(input),

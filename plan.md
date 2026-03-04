@@ -47,7 +47,7 @@ Parser and evaluator infrastructure to recognize bare identifiers as builtin fun
 
 - `\(exp)` inside string literals — parser change to handle nested expressions within strings
 
-### - [ ] Phase 5 — try-catch & Error Handling
+### - [x] Phase 5 — try-catch & Error Handling
 
 - `try EXP catch EXP`
 - `try EXP` (shorthand for `try EXP catch empty` — depends on `empty` from Phase 3)
