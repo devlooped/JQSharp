@@ -98,6 +98,43 @@ public class JqSelectorTests
     public void Pipe_composes_selectors()
         => Assert.Equal(["99"], EvaluateToStrings(".foo | .bar", """{"foo":{"bar":99}}"""));
 
+    [Fact]
+    public void Inline_comment_after_filter_is_ignored()
+        => Assert.Equal(["42"], EvaluateToStrings(".foo # comment", """{"foo":42}"""));
+
+    [Fact]
+    public void Leading_comment_line_is_ignored()
+        => Assert.Equal(["42"], EvaluateToStrings("""
+            # comment
+            .foo
+            """, """{"foo":42}"""));
+
+    [Fact]
+    public void Hash_inside_string_is_not_treated_as_comment()
+        => Assert.Equal(["\"# not a comment\""], EvaluateToStrings("\"# not a comment\"", "null"));
+
+    [Fact]
+    public void Comment_before_pipe_does_not_break_next_line()
+        => Assert.Equal(["99"], EvaluateToStrings("""
+            .foo # pick foo
+            | .bar
+            """, """{"foo":{"bar":99}}"""));
+
+    [Fact]
+    public void Odd_trailing_backslashes_continue_comment_to_next_line()
+        => Assert.Equal(["42"], EvaluateToStrings("""
+            # comment \\\
+            # still comment
+            .foo
+            """, """{"foo":42}"""));
+
+    [Fact]
+    public void Even_trailing_backslashes_do_not_continue_comment()
+        => Assert.Equal(["42"], EvaluateToStrings("""
+            # comment \\\\
+            .foo
+            """, """{"foo":42}"""));
+
     static string[] EvaluateToStrings(string expression, string inputJson)
     {
         using var document = JsonDocument.Parse(inputJson);

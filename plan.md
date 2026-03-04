@@ -20,7 +20,7 @@ Each phase builds on the previous ones and unlocks subsequent capabilities.
 
 ## Implementation Phases
 
-### - [ ] Phase 1 — Comments
+### - [x] Phase 1 — Comments
 
 - `#` line comments (with `\` continuation to next line)
 

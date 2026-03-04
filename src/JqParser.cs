@@ -451,6 +451,12 @@ public sealed class JqParser
                 continue;
             }
 
+            if (ch == '#')
+            {
+                SkipComment();
+                continue;
+            }
+
             if (ch == '(')
             {
                 parenDepth++;
@@ -700,8 +706,56 @@ public sealed class JqParser
 
     private void SkipWhitespace()
     {
-        while (!IsAtEnd && char.IsWhiteSpace(Current))
-            position++;
+        while (!IsAtEnd)
+        {
+            if (char.IsWhiteSpace(Current))
+            {
+                position++;
+                continue;
+            }
+
+            if (Current == '#')
+            {
+                SkipComment();
+                continue;
+            }
+
+            break;
+        }
+    }
+
+    private void SkipComment()
+    {
+        if (IsAtEnd || Current != '#')
+            return;
+
+        while (!IsAtEnd)
+        {
+            var lineStart = position;
+            while (!IsAtEnd && Current != '\r' && Current != '\n')
+                position++;
+
+            var trailingSlashCount = 0;
+            for (var i = position - 1; i >= lineStart && text[i] == '\\'; i--)
+                trailingSlashCount++;
+
+            if (IsAtEnd)
+                break;
+
+            if (Current == '\r')
+            {
+                position++;
+                if (!IsAtEnd && Current == '\n')
+                    position++;
+            }
+            else if (Current == '\n')
+            {
+                position++;
+            }
+
+            if (trailingSlashCount % 2 == 0)
+                break;
+        }
     }
 
     private bool TryConsume(char ch)

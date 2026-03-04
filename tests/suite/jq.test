@@ -2550,3 +2550,16 @@ true
 reduce range(10001) as $_ ([];[.]) | tojson | contains("<skipped: too deep>")
 null
 true
+
+# jqsharp: comment handling (line-based-safe)
+.foo # inline comment
+{"foo":42}
+42
+
+"# not a comment"
+null
+"# not a comment"
+
+.foo # pick foo
+{"foo":{"bar":99}}
+{"bar":99}
