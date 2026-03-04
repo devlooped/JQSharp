@@ -280,6 +280,29 @@ public sealed class JqParser
         {
             var saved = position;
             var name = ParseIdentifier();
+            SkipWhitespace();
+
+            if (TryConsume('('))
+            {
+                var args = new List<JqFilter>();
+                SkipWhitespace();
+                if (!TryConsume(')'))
+                {
+                    while (true)
+                    {
+                        args.Add(ParsePipe());
+                        SkipWhitespace();
+                        if (TryConsume(')'))
+                            break;
+
+                        Expect(';');
+                        SkipWhitespace();
+                    }
+                }
+
+                return new ParameterizedFilter(name, args.ToArray());
+            }
+
             if (BuiltinFilter.IsBuiltin(name))
                 return new BuiltinFilter(name);
 

@@ -54,7 +54,7 @@ Parser and evaluator infrastructure to recognize bare identifiers as builtin fun
 - `error` (0-arg, throws input as error)
 - Refactor existing `?` operator as syntactic sugar for `try EXP`
 
-### - [ ] Phase 6.1 — Parser: Parameterized Call Syntax
+### - [x] Phase 6.1 — Parser: Parameterized Call Syntax
 
 Parser and evaluator infrastructure to support parameterized function calls:
 

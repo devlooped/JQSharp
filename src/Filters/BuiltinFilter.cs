@@ -954,13 +954,17 @@ public sealed class BuiltinFilter : JqFilter
 
     private static IEnumerable<JsonElement> EvaluateBuiltins()
     {
-        // Return all builtin names with /0 arity suffix (zero-arg)
-        var names = builtinNames.OrderBy(n => n, StringComparer.Ordinal).ToList();
+        var names = builtinNames
+            .Select(static name => $"{name}/0")
+            .Concat(ParameterizedFilter.KnownBuiltinArities)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .ToList();
+
         yield return CreateElement(writer =>
         {
             writer.WriteStartArray();
             foreach (var name in names)
-                writer.WriteStringValue($"{name}/0");
+                writer.WriteStringValue(name);
             writer.WriteEndArray();
         });
     }
