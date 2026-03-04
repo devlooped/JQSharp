@@ -54,13 +54,96 @@ Parser and evaluator infrastructure to recognize bare identifiers as builtin fun
 - `error` (0-arg, throws input as error)
 - Refactor existing `?` operator as syntactic sugar for `try EXP`
 
-### - [ ] Phase 6 — Parameterized Builtin Functions
+### - [ ] Phase 6.1 — Parser: Parameterized Call Syntax
 
-Parser support for `name(expr)` and `name(expr; expr; ...)` call syntax. Implement all parameterized builtins:
+Parser and evaluator infrastructure to support parameterized function calls:
 
-- **1-arg:** `has`, `map`, `map_values`, `select`, `contains`, `inside`, `startswith`, `endswith`, `ltrimstr`, `rtrimstr`, `trimstr`, `split`, `join`, `flatten(n)`, `sort_by`, `group_by`, `unique_by`, `min_by`, `max_by`, `index`, `rindex`, `indices`, `any(cond)`, `all(cond)`, `add(gen)`, `recurse(f)`, `bsearch`, `paths(filter)`, `in`, `combinations(n)`, `walk`, `del`, `path`, `pick`, `getpath`, `delpaths`, `isempty`, `halt_error(code)`, `error(msg)`
-- **Multi-arg:** `range(upto)` / `range(from; upto)` / `range(from; upto; by)`, `any(gen; cond)`, `all(gen; cond)`, `recurse(f; cond)`, `limit(n; expr)`, `skip(n; expr)`, `first(expr)`, `last(expr)`, `nth(n)` / `nth(n; expr)`, `while(cond; update)`, `until(cond; next)`, `repeat(exp)`, `with_entries(f)`, `setpath(path; value)`
-- **Special:** `$__loc__`
+- `name(expr)` — single-argument call syntax
+- `name(expr; expr; ...)` — multi-argument call syntax (semicolon-separated)
+
+### - [ ] Phase 6.2 — Type/Value Testing & Selection
+
+Parameterized builtins that test or filter values:
+
+- `has(key)` — test object key / array index existence
+- `in` — reverse of `has`
+- `select(boolean_expression)` — filter values by condition
+- `contains(element)` — recursive containment check
+- `inside` — reverse of `contains`
+- `isempty(exp)` — true if expression produces no outputs
+- `any(condition)`, `all(condition)` — test array elements with a condition
+- `any(generator; condition)`, `all(generator; condition)` — test generator outputs
+
+### - [ ] Phase 6.3 — String Operations
+
+Parameterized string manipulation builtins:
+
+- `startswith(str)`, `endswith(str)` — prefix/suffix tests
+- `ltrimstr(str)`, `rtrimstr(str)`, `trimstr(str)` — strip prefix/suffix
+- `split(str)` — split string on separator
+- `join(str)` — join array elements with separator
+
+### - [ ] Phase 6.4 — Array/Collection Transformation
+
+Parameterized builtins that transform arrays or collections:
+
+- `map(f)`, `map_values(f)` — apply filter to array elements / object values
+- `with_entries(f)` — apply filter to `to_entries` then convert back
+- `flatten(depth)` — flatten with depth limit
+- `combinations(n)` — n-fold Cartesian product
+- `add(generator)` — reduce generator outputs with `+`
+
+### - [ ] Phase 6.5 — Sorting, Grouping & Extrema
+
+Parameterized ordering and grouping builtins:
+
+- `sort_by(path_expression)` — sort array by key
+- `group_by(path_expression)` — group array elements by key
+- `unique_by(path_exp)` — deduplicate by key
+- `min_by(path_exp)`, `max_by(path_exp)` — extrema by key
+
+### - [ ] Phase 6.6 — Search & Indexing
+
+Parameterized search builtins:
+
+- `index(s)`, `rindex(s)` — first/last occurrence of value or subsequence
+- `indices(s)` — all occurrence positions
+- `bsearch(x)` — binary search in sorted array
+
+### - [ ] Phase 6.7 — Path Expressions & Structural Manipulation
+
+Parameterized builtins operating on paths and structure:
+
+- `path(path_expression)` — emit path arrays for matching nodes
+- `paths(node_filter)` — all paths whose leaf satisfies a filter
+- `pick(pathexps)` — build object/array from selected paths
+- `del(path_expression)` — delete value(s) at path(s)
+- `getpath(PATHS)` — get value at a path array
+- `delpaths(PATHS)` — delete multiple paths
+- `setpath(PATHS; VALUE)` — set value at a path array
+
+### - [ ] Phase 6.8 — Generators & Iteration
+
+Parameterized generator and iteration control builtins:
+
+- `range(upto)` / `range(from; upto)` / `range(from; upto; by)` — numeric range generator
+- `limit(n; expr)` — take first n outputs of expr
+- `skip(n; expr)` — skip first n outputs of expr
+- `first(expr)`, `last(expr)` — first/last output of expr
+- `nth(n)` / `nth(n; expr)` — nth output
+- `while(cond; update)` — emit values while condition holds
+- `until(cond; next)` — iterate until condition holds
+- `repeat(exp)` — repeat expression indefinitely (used with `limit`)
+- `recurse(f)`, `recurse(f; condition)` — parameterized recursive descent
+- `walk(f)` — bottom-up recursive traversal applying f
+
+### - [ ] Phase 6.9 — Error Control & Special
+
+Remaining parameterized builtins:
+
+- `error(message)` — throw a custom error message
+- `halt_error(exit_code)` — halt with a specific exit code
+- `$__loc__` — special variable yielding current source location
 
 ### - [ ] Phase 7 — Variables & Binding
 
