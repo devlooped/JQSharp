@@ -61,7 +61,7 @@ Parser and evaluator infrastructure to support parameterized function calls:
 - `name(expr)` — single-argument call syntax
 - `name(expr; expr; ...)` — multi-argument call syntax (semicolon-separated)
 
-### - [ ] Phase 6.2 — Type/Value Testing & Selection
+### - [x] Phase 6.2 — Type/Value Testing & Selection
 
 Parameterized builtins that test or filter values:
 
