@@ -13,12 +13,12 @@ public sealed class CommaFilter : JqFilter
         this.right = right;
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
-        foreach (var value in left.Evaluate(input))
+        foreach (var value in left.Evaluate(input, env))
             yield return value;
 
-        foreach (var value in right.Evaluate(input))
+        foreach (var value in right.Evaluate(input, env))
             yield return value;
     }
 }

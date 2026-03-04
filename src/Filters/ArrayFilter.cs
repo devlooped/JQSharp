@@ -11,9 +11,9 @@ public sealed class ArrayFilter : JqFilter
         this.inner = inner;
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
-        var items = inner.Evaluate(input).ToArray();
+        var items = inner.Evaluate(input, env).ToArray();
         var result = CreateElement(writer =>
         {
             writer.WriteStartArray();

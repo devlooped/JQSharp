@@ -11,9 +11,9 @@ public sealed class NegateFilter : JqFilter
         this.inner = inner;
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
-        foreach (var element in inner.Evaluate(input))
+        foreach (var element in inner.Evaluate(input, env))
         {
             if (element.ValueKind != JsonValueKind.Number)
                 throw new JqException($"{GetTypeName(element)} ({GetValueText(element)}) cannot be negated");
@@ -23,3 +23,4 @@ public sealed class NegateFilter : JqFilter
         }
     }
 }
+

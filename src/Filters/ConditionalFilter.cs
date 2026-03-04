@@ -15,13 +15,14 @@ public sealed class ConditionalFilter : JqFilter
         this.elseBranch = elseBranch;
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
-        foreach (var conditionResult in condition.Evaluate(input))
+        foreach (var conditionResult in condition.Evaluate(input, env))
         {
             var branch = IsTruthy(conditionResult) ? thenBranch : elseBranch;
-            foreach (var value in branch.Evaluate(input))
+            foreach (var value in branch.Evaluate(input, env))
                 yield return value;
         }
     }
 }
+

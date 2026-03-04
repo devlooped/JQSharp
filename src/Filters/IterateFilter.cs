@@ -4,7 +4,7 @@ namespace Devlooped;
 
 public sealed class IterateFilter : JqFilter
 {
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         if (input.ValueKind == JsonValueKind.Null)
             yield break;

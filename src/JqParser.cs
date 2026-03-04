@@ -7,6 +7,7 @@ namespace Devlooped;
 public sealed class JqParser
 {
     private readonly string text;
+    private readonly HashSet<string> _definedVariables = new(StringComparer.Ordinal);
     private int position;
 
     public JqParser(string text)
@@ -37,6 +38,35 @@ public sealed class JqParser
     {
         var left = ParseComma();
         SkipWhitespace();
+        if (TryConsumeKeyword("as"))
+        {
+            var pattern = ParsePattern();
+            var declared = pattern.VariableNames.Distinct(StringComparer.Ordinal).ToArray();
+            var newlyDeclared = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var name in declared)
+            {
+                if (_definedVariables.Add(name))
+                    newlyDeclared.Add(name);
+            }
+
+            SkipWhitespace();
+            Expect('|');
+
+            JqFilter body;
+            try
+            {
+                body = ParsePipe();
+            }
+            finally
+            {
+                foreach (var name in newlyDeclared)
+                    _definedVariables.Remove(name);
+            }
+
+            return new BindingFilter(left, pattern, body);
+        }
+
         if (!TryConsume('|'))
             return left;
 
@@ -220,7 +250,9 @@ public sealed class JqParser
                 if (Peek() == '[')
                 {
                     var suffix = ParseBracketOperation();
-                    filter = new PipeFilter(filter, suffix);
+                    filter = suffix is DynamicIndexFilter dynamicIndex
+                        ? new DynamicIndexFilter(filter, dynamicIndex.IndexExpression)
+                        : new PipeFilter(filter, suffix);
                     continue;
                 }
 
@@ -230,7 +262,9 @@ public sealed class JqParser
             if (Peek() == '[')
             {
                 var suffix = ParseBracketOperation();
-                filter = new PipeFilter(filter, suffix);
+                filter = suffix is DynamicIndexFilter dynamicIndex
+                    ? new DynamicIndexFilter(filter, dynamicIndex.IndexExpression)
+                    : new PipeFilter(filter, suffix);
                 continue;
             }
 
@@ -243,6 +277,19 @@ public sealed class JqParser
     private JqFilter ParsePrimary()
     {
         SkipWhitespace();
+
+        if (TryConsume('$'))
+        {
+            var name = ParseIdentifier();
+            if (string.Equals(name, "ENV", StringComparison.Ordinal) ||
+                string.Equals(name, "__loc__", StringComparison.Ordinal) ||
+                _definedVariables.Contains(name))
+            {
+                return new VariableFilter(name);
+            }
+
+            throw new JqException($"${name} is not defined");
+        }
 
         if (TryConsumeKeyword("try"))
             return ParseTryExpression();
@@ -389,7 +436,108 @@ public sealed class JqParser
             return new IndexFilter(index);
         }
 
-        throw Error("Index expression must be a string or integer.");
+        var expression = ParsePipe();
+        SkipWhitespace();
+        Expect(']');
+        return new DynamicIndexFilter(expression);
+    }
+
+    private JqPattern ParsePattern()
+    {
+        SkipWhitespace();
+        if (TryConsume('$'))
+        {
+            var name = ParseIdentifier();
+            return new VariablePattern(name);
+        }
+
+        if (Peek() == '[')
+            return ParseArrayPattern();
+
+        if (Peek() == '{')
+            return ParseObjectPattern();
+
+        throw Error("Expected pattern (variable, array, or object).");
+    }
+
+    private JqPattern ParseArrayPattern()
+    {
+        Expect('[');
+        SkipWhitespace();
+        if (TryConsume(']'))
+            throw Error("Array pattern must contain at least one element.");
+
+        var items = new List<JqPattern>();
+        while (true)
+        {
+            items.Add(ParsePattern());
+            SkipWhitespace();
+            if (TryConsume(']'))
+                break;
+
+            Expect(',');
+            SkipWhitespace();
+        }
+
+        return new ArrayPattern(items.ToArray());
+    }
+
+    private JqPattern ParseObjectPattern()
+    {
+        Expect('{');
+        SkipWhitespace();
+        if (TryConsume('}'))
+            throw Error("Object pattern must contain at least one entry.");
+
+        var entries = new List<(JqFilter KeyExpr, JqPattern ValuePattern)>();
+        while (true)
+        {
+            SkipWhitespace();
+            if (TryConsume('$'))
+            {
+                var shorthandName = ParseIdentifier();
+                entries.Add((new LiteralFilter(CreateStringLiteral(shorthandName)), new VariablePattern(shorthandName)));
+            }
+            else
+            {
+                JqFilter keyExpression;
+
+                if (TryConsume('('))
+                {
+                    keyExpression = ParsePipe();
+                    SkipWhitespace();
+                    Expect(')');
+                }
+                else if (Peek() == '"')
+                {
+                    Consume();
+                    keyExpression = new LiteralFilter(CreateStringLiteral(ParseStringContent()));
+                }
+                else if (IsIdentifierStart(Peek()))
+                {
+                    keyExpression = new LiteralFilter(CreateStringLiteral(ParseIdentifier()));
+                }
+                else
+                {
+                    throw Error("Invalid object pattern key.");
+                }
+
+                SkipWhitespace();
+                Expect(':');
+                SkipWhitespace();
+                var valuePattern = ParsePattern();
+                entries.Add((keyExpression, valuePattern));
+            }
+
+            SkipWhitespace();
+            if (TryConsume('}'))
+                break;
+
+            Expect(',');
+            SkipWhitespace();
+        }
+
+        return new ObjectPattern(entries);
     }
 
     private bool TryParseSlice(out JqFilter filter)
@@ -497,7 +645,7 @@ public sealed class JqParser
         if (string.IsNullOrWhiteSpace(keyExpression))
             throw Error("Object key expression cannot be empty.");
 
-        return Parse(keyExpression);
+        return ParseSubExpression(keyExpression);
     }
 
     private JqFilter ParseObjectValue()
@@ -506,7 +654,16 @@ public sealed class JqParser
         if (string.IsNullOrWhiteSpace(valueExpression))
             throw Error("Object value expression cannot be empty.");
 
-        return Parse(valueExpression);
+        return ParseSubExpression(valueExpression);
+    }
+
+    private JqFilter ParseSubExpression(string expression)
+    {
+        var parser = new JqParser(expression);
+        foreach (var variable in _definedVariables)
+            parser._definedVariables.Add(variable);
+
+        return parser.Parse();
     }
 
     private string ReadUntilTopLevel(params char[] terminators)

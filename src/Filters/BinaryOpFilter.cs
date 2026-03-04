@@ -16,11 +16,11 @@ public sealed class BinaryOpFilter : JqFilter
         this.right = right;
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
-        foreach (var leftValue in left.Evaluate(input))
+        foreach (var leftValue in left.Evaluate(input, env))
         {
-            foreach (var rightValue in right.Evaluate(input))
+            foreach (var rightValue in right.Evaluate(input, env))
                 yield return EvaluatePair(leftValue, rightValue);
         }
     }
@@ -232,3 +232,4 @@ public sealed class BinaryOpFilter : JqFilter
             $"{GetTypeName(leftValue)} ({GetValueText(leftValue)}) and {GetTypeName(rightValue)} ({GetValueText(rightValue)}) cannot be {verbForOp}");
     }
 }
+

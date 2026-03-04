@@ -5,7 +5,9 @@ namespace Devlooped;
 
 public abstract class JqFilter
 {
-    public abstract IEnumerable<JsonElement> Evaluate(JsonElement input);
+    public abstract IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env);
+
+    public IEnumerable<JsonElement> Evaluate(JsonElement input) => Evaluate(input, JqEnvironment.Empty);
 
     protected static JsonElement CreateElement(Action<Utf8JsonWriter> write)
     {
@@ -21,6 +23,8 @@ public abstract class JqFilter
     }
 
     protected static JsonElement CreateNullElement() => CreateElement(static writer => writer.WriteNullValue());
+
+    public static JsonElement CreateNullElementStatic() => CreateNullElement();
 
     protected static JsonElement CreateStringElement(string value) => CreateElement(writer => writer.WriteStringValue(value));
 
@@ -143,6 +147,10 @@ public abstract class JqFilter
 
     protected static string GetValueText(JsonElement element) => element.GetRawText();
 
+    public static string GetTypeNameStatic(JsonElement element) => GetTypeName(element);
+
+    public static string GetValueTextStatic(JsonElement element) => GetValueText(element);
+
     private static int CompareArrays(JsonElement leftValue, JsonElement rightValue)
     {
         var leftItems = leftValue.EnumerateArray().ToArray();
@@ -198,3 +206,4 @@ public abstract class JqFilter
 
     private static bool GetBooleanValue(JsonElement element) => element.ValueKind == JsonValueKind.True;
 }
+

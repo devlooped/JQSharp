@@ -13,20 +13,21 @@ public sealed class TryCatchFilter : JqFilter
         this.catchFilter = catchFilter;
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         JsonElement[] values;
         try
         {
-            values = body.Evaluate(input).ToArray();
+            values = body.Evaluate(input, env).ToArray();
         }
         catch (JqException ex)
         {
             var errorValue = ex.Value ?? CreateStringElement(ex.Message);
-            values = catchFilter.Evaluate(errorValue).ToArray();
+            values = catchFilter.Evaluate(errorValue, env).ToArray();
         }
 
         foreach (var value in values)
             yield return value;
     }
 }
+

@@ -74,7 +74,7 @@ Parameterized builtins that test or filter values:
 - `any(condition)`, `all(condition)` — test array elements with a condition
 - `any(generator; condition)`, `all(generator; condition)` — test generator outputs
 
-### - [ ] Phase 6.3 — String Operations
+### - [x] Phase 6.3 — String Operations
 
 Parameterized string manipulation builtins:
 
@@ -83,7 +83,7 @@ Parameterized string manipulation builtins:
 - `split(str)` — split string on separator
 - `join(str)` — join array elements with separator
 
-### - [ ] Phase 6.4 — Array/Collection Transformation
+### - [x] Phase 6.4 — Array/Collection Transformation
 
 Parameterized builtins that transform arrays or collections:
 
@@ -93,7 +93,7 @@ Parameterized builtins that transform arrays or collections:
 - `combinations(n)` — n-fold Cartesian product
 - `add(generator)` — reduce generator outputs with `+`
 
-### - [ ] Phase 6.5 — Sorting, Grouping & Extrema
+### - [x] Phase 6.5 — Sorting, Grouping & Extrema
 
 Parameterized ordering and grouping builtins:
 
@@ -102,7 +102,7 @@ Parameterized ordering and grouping builtins:
 - `unique_by(path_exp)` — deduplicate by key
 - `min_by(path_exp)`, `max_by(path_exp)` — extrema by key
 
-### - [ ] Phase 6.6 — Search & Indexing
+### - [x] Phase 6.6 — Search & Indexing
 
 Parameterized search builtins:
 
@@ -110,7 +110,7 @@ Parameterized search builtins:
 - `indices(s)` — all occurrence positions
 - `bsearch(x)` — binary search in sorted array
 
-### - [ ] Phase 6.7 — Path Expressions & Structural Manipulation
+### - [x] Phase 6.7 — Path Expressions & Structural Manipulation
 
 Parameterized builtins operating on paths and structure:
 
@@ -122,7 +122,7 @@ Parameterized builtins operating on paths and structure:
 - `delpaths(PATHS)` — delete multiple paths
 - `setpath(PATHS; VALUE)` — set value at a path array
 
-### - [ ] Phase 6.8 — Generators & Iteration
+### - [x] Phase 6.8 — Generators & Iteration
 
 Parameterized generator and iteration control builtins:
 
@@ -137,7 +137,7 @@ Parameterized generator and iteration control builtins:
 - `recurse(f)`, `recurse(f; condition)` — parameterized recursive descent
 - `walk(f)` — bottom-up recursive traversal applying f
 
-### - [ ] Phase 6.9 — Error Control & Special
+### - [x] Phase 6.9 — Error Control & Special
 
 Remaining parameterized builtins:
 
@@ -145,7 +145,7 @@ Remaining parameterized builtins:
 - `halt_error(exit_code)` — halt with a specific exit code
 - `$__loc__` — special variable yielding current source location
 
-### - [ ] Phase 7 — Variables & Binding
+### - [x] Phase 7 — Variables & Binding
 
 - `EXP as $identifier | ...` binding syntax
 - Destructuring: `. as [$a, $b]`, `. as {$a, $b}`, `. as {key: $var}`

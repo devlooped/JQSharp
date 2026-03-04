@@ -4,9 +4,10 @@ namespace Devlooped;
 
 public sealed class NotFilter : JqFilter
 {
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         var value = input.ValueKind is JsonValueKind.Null or JsonValueKind.False;
         yield return CreateElement(writer => writer.WriteBooleanValue(value));
     }
 }
+

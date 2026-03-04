@@ -33,7 +33,7 @@ public sealed class BuiltinFilter : JqFilter
 
     public static bool IsBuiltin(string name) => builtinNames.Contains(name);
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         return name switch
         {
@@ -991,3 +991,4 @@ public sealed class BuiltinFilter : JqFilter
         yield return input.EnumerateArray().Last();
     }
 }
+

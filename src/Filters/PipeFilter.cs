@@ -13,11 +13,11 @@ public sealed class PipeFilter : JqFilter
         this.right = right;
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
-        foreach (var intermediate in left.Evaluate(input))
+        foreach (var intermediate in left.Evaluate(input, env))
         {
-            foreach (var value in right.Evaluate(intermediate))
+            foreach (var value in right.Evaluate(intermediate, env))
                 yield return value;
         }
     }

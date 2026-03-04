@@ -12,7 +12,7 @@ public sealed class StringInterpolationFilter : JqFilter
         this.parts = parts;
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         var results = new List<StringBuilder> { new() };
 
@@ -25,7 +25,7 @@ public sealed class StringInterpolationFilter : JqFilter
             }
             else
             {
-                var values = expression!.Evaluate(input).ToList();
+                var values = expression!.Evaluate(input, env).ToList();
                 if (values.Count == 0)
                     yield break;
 
@@ -56,3 +56,4 @@ public sealed class StringInterpolationFilter : JqFilter
         return JsonSerializer.Serialize(value);
     }
 }
+

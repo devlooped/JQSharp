@@ -11,14 +11,14 @@ public sealed class ObjectFilter : JqFilter
         this.pairs = pairs;
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         var result = CreateElement(writer =>
         {
             writer.WriteStartObject();
             foreach (var pair in pairs)
             {
-                var keyResults = pair.Key.Evaluate(input).ToArray();
+                var keyResults = pair.Key.Evaluate(input, env).ToArray();
                 if (keyResults.Length == 0)
                     throw new JqException("Object key expression produced no results");
 
@@ -28,7 +28,7 @@ public sealed class ObjectFilter : JqFilter
 
                 writer.WritePropertyName(key.GetString()!);
 
-                var valueResults = pair.Value.Evaluate(input).ToArray();
+                var valueResults = pair.Value.Evaluate(input, env).ToArray();
                 if (valueResults.Length == 0)
                     writer.WriteNullValue();
                 else

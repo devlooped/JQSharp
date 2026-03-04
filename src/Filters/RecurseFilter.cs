@@ -4,7 +4,7 @@ namespace Devlooped;
 
 public sealed class RecurseFilter : JqFilter
 {
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         foreach (var item in Traverse(input))
             yield return item;

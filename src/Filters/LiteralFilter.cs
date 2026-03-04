@@ -17,7 +17,7 @@ public sealed class LiteralFilter : JqFilter
         return new LiteralFilter(document.RootElement.Clone());
     }
 
-    public override IEnumerable<JsonElement> Evaluate(JsonElement input)
+    public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         yield return value;
     }
