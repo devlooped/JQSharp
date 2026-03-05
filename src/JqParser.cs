@@ -8,6 +8,8 @@ public sealed class JqParser
 {
     private readonly string text;
     private readonly HashSet<string> _definedVariables = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Name, int Arity), UserFunctionDef> _definedFunctions = new();
+    private readonly HashSet<string> _definedFilterParams = new(StringComparer.Ordinal);
     private int position;
 
     public JqParser(string text)
@@ -300,6 +302,9 @@ public sealed class JqParser
         if (TryConsumeKeyword("reduce"))
             return ParseReduceExpression();
 
+        if (TryConsumeKeyword("def"))
+            return ParseDefExpression();
+
         if (TryConsumeKeyword("foreach"))
             return ParseForeachExpression();
 
@@ -335,6 +340,9 @@ public sealed class JqParser
             var name = ParseIdentifier();
             SkipWhitespace();
 
+            if (_definedFilterParams.Contains(name) && Peek() != '(')
+                return new FilterArgRefFilter(name);
+
             if (TryConsume('('))
             {
                 var args = new List<JqFilter>();
@@ -353,8 +361,14 @@ public sealed class JqParser
                     }
                 }
 
+                if (_definedFunctions.TryGetValue((name, args.Count), out var funcDef))
+                    return new UserFunctionCallFilter(funcDef, args.ToArray());
+
                 return new ParameterizedFilter(name, args.ToArray());
             }
+
+            if (_definedFunctions.TryGetValue((name, 0), out var zeroArgFuncDef))
+                return new UserFunctionCallFilter(zeroArgFuncDef, Array.Empty<JqFilter>());
 
             if (BuiltinFilter.IsBuiltin(name))
                 return new BuiltinFilter(name);
@@ -390,6 +404,104 @@ public sealed class JqParser
         }
 
         return new TryCatchFilter(body, new BuiltinFilter("empty"));
+    }
+
+    private JqFilter ParseDefExpression()
+    {
+        SkipWhitespace();
+        var name = ParseIdentifier();
+        var parameters = new List<(string Name, bool IsValueParam)>();
+
+        SkipWhitespace();
+        if (TryConsume('('))
+        {
+            SkipWhitespace();
+            if (!TryConsume(')'))
+            {
+                while (true)
+                {
+                    var isValueParam = TryConsume('$');
+                    var paramName = ParseIdentifier();
+                    parameters.Add((paramName, isValueParam));
+
+                    SkipWhitespace();
+                    if (TryConsume(')'))
+                        break;
+
+                    Expect(';');
+                    SkipWhitespace();
+                }
+            }
+        }
+
+        var paramNames = parameters.Select(parameter => parameter.Name).ToArray();
+        var funcDef = new UserFunctionDef(name, paramNames);
+        var key = (name, funcDef.Arity);
+        var hadOldDef = _definedFunctions.TryGetValue(key, out var oldDef);
+        _definedFunctions[key] = funcDef;
+
+        try
+        {
+            SkipWhitespace();
+            Expect(':');
+
+            var newlyAddedFilterParams = new HashSet<string>(StringComparer.Ordinal);
+            var newlyAddedVariables = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var parameter in parameters)
+            {
+                if (parameter.IsValueParam)
+                {
+                    if (_definedVariables.Add(parameter.Name))
+                        newlyAddedVariables.Add(parameter.Name);
+                }
+                else
+                {
+                    if (_definedFilterParams.Add(parameter.Name))
+                        newlyAddedFilterParams.Add(parameter.Name);
+                }
+            }
+
+            JqFilter body;
+            try
+            {
+                body = ParsePipe();
+            }
+            finally
+            {
+                foreach (var addedParam in newlyAddedFilterParams)
+                    _definedFilterParams.Remove(addedParam);
+
+                foreach (var addedVariable in newlyAddedVariables)
+                    _definedVariables.Remove(addedVariable);
+            }
+
+            for (var i = parameters.Count - 1; i >= 0; i--)
+            {
+                var parameter = parameters[i];
+                if (!parameter.IsValueParam)
+                    continue;
+
+                body = new BindingFilter(
+                    new FilterArgRefFilter(parameter.Name),
+                    new VariablePattern(parameter.Name),
+                    body);
+            }
+
+            funcDef.Body = body;
+
+            SkipWhitespace();
+            Expect(';');
+
+            return ParsePipe();
+        }
+        finally
+        {
+            if (hadOldDef)
+                _definedFunctions[key] = oldDef!;
+            else
+                _definedFunctions.Remove(key);
+        }
     }
 
     private JqFilter ParseReduceExpression()
@@ -747,6 +859,10 @@ public sealed class JqParser
         var parser = new JqParser(expression);
         foreach (var variable in _definedVariables)
             parser._definedVariables.Add(variable);
+        foreach (var kvp in _definedFunctions)
+            parser._definedFunctions[kvp.Key] = kvp.Value;
+        foreach (var param in _definedFilterParams)
+            parser._definedFilterParams.Add(param);
 
         return parser.Parse();
     }

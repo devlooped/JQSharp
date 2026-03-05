@@ -157,7 +157,7 @@ Remaining parameterized builtins:
 - `reduce EXP as $var (INIT; UPDATE)` — depends on variable binding (Phase 7)
 - `foreach EXP as $var (INIT; UPDATE; EXTRACT)` — depends on variable binding (Phase 7)
 
-### - [ ] Phase 9 — User-Defined Functions
+### - [x] Phase 9 — User-Defined Functions
 
 - `def name: body;`
 - `def name(f)` with filter arguments
