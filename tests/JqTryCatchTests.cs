@@ -66,6 +66,25 @@ public class JqTryCatchTests
     public void Try_error_with_true_input_catches_true()
         => Assert.Equal(["true"], EvaluateToStrings("try (true | error) catch .", "null"));
 
+    [Fact]
+    public void Label_break_stops_iteration_and_keeps_prior_outputs()
+        => Assert.Equal(["[0,1,\"hi!\"]"], EvaluateToStrings("[(label $here | .[] | if .>1 then break $here else . end), \"hi!\"]", "[0,1,2]"));
+
+    [Fact]
+    public void Label_break_works_inside_foreach()
+        => Assert.Equal(["[11,22,33]"], EvaluateToStrings("[label $out | foreach .[] as $item ([3, null]; if .[0] < 1 then break $out else [.[0] -1, $item] end; .[1])]", "[11,22,33,44,55,66,77,88,99]"));
+
+    [Fact]
+    public void Break_is_not_caught_by_try_catch()
+        => Assert.Empty(EvaluateToStrings("label $out | try (0, break $out, 1) catch 99", "null"));
+
+    [Fact]
+    public void Break_without_matching_label_throws_parse_error()
+    {
+        var exception = Assert.Throws<JqException>(() => EvaluateToStrings(". as $foo | break $foo", "null"));
+        Assert.Equal("$*label-foo is not defined", exception.Message);
+    }
+
     static string[] EvaluateToStrings(string expression, string inputJson)
         => Evaluate(expression, inputJson)
             .Select(static element => JsonSerializer.Serialize(element))

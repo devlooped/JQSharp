@@ -16,6 +16,10 @@ public static class Jq
         {
             yield break;
         }
+        catch (JqBreakException ex)
+        {
+            throw new JqException($"break: label {ex.Label} not found");
+        }
 
         foreach (var result in results)
             yield return result.Clone();

@@ -42,8 +42,21 @@ public sealed class JqParser
         SkipWhitespace();
         if (TryConsumeKeyword("as"))
         {
-            var pattern = ParsePattern();
-            var declared = pattern.VariableNames.Distinct(StringComparer.Ordinal).ToArray();
+            var patterns = new List<JqPattern> { ParsePattern() };
+            while (true)
+            {
+                SkipWhitespace();
+                if (!TryConsumeSequence("?//"))
+                    break;
+
+                SkipWhitespace();
+                patterns.Add(ParsePattern());
+            }
+
+            var declared = patterns
+                .SelectMany(static pattern => pattern.VariableNames)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
             var newlyDeclared = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (var name in declared)
@@ -66,7 +79,10 @@ public sealed class JqParser
                     _definedVariables.Remove(name);
             }
 
-            return new BindingFilter(left, pattern, body);
+            if (patterns.Count == 1)
+                return new BindingFilter(left, patterns[0], body);
+
+            return new DestructuringAlternativeFilter(left, patterns.ToArray(), body);
         }
 
         if (Peek() != '|' || Peek(1) == '=')
@@ -351,6 +367,12 @@ public sealed class JqParser
 
         if (TryConsumeKeyword("foreach"))
             return ParseForeachExpression();
+
+        if (TryConsumeKeyword("label"))
+            return ParseLabelExpression();
+
+        if (TryConsumeKeyword("break"))
+            return ParseBreakExpression();
 
         if (TryConsumeSequence(".."))
             return new RecurseFilter();
@@ -644,6 +666,39 @@ public sealed class JqParser
             foreach (var name in newlyDeclared)
                 _definedVariables.Remove(name);
         }
+    }
+
+    private JqFilter ParseLabelExpression()
+    {
+        SkipWhitespace();
+        Expect('$');
+        var name = ParseIdentifier();
+        var internalName = "*label-" + name;
+        var added = _definedVariables.Add(internalName);
+        try
+        {
+            SkipWhitespace();
+            Expect('|');
+            var body = ParsePipe();
+            return new LabelFilter(name, body);
+        }
+        finally
+        {
+            if (added)
+                _definedVariables.Remove(internalName);
+        }
+    }
+
+    private JqFilter ParseBreakExpression()
+    {
+        SkipWhitespace();
+        Expect('$');
+        var name = ParseIdentifier();
+        var internalName = "*label-" + name;
+        if (!_definedVariables.Contains(internalName))
+            throw new JqException($"${internalName} is not defined");
+
+        return new BreakFilter(name);
     }
 
     private JqFilter ParseIfElseBranch()

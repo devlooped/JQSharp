@@ -7,7 +7,7 @@ public sealed class ParameterizedFilter : JqFilter
 {
     private static readonly HashSet<string> knownNames = new(StringComparer.Ordinal)
     {
-        "has", "contains", "inside", "startswith", "endswith", "ltrimstr", "rtrimstr", "trimstr", "split", "join", "index", "rindex", "indices", "in", "getpath", "delpaths", "bsearch", "flatten", "combinations", "error", "halt_error",
+        "has", "contains", "inside", "startswith", "endswith", "ltrimstr", "rtrimstr", "trimstr", "split", "join", "index", "rindex", "indices", "in", "INDEX", "IN", "JOIN", "getpath", "delpaths", "bsearch", "flatten", "combinations", "error", "halt_error",
         "test", "match", "capture", "scan", "splits", "sub", "gsub",
         "select", "map", "map_values", "sort_by", "group_by", "unique_by", "min_by", "max_by", "any", "all", "recurse", "paths", "walk", "del", "path", "pick", "isempty", "add",
         "range", "limit", "skip", "first", "last", "nth", "while", "until", "repeat", "with_entries", "setpath",
@@ -17,7 +17,7 @@ public sealed class ParameterizedFilter : JqFilter
 
     private static readonly string[] knownBuiltinArities =
     [
-        "has/1", "contains/1", "inside/1", "startswith/1", "endswith/1", "ltrimstr/1", "rtrimstr/1", "trimstr/1", "split/1", "join/1", "index/1", "rindex/1", "indices/1", "in/1", "getpath/1", "delpaths/1", "bsearch/1", "flatten/1", "combinations/1", "error/1", "halt_error/1",
+        "has/1", "contains/1", "inside/1", "startswith/1", "endswith/1", "ltrimstr/1", "rtrimstr/1", "trimstr/1", "split/1", "join/1", "index/1", "rindex/1", "indices/1", "in/1", "INDEX/1", "INDEX/2", "IN/1", "IN/2", "JOIN/2", "getpath/1", "delpaths/1", "bsearch/1", "flatten/1", "combinations/1", "error/1", "halt_error/1",
         "test/1", "test/2", "match/1", "match/2", "capture/1", "capture/2", "scan/1", "scan/2", "split/2", "splits/1", "splits/2", "sub/2", "sub/3", "gsub/2", "gsub/3",
         "select/1", "map/1", "map_values/1", "sort_by/1", "group_by/1", "unique_by/1", "min_by/1", "max_by/1", "any/1", "all/1", "recurse/1", "paths/1", "walk/1", "del/1", "path/1", "pick/1", "isempty/1", "add/1",
         "range/1", "range/2", "range/3", "any/2", "all/2", "recurse/2", "limit/2", "skip/2", "first/1", "last/1", "nth/1", "nth/2", "while/2", "until/2", "repeat/1", "with_entries/1", "setpath/2",
@@ -105,6 +105,11 @@ public sealed class ParameterizedFilter : JqFilter
             ("rindex", 1) => EvaluateIndex(input, reverse: true),
             ("indices", 1) => EvaluateIndices(input),
             ("in", 1) => EvaluateIn(input),
+            ("INDEX", 1) => EvaluateINDEX1(input),
+            ("INDEX", 2) => EvaluateINDEX2(input),
+            ("IN", 1) => EvaluateIN1(input),
+            ("IN", 2) => EvaluateIN2(input),
+            ("JOIN", 2) => EvaluateJOIN2(input),
             ("getpath", 1) => EvaluateGetPath(input),
             ("delpaths", 1) => EvaluateDelpaths(input),
             ("bsearch", 1) => EvaluateBsearch(input),
@@ -872,6 +877,98 @@ public sealed class ParameterizedFilter : JqFilter
     {
         foreach (var value in args[0].Evaluate(input, _env))
             yield return CreateBooleanElement(Has(value, input));
+    }
+
+    private IEnumerable<JsonElement> EvaluateINDEX1(JsonElement input)
+    {
+        if (input.ValueKind != JsonValueKind.Array)
+            throw new JqException($"Cannot index {GetTypeName(input)}: not an array");
+
+        yield return BuildIndexObject(input.EnumerateArray(), args[0]);
+    }
+
+    private IEnumerable<JsonElement> EvaluateINDEX2(JsonElement input)
+    {
+        var stream = args[0].Evaluate(input, _env);
+        yield return BuildIndexObject(stream, args[1]);
+    }
+
+    private JsonElement BuildIndexObject(IEnumerable<JsonElement> stream, JqFilter keySelector)
+    {
+        var valuesByKey = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var value in stream)
+        {
+            var key = keySelector.Evaluate(value, _env).FirstOrDefault(CreateNullElement());
+            var propertyName = key.ValueKind == JsonValueKind.String
+                ? key.GetString() ?? ""
+                : key.GetRawText();
+            valuesByKey[propertyName] = value;
+        }
+
+        return CreateElement(writer =>
+        {
+            writer.WriteStartObject();
+            foreach (var entry in valuesByKey)
+            {
+                writer.WritePropertyName(entry.Key);
+                entry.Value.WriteTo(writer);
+            }
+            writer.WriteEndObject();
+        });
+    }
+
+    private IEnumerable<JsonElement> EvaluateIN1(JsonElement input)
+    {
+        var found = false;
+        foreach (var candidate in args[0].Evaluate(input, _env))
+        {
+            if (!StructurallyEqual(input, candidate))
+                continue;
+
+            found = true;
+            break;
+        }
+
+        yield return CreateBooleanElement(found);
+    }
+
+    private IEnumerable<JsonElement> EvaluateIN2(JsonElement input)
+    {
+        var source = args[0].Evaluate(input, _env).ToArray();
+        var stream = args[1].Evaluate(input, _env).ToArray();
+        var found = source.Any(left => stream.Any(right => StructurallyEqual(left, right)));
+        yield return CreateBooleanElement(found);
+    }
+
+    private IEnumerable<JsonElement> EvaluateJOIN2(JsonElement input)
+    {
+        if (input.ValueKind != JsonValueKind.Array)
+            throw new JqException($"Cannot join {GetTypeName(input)}: not an array");
+
+        var index = args[0].Evaluate(input, _env).FirstOrDefault(CreateNullElement());
+        if (index.ValueKind != JsonValueKind.Object)
+            throw new JqException($"{GetTypeName(index)} ({GetValueText(index)}) is not an object");
+
+        yield return CreateElement(writer =>
+        {
+            writer.WriteStartArray();
+            foreach (var value in input.EnumerateArray())
+            {
+                var key = args[1].Evaluate(value, _env).FirstOrDefault(CreateNullElement());
+                var propertyName = key.ValueKind == JsonValueKind.String
+                    ? key.GetString() ?? ""
+                    : key.GetRawText();
+
+                writer.WriteStartArray();
+                value.WriteTo(writer);
+                if (index.TryGetProperty(propertyName, out var match))
+                    match.WriteTo(writer);
+                else
+                    writer.WriteNullValue();
+                writer.WriteEndArray();
+            }
+            writer.WriteEndArray();
+        });
     }
 
     private IEnumerable<JsonElement> EvaluateGetPath(JsonElement input)

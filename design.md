@@ -461,6 +461,52 @@ Since .NET uses different format specifiers than C's `strftime`, a custom `Strft
 
 ---
 
+## 11.2 Advanced Control Flow
+
+### label/break
+
+The `label $name | body` construct creates a breakable scope. Within the body, `break $name` throws a `JqBreakException` (which extends `Exception` directly, not `JqException`, so it is NOT caught by `try-catch` or `?`). The `LabelFilter` collects results from the body until either the body completes or a matching `JqBreakException` is caught.
+
+```csharp
+// New exception class
+public sealed class JqBreakException(string label) : Exception("break")
+```
+
+The parser tracks label scopes via `_definedVariables` using the special internal name `*label-NAME` (which cannot be entered by user code). `break $name` at parse time verifies that a matching `label $name` is in scope; if not, it throws a parse error with message `$*label-NAME is not defined`.
+
+New AST nodes:
+- `LabelFilter(string labelName, JqFilter body)` — catches matching `JqBreakException`
+- `BreakFilter(string labelName)` — throws `JqBreakException`
+
+### Destructuring Alternative Operator `?//`
+
+`EXPR as PAT1 ?// PAT2 ?// ... | BODY` tries each pattern left-to-right:
+- **`ObjectPattern`** only matches `JsonValueKind.Object` values
+- **`ArrayPattern`** only matches `JsonValueKind.Array` values  
+- **`VariablePattern`** matches any value (universal fallback)
+
+Variables from non-matched patterns are bound to `null` in the environment. If no pattern matches, a `JqException` is thrown.
+
+The `JqPattern` base class gained a `TryMatch()` virtual method with type pre-checks in `ObjectPattern` and `ArrayPattern`. The parser's `as` binding section was extended to collect multiple `?//`-separated patterns.
+
+New AST node: `DestructuringAlternativeFilter(JqFilter expression, JqPattern[] patterns, JqFilter body)`
+
+### SQL-style Operators
+
+Added to `ParameterizedFilter` (uppercase, case-sensitive, distinct from lowercase `in/1` and `index/1`):
+
+| Function | Arity | Description |
+|----------|-------|-------------|
+| `INDEX` | 1 | `INDEX(key_expr)` — input is array; builds object mapping key→element |
+| `INDEX` | 2 | `INDEX(stream; key_expr)` — builds object from stream items keyed by key_expr |
+| `IN` | 1 | `input \| IN(stream)` — true if input is structurally equal to any stream item |
+| `IN` | 2 | `IN(generator; stream)` — true if any generator output appears in stream |
+| `JOIN` | 2 | `JOIN(index_obj; key_expr)` — joins input array elements with index object, yields array of `[element, lookup]` pairs |
+
+Key coercion: numeric keys are converted to strings using `GetRawText()` (so `0` → `"0"`).
+
+---
+
 ## 12. Test Architecture
 
 Tests use **xUnit** with a data-driven approach:

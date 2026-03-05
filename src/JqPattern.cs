@@ -6,6 +6,20 @@ public abstract class JqPattern
 {
     public abstract JqEnvironment Match(JsonElement value, JqEnvironment env, JsonElement input);
 
+    public virtual bool TryMatch(JsonElement value, JqEnvironment env, JsonElement input, out JqEnvironment matchedEnv)
+    {
+        try
+        {
+            matchedEnv = Match(value, env, input);
+            return true;
+        }
+        catch (JqException)
+        {
+            matchedEnv = env;
+            return false;
+        }
+    }
+
     public abstract IEnumerable<string> VariableNames { get; }
 }
 
@@ -23,6 +37,17 @@ public sealed class ArrayPattern(JqPattern[] elements) : JqPattern
     public JqPattern[] Elements { get; } = elements;
 
     public override IEnumerable<string> VariableNames => Elements.SelectMany(static element => element.VariableNames);
+
+    public override bool TryMatch(JsonElement value, JqEnvironment env, JsonElement input, out JqEnvironment matchedEnv)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            matchedEnv = env;
+            return false;
+        }
+
+        return base.TryMatch(value, env, input, out matchedEnv);
+    }
 
     public override JqEnvironment Match(JsonElement value, JqEnvironment env, JsonElement input)
     {
@@ -46,6 +71,17 @@ public sealed class ObjectPattern(IReadOnlyList<(JqFilter KeyExpr, JqPattern Val
     public IReadOnlyList<(JqFilter KeyExpr, JqPattern ValuePattern)> Entries { get; } = entries;
 
     public override IEnumerable<string> VariableNames => Entries.SelectMany(static entry => entry.ValuePattern.VariableNames);
+
+    public override bool TryMatch(JsonElement value, JqEnvironment env, JsonElement input, out JqEnvironment matchedEnv)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            matchedEnv = env;
+            return false;
+        }
+
+        return base.TryMatch(value, env, input, out matchedEnv);
+    }
 
     public override JqEnvironment Match(JsonElement value, JqEnvironment env, JsonElement input)
     {

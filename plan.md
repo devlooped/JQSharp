@@ -200,7 +200,7 @@ Remaining parameterized builtins:
 - `strptime(fmt)`, `strftime(fmt)`, `strflocaltime(fmt)`
 - `gmtime`, `localtime`, `mktime`
 
-### - [ ] Phase 15 — Advanced Control Flow
+### - [x] Phase 15 — Advanced Control Flow
 
 - `label $name | ... break $name ...`
 - Destructuring alternative operator `?//`
