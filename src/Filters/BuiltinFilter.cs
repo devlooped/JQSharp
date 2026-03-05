@@ -19,6 +19,12 @@ public sealed class BuiltinFilter : JqFilter
         "tonumber", "tostring", "tojson", "fromjson",
         "explode", "implode", "ascii_downcase", "ascii_upcase",
         "abs", "floor", "sqrt",
+        "acos", "acosh", "asin", "asinh", "atan", "atanh", "cbrt", "ceil",
+        "cos", "cosh", "erf", "erfc", "exp", "exp2", "expm1", "fabs",
+        "log", "log10", "log2", "logb", "log1p",
+        "nearbyint", "round", "sin", "sinh", "tan", "tanh", "trunc",
+        "tgamma", "lgamma", "j0", "j1",
+        "modf", "frexp",
         "recurse", "halt", "error", "env", "builtins",
         "first", "last",
         "not",
@@ -85,6 +91,40 @@ public sealed class BuiltinFilter : JqFilter
             "abs" => EvaluateAbs(input),
             "floor" => EvaluateFloor(input),
             "sqrt" => EvaluateSqrt(input),
+            "acos" => EvaluateMathUnary(input, Math.Acos),
+            "acosh" => EvaluateMathUnary(input, Math.Acosh),
+            "asin" => EvaluateMathUnary(input, Math.Asin),
+            "asinh" => EvaluateMathUnary(input, Math.Asinh),
+            "atan" => EvaluateMathUnary(input, Math.Atan),
+            "atanh" => EvaluateMathUnary(input, Math.Atanh),
+            "cbrt" => EvaluateMathUnary(input, Math.Cbrt),
+            "ceil" => EvaluateMathUnary(input, Math.Ceiling),
+            "cos" => EvaluateMathUnary(input, Math.Cos),
+            "cosh" => EvaluateMathUnary(input, Math.Cosh),
+            "erf" => EvaluateMathUnary(input, MathExtra.Erf),
+            "erfc" => EvaluateMathUnary(input, MathExtra.Erfc),
+            "exp" => EvaluateMathUnary(input, Math.Exp),
+            "exp2" => EvaluateMathUnary(input, static x => Math.Pow(2, x)),
+            "expm1" => EvaluateMathUnary(input, static x => Math.Exp(x) - 1),
+            "fabs" => EvaluateMathUnary(input, Math.Abs),
+            "log" => EvaluateMathUnary(input, Math.Log),
+            "log10" => EvaluateMathUnary(input, Math.Log10),
+            "log2" => EvaluateMathUnary(input, Math.Log2),
+            "logb" => EvaluateLogb(input),
+            "log1p" => EvaluateMathUnary(input, static x => Math.Log(1 + x)),
+            "nearbyint" => EvaluateMathUnary(input, static x => Math.Round(x, MidpointRounding.ToEven)),
+            "round" => EvaluateMathUnary(input, static x => Math.Round(x, MidpointRounding.AwayFromZero)),
+            "sin" => EvaluateMathUnary(input, Math.Sin),
+            "sinh" => EvaluateMathUnary(input, Math.Sinh),
+            "tan" => EvaluateMathUnary(input, Math.Tan),
+            "tanh" => EvaluateMathUnary(input, Math.Tanh),
+            "trunc" => EvaluateMathUnary(input, Math.Truncate),
+            "tgamma" => EvaluateMathUnary(input, MathExtra.TGamma),
+            "lgamma" => EvaluateMathUnary(input, MathExtra.LGamma),
+            "j0" => EvaluateMathUnary(input, MathExtra.BesselJ0),
+            "j1" => EvaluateMathUnary(input, MathExtra.BesselJ1),
+            "modf" => EvaluateModf(input),
+            "frexp" => EvaluateFrexp(input),
             "recurse" => EvaluateRecurse(input),
             "halt" => throw new JqHaltException(0),
             "error" => throw new JqException(input),
@@ -908,6 +948,86 @@ public sealed class BuiltinFilter : JqFilter
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be sqrt'd");
 
         yield return CreateNumberElement(Math.Sqrt(input.GetDouble()));
+    }
+
+    // Phase 13: Math functions
+    private static IEnumerable<JsonElement> EvaluateMathUnary(JsonElement input, Func<double, double> fn)
+    {
+        RequireNumber(input);
+        yield return CreateMathResult(fn(input.GetDouble()));
+    }
+
+    private static IEnumerable<JsonElement> EvaluateLogb(JsonElement input)
+    {
+        RequireNumber(input);
+        var x = input.GetDouble();
+        if (x == 0)
+            yield return CreateMathResult(double.NegativeInfinity);
+        else
+            yield return CreateMathResult(Math.ILogB(x));
+    }
+
+    private static IEnumerable<JsonElement> EvaluateModf(JsonElement input)
+    {
+        RequireNumber(input);
+        var x = input.GetDouble();
+        var intPart = Math.Truncate(x);
+        var fracPart = x - intPart;
+        yield return CreateElement(writer =>
+        {
+            writer.WriteStartArray();
+            WriteNumber(writer, fracPart);
+            WriteNumber(writer, intPart);
+            writer.WriteEndArray();
+        });
+    }
+
+    private static IEnumerable<JsonElement> EvaluateFrexp(JsonElement input)
+    {
+        RequireNumber(input);
+        var x = input.GetDouble();
+        if (x == 0)
+        {
+            yield return CreateElement(static writer =>
+            {
+                writer.WriteStartArray();
+                writer.WriteNumberValue(0);
+                writer.WriteNumberValue(0);
+                writer.WriteEndArray();
+            });
+            yield break;
+        }
+        if (double.IsNaN(x) || double.IsInfinity(x))
+        {
+            yield return CreateElement(writer =>
+            {
+                writer.WriteStartArray();
+                if (double.IsNaN(x))
+                    writer.WriteNullValue();
+                else
+                    writer.WriteNumberValue(x > 0 ? double.MaxValue : -double.MaxValue);
+                writer.WriteNumberValue(0);
+                writer.WriteEndArray();
+            });
+            yield break;
+        }
+        var exponent = Math.ILogB(x) + 1;
+        var significand = x * Math.Pow(2, -exponent);
+        yield return CreateElement(writer =>
+        {
+            writer.WriteStartArray();
+            WriteNumber(writer, significand);
+            WriteNumber(writer, exponent);
+            writer.WriteEndArray();
+        });
+    }
+
+    private static void WriteNumber(Utf8JsonWriter writer, double value)
+    {
+        if (value >= long.MinValue && value <= long.MaxValue && Math.Floor(value) == value)
+            writer.WriteNumberValue((long)value);
+        else
+            writer.WriteNumberValue(value);
     }
 
     // Other builtins

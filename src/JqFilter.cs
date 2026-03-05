@@ -46,6 +46,23 @@ public abstract class JqFilter
         return CreateElement(writer => writer.WriteBooleanValue(value));
     }
 
+    protected static JsonElement CreateMathResult(double value)
+    {
+        if (double.IsNaN(value))
+            return CreateNullElement();
+        if (double.IsPositiveInfinity(value))
+            return CreateNumberElement(double.MaxValue);
+        if (double.IsNegativeInfinity(value))
+            return CreateNumberElement(-double.MaxValue);
+        return CreateNumberElement(value);
+    }
+
+    protected static void RequireNumber(JsonElement input)
+    {
+        if (input.ValueKind != JsonValueKind.Number)
+            throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a number");
+    }
+
     protected static bool IsTruthy(JsonElement value)
     {
         return value.ValueKind switch

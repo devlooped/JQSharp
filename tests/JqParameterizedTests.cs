@@ -109,6 +109,59 @@ public class JqParameterizedTests
     public void Join_combines_array_items_with_separator()
         => Assert.Equal(["\"a,b,c\""], EvaluateToStrings("join(\",\")", """["a","b","c"]"""));
 
+    // Phase 13: Math functions (two/three-input)
+    [Fact]
+    public void Pow_two_cubed()
+        => Assert.Equal(["8"], EvaluateToStrings("pow(2;3)", "null"));
+
+    [Fact]
+    public void Pow_ten_to_zero()
+        => Assert.Equal(["1"], EvaluateToStrings("pow(10;0)", "null"));
+
+    [Fact]
+    public void Atan2_zero_one()
+        => Assert.Equal(["0"], EvaluateToStrings("atan2(0;1)", "null"));
+
+    [Fact]
+    public void Atan2_one_zero()
+    {
+        var results = Evaluate("atan2(1;0)", "null");
+        Assert.Single(results);
+        Assert.Equal(1.5707963267948966, results[0].GetDouble(), 12);
+    }
+
+    [Fact]
+    public void Fmax_of_three_five()
+        => Assert.Equal(["5"], EvaluateToStrings("fmax(3;5)", "null"));
+
+    [Fact]
+    public void Fmin_of_three_five()
+        => Assert.Equal(["3"], EvaluateToStrings("fmin(3;5)", "null"));
+
+    [Fact]
+    public void Fmod_seven_three()
+        => Assert.Equal(["1"], EvaluateToStrings("fmod(7;3)", "null"));
+
+    [Fact]
+    public void Hypot_three_four()
+        => Assert.Equal(["5"], EvaluateToStrings("hypot(3;4)", "null"));
+
+    [Fact]
+    public void Remainder_seven_three()
+        => Assert.Equal(["1"], EvaluateToStrings("remainder(7;3)", "null"));
+
+    [Fact]
+    public void Ldexp_one_three()
+        => Assert.Equal(["8"], EvaluateToStrings("ldexp(1;3)", "null"));
+
+    [Fact]
+    public void Scalbln_one_three()
+        => Assert.Equal(["8"], EvaluateToStrings("scalbln(1;3)", "null"));
+
+    [Fact]
+    public void Fma_two_three_four()
+        => Assert.Equal(["10"], EvaluateToStrings("fma(2;3;4)", "null"));
+
     static string[] EvaluateToStrings(string expression, string inputJson)
         => Evaluate(expression, inputJson)
             .Select(static element => JsonSerializer.Serialize(element))

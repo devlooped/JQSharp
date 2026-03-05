@@ -46,7 +46,7 @@ jqsharp/
 ├── src/
 │   ├── JQ.csproj                # Library — net10.0, System.Text.Json only
 │   ├── Jq.cs                    # Public façade: Evaluate() and Parse()
-│   ├── JqParser.cs              # Recursive-descent parser (~1 190 lines)
+│   ├── JqParser.cs              # Recursive-descent parser
 │   ├── JqFilter.cs              # Abstract base class for all filter nodes
 │   ├── JqEnvironment.cs         # Immutable variable/filter-binding environment
 │   ├── JqPattern.cs             # Destructuring pattern types
@@ -54,14 +54,15 @@ jqsharp/
 │   ├── JqHaltException.cs       # halt / halt_error control flow
 │   ├── FilterClosure.cs         # Pairs a JqFilter with its captured environment
 │   ├── PathResolver.cs          # Path algebra for assignment operators
+│   ├── MathExtra.cs             # Custom math functions (erf, tgamma, Bessel, etc.)
 │   └── Filters/                 # One file per AST node type (34 files)
 │       ├── IdentityFilter.cs
 │       ├── PipeFilter.cs
 │       ├── CommaFilter.cs
 │       ├── FieldFilter.cs
 │       ├── IndexFilter.cs
-│       ├── BuiltinFilter.cs     # All zero-arg builtins (~877 lines)
-│       ├── ParameterizedFilter.cs # All parameterized builtins (~1 553 lines)
+│       ├── BuiltinFilter.cs     # All zero-arg builtins
+│       ├── ParameterizedFilter.cs # All parameterized builtins
 │       └── ...
 ├── tests/
 │   ├── Tests.csproj             # xUnit test project
@@ -326,7 +327,7 @@ Dispatched via a `switch` expression on the function name (~40 builtins). All ar
 | Type selectors | `arrays`, `objects`, `strings`, `numbers`, `nulls`, `values`, `scalars`, ... |
 | Collection ops | `keys`, `sort`, `unique`, `flatten`, `reverse`, `add`, `min`, `max`, ... |
 | Conversion | `tonumber`, `tostring`, `tojson`, `fromjson`, `explode`, `implode`, ... |
-| Math | `abs`, `floor`, `sqrt` |
+| Math (one-input) | `abs`, `floor`, `sqrt`, `ceil`, `round`, `trunc`, `sin`, `cos`, `tan`, `acos`, `asin`, `atan`, `sinh`, `cosh`, `tanh`, `acosh`, `asinh`, `atanh`, `exp`, `exp2`, `expm1`, `log`, `log2`, `log10`, `logb`, `log1p`, `cbrt`, `fabs`, `erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1`, `nearbyint`, `modf`, `frexp` |
 
 ### 8.2 Parameterized Builtins (`ParameterizedFilter`)
 
@@ -340,6 +341,7 @@ Dispatched via a `switch` on `(name, args.Length)` (~50 signatures). Examples:
 | Generators | `range/1..3`, `limit/2`, `while/2`, `until/2`, `repeat/1`, ... |
 | Regex | `test/1..2`, `match/1..2`, `capture/1..2`, `scan/1..2`, `sub/2..3`, `gsub/2..3` |
 | Paths | `path/1`, `del/1`, `getpath/1`, `setpath/2`, `delpaths/1`, ... |
+| Math (multi-input) | `pow/2`, `atan2/2`, `fmax/2`, `fmin/2`, `fmod/2`, `hypot/2`, `remainder/2`, `ldexp/2`, `scalbln/2`, `fma/3` |
 
 ### 8.3 User-Defined Functions
 
@@ -400,6 +402,8 @@ protected static JsonElement CreateElement(Action<Utf8JsonWriter> write)
 ```
 
 Convenience methods `CreateNumberElement`, `CreateStringElement`, `CreateBooleanElement`, and `CreateNullElement` wrap this pattern. The `CreateNumberElement` method preserves integer representation when possible (writes `long` instead of `double` when the value has no fractional part).
+
+Math functions that produce IEEE 754 special values are mapped to JSON-compatible representations: `NaN` → `null`, `+∞` → `1.7976931348623157e+308` (`double.MaxValue`), `-∞` → `-1.7976931348623157e+308`. The `CreateMathResult` helper in `JqFilter` handles this conversion. Custom implementations for `erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1` (not available in `System.Math`) are provided in `MathExtra.cs` using numerical approximations (Abramowitz & Stegun for erf, Lanczos for gamma, polynomial for Bessel).
 
 ---
 
@@ -485,7 +489,7 @@ The library uses only `System.Text.Json` from the BCL. There are no third-party 
 All operations create new `JsonElement` values rather than mutating existing ones. This is both a necessity (JsonElement is immutable) and a feature (no aliasing bugs, thread-safe evaluation).
 
 ### Monolithic Builtin Classes
-`BuiltinFilter` and `ParameterizedFilter` are large single classes (~877 and ~1 553 lines respectively) with switch-based dispatch. This trades file size for simplicity — no registration system, no reflection, no plugin architecture.
+`BuiltinFilter` and `ParameterizedFilter` are large single classes with switch-based dispatch. This trades file size for simplicity — no registration system, no reflection, no plugin architecture.
 
 ### Parser Without Lexer
 Combining lexing and parsing in a single pass simplifies the implementation but makes the parser sensitive to character-level details (e.g., distinguishing `/` from `//` from `//=`).

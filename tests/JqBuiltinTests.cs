@@ -345,6 +345,131 @@ public class JqBuiltinTests
         Assert.Equal(1.4142135623730951, results[0].GetDouble(), 12);
     }
 
+    // Phase 13: Math functions
+    [Fact]
+    public void Ceil_for_positive_fraction()
+        => Assert.Equal(["2"], EvaluateToStrings("ceil", "1.5"));
+
+    [Fact]
+    public void Ceil_for_negative_fraction()
+        => Assert.Equal(["-1"], EvaluateToStrings("ceil", "-1.5"));
+
+    [Fact]
+    public void Round_rounds_half_away_from_zero()
+        => Assert.Equal(["3"], EvaluateToStrings("round", "2.5"));
+
+    [Fact]
+    public void Round_negative_rounds_half_away_from_zero()
+        => Assert.Equal(["-3"], EvaluateToStrings("round", "-2.5"));
+
+    [Fact]
+    public void Trunc_for_positive()
+        => Assert.Equal(["1"], EvaluateToStrings("trunc", "1.7"));
+
+    [Fact]
+    public void Trunc_for_negative()
+        => Assert.Equal(["-1"], EvaluateToStrings("trunc", "-1.7"));
+
+    [Fact]
+    public void Cos_of_zero()
+        => Assert.Equal(["1"], EvaluateToStrings("cos", "0"));
+
+    [Fact]
+    public void Sin_of_zero()
+        => Assert.Equal(["0"], EvaluateToStrings("sin", "0"));
+
+    [Fact]
+    public void Acos_of_one()
+        => Assert.Equal(["0"], EvaluateToStrings("acos", "1"));
+
+    [Fact]
+    public void Asin_of_zero()
+        => Assert.Equal(["0"], EvaluateToStrings("asin", "0"));
+
+    [Fact]
+    public void Atan_of_zero()
+        => Assert.Equal(["0"], EvaluateToStrings("atan", "0"));
+
+    [Fact]
+    public void Exp_of_zero()
+        => Assert.Equal(["1"], EvaluateToStrings("exp", "0"));
+
+    [Fact]
+    public void Log_of_one()
+        => Assert.Equal(["0"], EvaluateToStrings("log", "1"));
+
+    [Fact]
+    public void Log2_of_eight()
+        => Assert.Equal(["3"], EvaluateToStrings("log2", "8"));
+
+    [Fact]
+    public void Log10_of_thousand()
+        => Assert.Equal(["3"], EvaluateToStrings("log10", "1000"));
+
+    [Fact]
+    public void Cbrt_of_27()
+        => Assert.Equal(["3"], EvaluateToStrings("cbrt", "27"));
+
+    [Fact]
+    public void Fabs_of_negative()
+        => Assert.Equal(["5"], EvaluateToStrings("fabs", "-5"));
+
+    [Fact]
+    public void Fabs_of_positive()
+        => Assert.Equal(["5"], EvaluateToStrings("fabs", "5"));
+
+    [Fact]
+    public void Tanh_of_zero()
+        => Assert.Equal(["0"], EvaluateToStrings("tanh", "0"));
+
+    [Fact]
+    public void Cosh_of_zero()
+        => Assert.Equal(["1"], EvaluateToStrings("cosh", "0"));
+
+    [Fact]
+    public void Sinh_of_zero()
+        => Assert.Equal(["0"], EvaluateToStrings("sinh", "0"));
+
+    [Fact]
+    public void Acos_of_two_returns_null()
+        => Assert.Equal(["null"], EvaluateToStrings("acos", "2"));
+
+    [Fact]
+    public void Asin_of_two_returns_null()
+        => Assert.Equal(["null"], EvaluateToStrings("asin", "2"));
+
+    [Fact]
+    public void Log_of_negative_returns_null()
+        => Assert.Equal(["null"], EvaluateToStrings("log", "-1"));
+
+    [Fact]
+    public void Nearbyint_uses_bankers_rounding()
+        => Assert.Equal(["2"], EvaluateToStrings("nearbyint", "2.5"));
+
+    [Fact]
+    public void Acosh_of_one()
+        => Assert.Equal(["0"], EvaluateToStrings("acosh", "1"));
+
+    [Fact]
+    public void Asinh_of_zero()
+        => Assert.Equal(["0"], EvaluateToStrings("asinh", "0"));
+
+    [Fact]
+    public void Atanh_of_zero()
+        => Assert.Equal(["0"], EvaluateToStrings("atanh", "0"));
+
+    [Fact]
+    public void Exp2_of_three()
+        => Assert.Equal(["8"], EvaluateToStrings("exp2", "3"));
+
+    [Fact]
+    public void Expm1_of_zero()
+        => Assert.Equal(["0"], EvaluateToStrings("expm1", "0"));
+
+    [Fact]
+    public void Log1p_of_zero()
+        => Assert.Equal(["0"], EvaluateToStrings("log1p", "0"));
+
     [Fact]
     public void Empty_produces_no_output()
         => Assert.Empty(EvaluateToStrings("empty", "null"));

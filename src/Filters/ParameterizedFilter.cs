@@ -11,6 +11,7 @@ public sealed class ParameterizedFilter : JqFilter
         "test", "match", "capture", "scan", "splits", "sub", "gsub",
         "select", "map", "map_values", "sort_by", "group_by", "unique_by", "min_by", "max_by", "any", "all", "recurse", "paths", "walk", "del", "path", "pick", "isempty", "add",
         "range", "limit", "skip", "first", "last", "nth", "while", "until", "repeat", "with_entries", "setpath",
+        "atan2", "pow", "fmax", "fmin", "fmod", "hypot", "remainder", "fma", "ldexp", "scalbln",
     };
 
     private static readonly string[] knownBuiltinArities =
@@ -19,6 +20,7 @@ public sealed class ParameterizedFilter : JqFilter
         "test/1", "test/2", "match/1", "match/2", "capture/1", "capture/2", "scan/1", "scan/2", "split/2", "splits/1", "splits/2", "sub/2", "sub/3", "gsub/2", "gsub/3",
         "select/1", "map/1", "map_values/1", "sort_by/1", "group_by/1", "unique_by/1", "min_by/1", "max_by/1", "any/1", "all/1", "recurse/1", "paths/1", "walk/1", "del/1", "path/1", "pick/1", "isempty/1", "add/1",
         "range/1", "range/2", "range/3", "any/2", "all/2", "recurse/2", "limit/2", "skip/2", "first/1", "last/1", "nth/1", "nth/2", "while/2", "until/2", "repeat/1", "with_entries/1", "setpath/2",
+        "atan2/2", "pow/2", "fmax/2", "fmin/2", "fmod/2", "hypot/2", "remainder/2", "fma/3", "ldexp/2", "scalbln/2",
     ];
 
     private readonly string name;
@@ -160,6 +162,16 @@ public sealed class ParameterizedFilter : JqFilter
             ("repeat", 1) => EvaluateRepeat(input),
             ("with_entries", 1) => EvaluateWithEntries(input),
             ("setpath", 2) => EvaluateSetpath(input),
+            ("atan2", 2) => EvaluateMathBinary(input, Math.Atan2),
+            ("pow", 2) => EvaluateMathBinary(input, Math.Pow),
+            ("fmax", 2) => EvaluateMathBinary(input, Math.Max),
+            ("fmin", 2) => EvaluateMathBinary(input, Math.Min),
+            ("fmod", 2) => EvaluateMathBinary(input, static (x, y) => x % y),
+            ("hypot", 2) => EvaluateMathBinary(input, static (x, y) => Math.Sqrt(x * x + y * y)),
+            ("remainder", 2) => EvaluateMathBinary(input, Math.IEEERemainder),
+            ("ldexp", 2) => EvaluateMathBinary(input, static (x, y) => x * Math.Pow(2, (int)y)),
+            ("scalbln", 2) => EvaluateMathBinary(input, static (x, y) => x * Math.Pow(2, (int)y)),
+            ("fma", 3) => EvaluateMathTernary(input, Math.FusedMultiplyAdd),
 
             _ => throw new JqException($"Unknown function '{name}/{args.Length}'."),
         };
@@ -1752,6 +1764,37 @@ public sealed class ParameterizedFilter : JqFilter
             result = PathResolver.SetPathValue(result, PathResolver.ParsePath(path), value);
 
         yield return result;
+    }
+
+    // Phase 13: Math functions
+    private IEnumerable<JsonElement> EvaluateMathBinary(JsonElement input, Func<double, double, double> fn)
+    {
+        foreach (var a in args[0].Evaluate(input, _env))
+        {
+            RequireNumber(a);
+            foreach (var b in args[1].Evaluate(input, _env))
+            {
+                RequireNumber(b);
+                yield return CreateMathResult(fn(a.GetDouble(), b.GetDouble()));
+            }
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateMathTernary(JsonElement input, Func<double, double, double, double> fn)
+    {
+        foreach (var a in args[0].Evaluate(input, _env))
+        {
+            RequireNumber(a);
+            foreach (var b in args[1].Evaluate(input, _env))
+            {
+                RequireNumber(b);
+                foreach (var c in args[2].Evaluate(input, _env))
+                {
+                    RequireNumber(c);
+                    yield return CreateMathResult(fn(a.GetDouble(), b.GetDouble(), c.GetDouble()));
+                }
+            }
+        }
     }
 
     private static bool TryReadIndex(JsonElement value, int length, out int index)

@@ -188,7 +188,7 @@ Remaining parameterized builtins:
 - `sub(regex; tostr)`, `sub(regex; tostr; flags)`
 - `gsub(regex; tostr)`, `gsub(regex; tostr; flags)`
 
-### - [ ] Phase 13 — Math Functions
+### - [x] Phase 13 — Math Functions
 
 - One-input: `acos`, `acosh`, `asin`, `asinh`, `atan`, `atanh`, `cbrt`, `ceil`, `cos`, `cosh`, `erf`, `erfc`, `exp`, `exp2`, `expm1`, `fabs`, `floor`, `log`, `log10`, `log2`, `round`, `sin`, `sinh`, `tan`, `tanh`, `trunc`, etc.
 - Two-input: `atan2`, `pow`, `fmax`, `fmin`, `fmod`, `hypot`, `remainder`, etc.
