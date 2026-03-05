@@ -375,6 +375,25 @@ public sealed class JqParser
         if (TryParseLiteral(out var literal))
             return literal;
 
+        if (TryConsume('@'))
+        {
+            var formatName = ParseIdentifier();
+            if (!FormatFilter.IsFormat(formatName))
+                throw Error($"Unknown format '@{formatName}'.");
+
+            SkipWhitespace();
+            if (Peek() == '"')
+            {
+                Consume(); // consume opening quote
+                var (plainValue, hasInterpolation, parts) = ParseStringParts();
+                if (!hasInterpolation)
+                    return new LiteralFilter(CreateStringLiteral(plainValue));
+                return new FormattedStringFilter(formatName, parts);
+            }
+
+            return new FormatFilter(formatName);
+        }
+
         if (TryConsumeKeyword("not"))
             return new NotFilter();
 
@@ -1197,6 +1216,14 @@ public sealed class JqParser
 
     private JqFilter ParseString()
     {
+        var (plainValue, hasInterpolation, parts) = ParseStringParts();
+        if (!hasInterpolation)
+            return new LiteralFilter(CreateStringLiteral(plainValue));
+        return new StringInterpolationFilter(parts);
+    }
+
+    private (string PlainValue, bool HasInterpolation, (string? Literal, JqFilter? Expression)[] Parts) ParseStringParts()
+    {
         var builder = new StringBuilder();
         var parts = new List<(string? Literal, JqFilter? Expression)>();
         var hasInterpolation = false;
@@ -1207,12 +1234,12 @@ public sealed class JqParser
             if (ch == '"')
             {
                 if (!hasInterpolation)
-                    return new LiteralFilter(CreateStringLiteral(builder.ToString()));
+                    return (builder.ToString(), false, Array.Empty<(string? Literal, JqFilter? Expression)>());
 
                 if (builder.Length > 0)
                     parts.Add((builder.ToString(), null));
 
-                return new StringInterpolationFilter(parts.ToArray());
+                return (string.Empty, true, parts.ToArray());
             }
 
             if (ch != '\\')

@@ -172,7 +172,7 @@ Remaining parameterized builtins:
 - Arithmetic update-assignment: `+=`, `-=`, `*=`, `/=`, `%=`, `//=`
 - Complex assignments (LHS with iterators, `select`, etc.)
 
-### - [ ] Phase 11 — Format Strings & Escaping
+### - [x] Phase 11 — Format Strings & Escaping
 
 - `@base64`, `@base64d`, `@html`, `@uri`, `@urid`, `@csv`, `@tsv`, `@sh`, `@json`, `@text`
 - Combined format with interpolation: `@foo "string with \(expr)"`

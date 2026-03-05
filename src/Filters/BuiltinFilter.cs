@@ -957,6 +957,7 @@ public sealed class BuiltinFilter : JqFilter
         var names = builtinNames
             .Select(static name => $"{name}/0")
             .Concat(ParameterizedFilter.KnownBuiltinArities)
+            .Concat(FormatFilter.FormatNames.Select(static name => $"@{name}/0"))
             .OrderBy(static name => name, StringComparer.Ordinal)
             .ToList();
 
