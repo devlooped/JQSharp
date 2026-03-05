@@ -11,6 +11,8 @@ public sealed class FieldFilter : JqFilter
         this.field = field;
     }
 
+    public string FieldName => this.field;
+
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         if (input.ValueKind == JsonValueKind.Null)

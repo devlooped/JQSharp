@@ -164,7 +164,7 @@ Remaining parameterized builtins:
 - `def name($var)` with value arguments (sugar for `def name(f): f as $var | ...`)
 - Function scoping, recursion, multiple definitions by arity
 
-### - [ ] Phase 10 — Assignment Operators
+### - [x] Phase 10 — Assignment Operators
 
 - Path expression infrastructure (tracking paths through filter evaluation)
 - Update-assignment: `|=`

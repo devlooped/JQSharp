@@ -13,6 +13,10 @@ public sealed class TryCatchFilter : JqFilter
         this.catchFilter = catchFilter;
     }
 
+    public JqFilter Body => body;
+
+    public JqFilter CatchFilter => catchFilter;
+
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         JsonElement[] values;

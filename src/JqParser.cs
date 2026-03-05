@@ -69,8 +69,10 @@ public sealed class JqParser
             return new BindingFilter(left, pattern, body);
         }
 
-        if (!TryConsume('|'))
+        if (Peek() != '|' || Peek(1) == '=')
             return left;
+
+        Consume();
 
         var right = ParsePipe();
         return new PipeFilter(left, right);
@@ -78,15 +80,43 @@ public sealed class JqParser
 
     private JqFilter ParseComma()
     {
-        var left = ParseOr();
+        var left = ParseAssignment();
         while (true)
         {
             SkipWhitespace();
             if (!TryConsume(','))
                 break;
 
-            var right = ParseOr();
+            var right = ParseAssignment();
             left = new CommaFilter(left, right);
+        }
+
+        return left;
+    }
+
+    private JqFilter ParseAssignment()
+    {
+        var left = ParseOr();
+        SkipWhitespace();
+
+        if (TryConsumeSequence("|="))
+            return new UpdateAssignmentFilter(left, ParseAssignment());
+        if (TryConsumeSequence("//="))
+            return new CompoundAssignmentFilter(left, CompoundAssignOp.Alternative, ParseAssignment());
+        if (TryConsumeSequence("+="))
+            return new CompoundAssignmentFilter(left, CompoundAssignOp.Add, ParseAssignment());
+        if (TryConsumeSequence("-="))
+            return new CompoundAssignmentFilter(left, CompoundAssignOp.Subtract, ParseAssignment());
+        if (TryConsumeSequence("*="))
+            return new CompoundAssignmentFilter(left, CompoundAssignOp.Multiply, ParseAssignment());
+        if (TryConsumeSequence("/="))
+            return new CompoundAssignmentFilter(left, CompoundAssignOp.Divide, ParseAssignment());
+        if (TryConsumeSequence("%="))
+            return new CompoundAssignmentFilter(left, CompoundAssignOp.Modulo, ParseAssignment());
+        if (Peek() == '=' && Peek(1) != '=')
+        {
+            Consume();
+            return new PlainAssignmentFilter(left, ParseAssignment());
         }
 
         return left;
@@ -154,8 +184,10 @@ public sealed class JqParser
         while (true)
         {
             SkipWhitespace();
-            if (!TryConsumeSequence("//"))
+            if (!(Peek() == '/' && Peek(1) == '/' && Peek(2) != '='))
                 break;
+            Consume();
+            Consume();
 
             var right = ParseAdditive();
             left = new AlternativeFilter(left, right);
@@ -171,10 +203,16 @@ public sealed class JqParser
         {
             SkipWhitespace();
             BinaryOp? op = null;
-            if (TryConsume('+'))
+            if (Peek() == '+' && Peek(1) != '=')
+            {
+                Consume();
                 op = BinaryOp.Add;
-            else if (TryConsume('-'))
+            }
+            else if (Peek() == '-' && Peek(1) != '=')
+            {
+                Consume();
                 op = BinaryOp.Subtract;
+            }
 
             if (!op.HasValue)
                 break;
@@ -193,15 +231,21 @@ public sealed class JqParser
         {
             SkipWhitespace();
             BinaryOp? op = null;
-            if (TryConsume('*'))
+            if (Peek() == '*' && Peek(1) != '=')
+            {
+                Consume();
                 op = BinaryOp.Multiply;
-            else if (Peek() == '/' && Peek(1) != '/')
+            }
+            else if (Peek() == '/' && Peek(1) != '/' && Peek(1) != '=')
             {
                 Consume();
                 op = BinaryOp.Divide;
             }
-            else if (TryConsume('%'))
+            else if (Peek() == '%' && Peek(1) != '=')
+            {
+                Consume();
                 op = BinaryOp.Modulo;
+            }
 
             if (!op.HasValue)
                 break;

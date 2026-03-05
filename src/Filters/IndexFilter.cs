@@ -11,6 +11,8 @@ public sealed class IndexFilter : JqFilter
         this.index = index;
     }
 
+    public int Index => index;
+
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         if (input.ValueKind == JsonValueKind.Null)

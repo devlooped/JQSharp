@@ -13,6 +13,10 @@ public sealed class SliceFilter : JqFilter
         this.end = end;
     }
 
+    public int? Start => start;
+
+    public int? End => end;
+
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
         if (input.ValueKind == JsonValueKind.Null)

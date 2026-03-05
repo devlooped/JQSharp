@@ -28,6 +28,10 @@ public sealed class ParameterizedFilter : JqFilter
         this.args = args;
     }
 
+    public string FilterName => name;
+
+    public JqFilter[] FilterArgs => args;
+
     public static bool IsKnown(string name) => knownNames.Contains(name);
 
     public static IEnumerable<string> KnownBuiltinArities => knownBuiltinArities;
@@ -471,8 +475,8 @@ public sealed class ParameterizedFilter : JqFilter
     {
         foreach (var path in args[0].Evaluate(input, _env))
         {
-            var pathArray = ParsePath(path);
-            if (TryGetPathValue(input, pathArray, out var value))
+            var pathArray = PathResolver.ParsePath(path);
+            if (PathResolver.TryGetPathValue(input, pathArray, out var value))
                 yield return value;
             else
                 yield return CreateNullElement();
@@ -488,11 +492,11 @@ public sealed class ParameterizedFilter : JqFilter
                 value.EnumerateArray().All(static item => item.ValueKind == JsonValueKind.Array))
             {
                 foreach (var path in value.EnumerateArray())
-                    result = DeletePathValue(result, ParsePath(path));
+                    result = PathResolver.DeletePathValue(result, PathResolver.ParsePath(path));
             }
             else
             {
-                result = DeletePathValue(result, ParsePath(value));
+                result = PathResolver.DeletePathValue(result, PathResolver.ParsePath(value));
             }
         }
 
@@ -889,8 +893,8 @@ public sealed class ParameterizedFilter : JqFilter
             if (path.Length == 0)
                 continue;
 
-            if (TryGetPathValue(input, path, out var value) && args[0].Evaluate(value, _env).Any(IsTruthy))
-                yield return CreatePathValue(path);
+            if (PathResolver.TryGetPathValue(input, path, out var value) && args[0].Evaluate(value, _env).Any(IsTruthy))
+                yield return PathResolver.CreatePathValue(path);
         }
     }
 
@@ -970,26 +974,26 @@ public sealed class ParameterizedFilter : JqFilter
     private IEnumerable<JsonElement> EvaluateDel(JsonElement input)
     {
         var result = input;
-        foreach (var path in GetPaths(args[0], input))
-            result = DeletePathValue(result, path);
+        foreach (var path in PathResolver.GetPaths(args[0], input, _env))
+            result = PathResolver.DeletePathValue(result, path);
         yield return result;
     }
 
     private IEnumerable<JsonElement> EvaluatePath(JsonElement input)
     {
-        foreach (var path in GetPaths(args[0], input))
-            yield return CreatePathValue(path);
+        foreach (var path in PathResolver.GetPaths(args[0], input, _env))
+            yield return PathResolver.CreatePathValue(path);
     }
 
     private IEnumerable<JsonElement> EvaluatePick(JsonElement input)
     {
         var result = CreateNullElement();
-        foreach (var path in GetPaths(args[0], input))
+        foreach (var path in PathResolver.GetPaths(args[0], input, _env))
         {
-            if (!TryGetPathValue(input, path, out var value))
+            if (!PathResolver.TryGetPathValue(input, path, out var value))
                 value = CreateNullElement();
 
-            result = SetPathValue(result, path, value);
+            result = PathResolver.SetPathValue(result, path, value);
         }
 
         yield return result;
@@ -1359,304 +1363,9 @@ public sealed class ParameterizedFilter : JqFilter
         var value = args[1].Evaluate(input, _env).FirstOrDefault(CreateNullElement());
         var result = input;
         foreach (var path in args[0].Evaluate(input, _env))
-            result = SetPathValue(result, ParsePath(path), value);
+            result = PathResolver.SetPathValue(result, PathResolver.ParsePath(path), value);
 
         yield return result;
-    }
-
-    private IEnumerable<JsonElement[]> GetPaths(JqFilter filter, JsonElement input)
-    {
-        switch (filter)
-        {
-            case IdentityFilter:
-                yield return [];
-                break;
-
-            case FieldFilter field:
-                yield return [CreateStringElement(GetFieldFilterName(field))];
-                break;
-
-            case IndexFilter index:
-                yield return [CreateNumberElement(GetIndexFilterValue(index))];
-                break;
-
-            case IterateFilter:
-                if (input.ValueKind == JsonValueKind.Array)
-                {
-                    for (var i = 0; i < input.GetArrayLength(); i++)
-                        yield return [CreateNumberElement(i)];
-                }
-                else if (input.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var property in input.EnumerateObject())
-                        yield return [CreateStringElement(property.Name)];
-                }
-                break;
-
-            case PipeFilter pipe:
-                var pipeLeft = GetPipeLeft(pipe);
-                var pipeRight = GetPipeRight(pipe);
-                foreach (var left in GetPaths(pipeLeft, input))
-                {
-                    var baseValue = TryGetPathValue(input, left, out var value)
-                        ? value
-                        : CreateNullElement();
-                    foreach (var right in GetPaths(pipeRight, baseValue))
-                        yield return left.Concat(right).ToArray();
-                }
-                break;
-
-            case CommaFilter comma:
-                var commaLeft = GetCommaLeft(comma);
-                var commaRight = GetCommaRight(comma);
-                foreach (var left in GetPaths(commaLeft, input))
-                    yield return left;
-                foreach (var right in GetPaths(commaRight, input))
-                    yield return right;
-                break;
-
-            default:
-                foreach (var path in filter.Evaluate(input, _env))
-                    yield return ParsePath(path);
-                break;
-        }
-    }
-
-    private static string GetFieldFilterName(FieldFilter filter)
-    {
-        var field = typeof(FieldFilter).GetField("fieldName", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        if (field is null || field.GetValue(filter) is not string value)
-            throw new JqException("Cannot inspect path expression.");
-        return value;
-    }
-
-    private static int GetIndexFilterValue(IndexFilter filter)
-    {
-        var field = typeof(IndexFilter).GetField("index", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        if (field is null || field.GetValue(filter) is not int value)
-            throw new JqException("Cannot inspect path expression.");
-        return value;
-    }
-
-    private static JqFilter GetPipeLeft(PipeFilter filter) => GetFilterField(filter, "left");
-
-    private static JqFilter GetPipeRight(PipeFilter filter) => GetFilterField(filter, "right");
-
-    private static JqFilter GetCommaLeft(CommaFilter filter) => GetFilterField(filter, "left");
-
-    private static JqFilter GetCommaRight(CommaFilter filter) => GetFilterField(filter, "right");
-
-    private static JqFilter GetFilterField(object target, string fieldName)
-    {
-        var field = target.GetType().GetField(fieldName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        if (field is null || field.GetValue(target) is not JqFilter value)
-            throw new JqException("Cannot inspect path expression.");
-        return value;
-    }
-
-    private static JsonElement[] ParsePath(JsonElement value)
-    {
-        if (value.ValueKind != JsonValueKind.Array)
-            throw new JqException($"{GetTypeName(value)} ({GetValueText(value)}) is not a path array");
-
-        var path = value.EnumerateArray().ToArray();
-        foreach (var item in path)
-        {
-            if (item.ValueKind is not JsonValueKind.String and not JsonValueKind.Number)
-                throw new JqException("Path entries must be strings or numbers");
-            if (item.ValueKind == JsonValueKind.Number && !IsInteger(item.GetDouble()))
-                throw new JqException("Path entries must be integer numbers");
-        }
-
-        return path;
-    }
-
-    private static JsonElement CreatePathValue(JsonElement[] path)
-    {
-        return CreateElement(writer =>
-        {
-            writer.WriteStartArray();
-            foreach (var part in path)
-                part.WriteTo(writer);
-            writer.WriteEndArray();
-        });
-    }
-
-    private static bool TryGetPathValue(JsonElement source, JsonElement[] path, out JsonElement value)
-    {
-        value = source;
-        foreach (var part in path)
-        {
-            if (part.ValueKind == JsonValueKind.String)
-            {
-                if (value.ValueKind != JsonValueKind.Object)
-                    return false;
-                if (!value.TryGetProperty(part.GetString() ?? "", out var property))
-                    return false;
-                value = property;
-            }
-            else if (part.ValueKind == JsonValueKind.Number)
-            {
-                if (value.ValueKind != JsonValueKind.Array)
-                    return false;
-                if (!TryReadIndex(part, value.GetArrayLength(), out var index))
-                    return false;
-                if (index < 0 || index >= value.GetArrayLength())
-                    return false;
-                value = value[index];
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static JsonElement SetPathValue(JsonElement source, JsonElement[] path, JsonElement value)
-    {
-        if (path.Length == 0)
-            return value;
-
-        return SetPathValueCore(source, path, value, 0);
-    }
-
-    private static JsonElement SetPathValueCore(JsonElement source, JsonElement[] path, JsonElement value, int depth)
-    {
-        if (depth == path.Length)
-            return value;
-
-        var part = path[depth];
-        if (part.ValueKind == JsonValueKind.String)
-        {
-            var key = part.GetString() ?? "";
-            Dictionary<string, JsonElement> objectValue;
-            if (source.ValueKind == JsonValueKind.Object)
-                objectValue = source.EnumerateObject().ToDictionary(property => property.Name, property => property.Value, StringComparer.Ordinal);
-            else if (source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-                objectValue = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-            else
-                throw new JqException($"{GetTypeName(source)} ({GetValueText(source)}) cannot be indexed with string \"{key}\"");
-
-            var next = objectValue.TryGetValue(key, out var current)
-                ? current
-                : CreateNullElement();
-            objectValue[key] = SetPathValueCore(next, path, value, depth + 1);
-
-            return CreateElement(writer =>
-            {
-                writer.WriteStartObject();
-                foreach (var property in objectValue)
-                {
-                    writer.WritePropertyName(property.Key);
-                    property.Value.WriteTo(writer);
-                }
-                writer.WriteEndObject();
-            });
-        }
-
-        if (part.ValueKind == JsonValueKind.Number)
-        {
-            if (!TryReadIndex(part, source.ValueKind == JsonValueKind.Array ? source.GetArrayLength() : 0, out var index))
-                throw new JqException("Path index must be an integer");
-            if (index < 0)
-                throw new JqException("Out of bounds negative array index");
-
-            List<JsonElement> arrayValue;
-            if (source.ValueKind == JsonValueKind.Array)
-                arrayValue = source.EnumerateArray().ToList();
-            else if (source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-                arrayValue = [];
-            else
-                throw new JqException($"{GetTypeName(source)} ({GetValueText(source)}) cannot be indexed with number {index}");
-
-            while (arrayValue.Count <= index)
-                arrayValue.Add(CreateNullElement());
-            arrayValue[index] = SetPathValueCore(arrayValue[index], path, value, depth + 1);
-
-            return CreateElement(writer =>
-            {
-                writer.WriteStartArray();
-                foreach (var item in arrayValue)
-                    item.WriteTo(writer);
-                writer.WriteEndArray();
-            });
-        }
-
-        throw new JqException("Path entries must be strings or numbers");
-    }
-
-    private static JsonElement DeletePathValue(JsonElement source, JsonElement[] path)
-    {
-        if (path.Length == 0)
-            return CreateNullElement();
-
-        return DeletePathValueCore(source, path, 0);
-    }
-
-    private static JsonElement DeletePathValueCore(JsonElement source, JsonElement[] path, int depth)
-    {
-        var part = path[depth];
-        var leaf = depth == path.Length - 1;
-
-        if (part.ValueKind == JsonValueKind.String)
-        {
-            if (source.ValueKind != JsonValueKind.Object)
-                return source;
-
-            var key = part.GetString() ?? "";
-            var members = new List<(string Name, JsonElement Value)>();
-            foreach (var property in source.EnumerateObject())
-            {
-                if (property.Name != key)
-                {
-                    members.Add((property.Name, property.Value));
-                    continue;
-                }
-
-                if (leaf)
-                    continue;
-                members.Add((property.Name, DeletePathValueCore(property.Value, path, depth + 1)));
-            }
-
-            return CreateElement(writer =>
-            {
-                writer.WriteStartObject();
-                foreach (var member in members)
-                {
-                    writer.WritePropertyName(member.Name);
-                    member.Value.WriteTo(writer);
-                }
-                writer.WriteEndObject();
-            });
-        }
-
-        if (part.ValueKind == JsonValueKind.Number)
-        {
-            if (source.ValueKind != JsonValueKind.Array)
-                return source;
-            if (!TryReadIndex(part, source.GetArrayLength(), out var index))
-                return source;
-            if (index < 0 || index >= source.GetArrayLength())
-                return source;
-
-            var values = source.EnumerateArray().ToList();
-            if (leaf)
-                values.RemoveAt(index);
-            else
-                values[index] = DeletePathValueCore(values[index], path, depth + 1);
-
-            return CreateElement(writer =>
-            {
-                writer.WriteStartArray();
-                foreach (var value in values)
-                    value.WriteTo(writer);
-                writer.WriteEndArray();
-            });
-        }
-
-        return source;
     }
 
     private static bool TryReadIndex(JsonElement value, int length, out int index)

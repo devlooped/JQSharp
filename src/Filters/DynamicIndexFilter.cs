@@ -14,6 +14,8 @@ public sealed class DynamicIndexFilter : JqFilter
 
     public JqFilter IndexExpression => indexExpression;
 
+    public JqFilter? Source => source;
+
     public DynamicIndexFilter(JqFilter source, JqFilter indexExpr) : this(indexExpr)
     {
         this.source = source;
