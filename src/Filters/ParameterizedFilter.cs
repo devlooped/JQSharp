@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Devlooped;
 
@@ -7,6 +8,7 @@ public sealed class ParameterizedFilter : JqFilter
     private static readonly HashSet<string> knownNames = new(StringComparer.Ordinal)
     {
         "has", "contains", "inside", "startswith", "endswith", "ltrimstr", "rtrimstr", "trimstr", "split", "join", "index", "rindex", "indices", "in", "getpath", "delpaths", "bsearch", "flatten", "combinations", "error", "halt_error",
+        "test", "match", "capture", "scan", "splits", "sub", "gsub",
         "select", "map", "map_values", "sort_by", "group_by", "unique_by", "min_by", "max_by", "any", "all", "recurse", "paths", "walk", "del", "path", "pick", "isempty", "add",
         "range", "limit", "skip", "first", "last", "nth", "while", "until", "repeat", "with_entries", "setpath",
     };
@@ -14,6 +16,7 @@ public sealed class ParameterizedFilter : JqFilter
     private static readonly string[] knownBuiltinArities =
     [
         "has/1", "contains/1", "inside/1", "startswith/1", "endswith/1", "ltrimstr/1", "rtrimstr/1", "trimstr/1", "split/1", "join/1", "index/1", "rindex/1", "indices/1", "in/1", "getpath/1", "delpaths/1", "bsearch/1", "flatten/1", "combinations/1", "error/1", "halt_error/1",
+        "test/1", "test/2", "match/1", "match/2", "capture/1", "capture/2", "scan/1", "scan/2", "split/2", "splits/1", "splits/2", "sub/2", "sub/3", "gsub/2", "gsub/3",
         "select/1", "map/1", "map_values/1", "sort_by/1", "group_by/1", "unique_by/1", "min_by/1", "max_by/1", "any/1", "all/1", "recurse/1", "paths/1", "walk/1", "del/1", "path/1", "pick/1", "isempty/1", "add/1",
         "range/1", "range/2", "range/3", "any/2", "all/2", "recurse/2", "limit/2", "skip/2", "first/1", "last/1", "nth/1", "nth/2", "while/2", "until/2", "repeat/1", "with_entries/1", "setpath/2",
     ];
@@ -105,6 +108,21 @@ public sealed class ParameterizedFilter : JqFilter
             ("combinations", 1) => EvaluateCombinations(input),
             ("error", 1) => throw new JqException(args[0].Evaluate(input, _env).FirstOrDefault(CreateNullElement())),
             ("halt_error", 1) => throw new JqHaltException(ReadInt(args[0], input, 5)),
+            ("test", 1) => EvaluateTest(input),
+            ("test", 2) => EvaluateTest(input),
+            ("match", 1) => EvaluateMatch(input),
+            ("match", 2) => EvaluateMatch(input),
+            ("capture", 1) => EvaluateCapture(input),
+            ("capture", 2) => EvaluateCapture(input),
+            ("scan", 1) => EvaluateScan(input),
+            ("scan", 2) => EvaluateScan(input),
+            ("split", 2) => EvaluateRegexSplit(input),
+            ("splits", 1) => EvaluateSplits(input),
+            ("splits", 2) => EvaluateSplits(input),
+            ("sub", 2) => EvaluateSub(input),
+            ("sub", 3) => EvaluateSub(input),
+            ("gsub", 2) => EvaluateGsub(input),
+            ("gsub", 3) => EvaluateGsub(input),
 
             ("select", 1) => EvaluateSelect(input),
             ("map", 1) => EvaluateMap(input),
@@ -288,6 +306,374 @@ public sealed class ParameterizedFilter : JqFilter
             yield return CreateStringElement(string.Join(token, values));
         }
     }
+
+    private IEnumerable<JsonElement> EvaluateTest(JsonElement input)
+    {
+        var source = ReadRegexInput(input);
+        foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
+            yield return CreateBooleanElement(FindFirstRegexMatch(source, regex).Success);
+    }
+
+    private IEnumerable<JsonElement> EvaluateMatch(JsonElement input)
+    {
+        var source = ReadRegexInput(input);
+        foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
+        {
+            if (regex.Global)
+            {
+                foreach (var match in EnumerateRegexMatches(source, regex))
+                    yield return CreateRegexMatchObject(regex.Regex, match);
+
+                continue;
+            }
+
+            var first = FindFirstRegexMatch(source, regex);
+            if (!first.Success)
+                throw new JqException("input does not match regex");
+
+            yield return CreateRegexMatchObject(regex.Regex, first);
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateCapture(JsonElement input)
+    {
+        var source = ReadRegexInput(input);
+        foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
+        {
+            var match = FindFirstRegexMatch(source, regex);
+            if (!match.Success)
+                throw new JqException("input does not match regex");
+
+            yield return CreateCaptureObject(regex.Regex, match);
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateScan(JsonElement input)
+    {
+        var source = ReadRegexInput(input);
+        foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
+        {
+            var groupCount = regex.Regex.GetGroupNumbers().Count(number => number != 0);
+            foreach (var match in EnumerateRegexMatches(source, new RegexSpec(regex.Regex, true, regex.IgnoreEmpty)))
+            {
+                if (groupCount == 0)
+                {
+                    yield return CreateStringElement(match.Value);
+                    continue;
+                }
+
+                yield return CreateElement(writer =>
+                {
+                    writer.WriteStartArray();
+                    for (var i = 1; i < match.Groups.Count; i++)
+                    {
+                        var group = match.Groups[i];
+                        if (group.Success)
+                            writer.WriteStringValue(group.Value);
+                        else
+                            writer.WriteNullValue();
+                    }
+                    writer.WriteEndArray();
+                });
+            }
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateRegexSplit(JsonElement input)
+    {
+        var source = ReadRegexInput(input);
+        foreach (var regex in EnumerateRegexes(input, 0, 1))
+        {
+            var pieces = regex.Regex.Split(source);
+            yield return CreateElement(writer =>
+            {
+                writer.WriteStartArray();
+                foreach (var piece in pieces)
+                    writer.WriteStringValue(piece);
+                writer.WriteEndArray();
+            });
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateSplits(JsonElement input)
+    {
+        var source = ReadRegexInput(input);
+        foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
+        {
+            foreach (var piece in regex.Regex.Split(source))
+                yield return CreateStringElement(piece);
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateSub(JsonElement input)
+    {
+        var source = ReadRegexInput(input);
+        foreach (var regex in EnumerateRegexes(input, 0, args.Length == 3 ? 2 : null))
+        {
+            var match = FindFirstRegexMatch(source, regex);
+            if (!match.Success)
+            {
+                yield return CreateStringElement(source);
+                continue;
+            }
+
+            var matchObject = CreateRegexMatchObject(regex.Regex, match, promoteNamedCaptures: true);
+            var prefix = source[..match.Index];
+            var suffix = source[(match.Index + match.Length)..];
+            foreach (var replacement in EnumerateReplacementStrings(matchObject))
+                yield return CreateStringElement(prefix + replacement + suffix);
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateGsub(JsonElement input)
+    {
+        var source = ReadRegexInput(input);
+        foreach (var regex in EnumerateRegexes(input, 0, args.Length == 3 ? 2 : null))
+        {
+            var matches = EnumerateRegexMatches(source, new RegexSpec(regex.Regex, true, regex.IgnoreEmpty)).ToArray();
+            if (matches.Length == 0)
+            {
+                yield return CreateStringElement(source);
+                continue;
+            }
+
+            var outputs = new List<string> { "" };
+            var position = 0;
+            foreach (var match in matches)
+            {
+                var literal = source.Substring(position, match.Index - position);
+                var replacements = EnumerateReplacementStrings(CreateRegexMatchObject(regex.Regex, match, promoteNamedCaptures: true)).ToArray();
+                if (replacements.Length == 0)
+                {
+                    outputs.Clear();
+                    break;
+                }
+
+                var next = new List<string>(outputs.Count * replacements.Length);
+                foreach (var output in outputs)
+                {
+                    foreach (var replacement in replacements)
+                        next.Add(output + literal + replacement);
+                }
+
+                outputs = next;
+                position = match.Index + match.Length;
+            }
+
+            var suffix = source[position..];
+            foreach (var output in outputs)
+                yield return CreateStringElement(output + suffix);
+        }
+    }
+
+    private string ReadRegexInput(JsonElement input)
+    {
+        if (input.ValueKind != JsonValueKind.String)
+            throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a string");
+
+        return input.GetString() ?? "";
+    }
+
+    private IEnumerable<RegexSpec> EnumerateRegexes(JsonElement input, int patternArgIndex, int? flagsArgIndex)
+    {
+        if (flagsArgIndex is null)
+        {
+            foreach (var value in args[patternArgIndex].Evaluate(input, _env))
+                yield return CompileRegex(ReadRegexPattern(value), "");
+
+            yield break;
+        }
+
+        foreach (var patternValue in args[patternArgIndex].Evaluate(input, _env))
+        {
+            var pattern = ReadRegexPattern(patternValue);
+            foreach (var flagsValue in args[flagsArgIndex.Value].Evaluate(input, _env))
+                yield return CompileRegex(pattern, ReadRegexFlags(flagsValue));
+        }
+    }
+
+    private static string ReadRegexPattern(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.String)
+            throw new JqException($"{GetTypeName(value)} ({GetValueText(value)}) is not a string");
+
+        return value.GetString() ?? "";
+    }
+
+    private static string ReadRegexFlags(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Null)
+            return "";
+        if (value.ValueKind != JsonValueKind.String)
+            throw new JqException($"{GetTypeName(value)} ({GetValueText(value)}) is not a string");
+
+        return value.GetString() ?? "";
+    }
+
+    private static RegexSpec CompileRegex(string pattern, string flags)
+    {
+        var options = RegexOptions.CultureInvariant;
+        var global = false;
+        var ignoreEmpty = false;
+        foreach (var flag in flags)
+        {
+            switch (flag)
+            {
+                case 'i':
+                    options |= RegexOptions.IgnoreCase;
+                    break;
+                case 'x':
+                    options |= RegexOptions.IgnorePatternWhitespace;
+                    break;
+                case 's':
+                    options |= RegexOptions.Singleline;
+                    break;
+                case 'm':
+                    options |= RegexOptions.Multiline;
+                    break;
+                case 'g':
+                    global = true;
+                    break;
+                case 'n':
+                    ignoreEmpty = true;
+                    break;
+            }
+        }
+
+        try
+        {
+            return new RegexSpec(new Regex(pattern, options), global, ignoreEmpty);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new JqException(ex.Message);
+        }
+    }
+
+    private static Match FindFirstRegexMatch(string source, RegexSpec spec)
+    {
+        var position = 0;
+        while (position <= source.Length)
+        {
+            var match = spec.Regex.Match(source, position);
+            if (!match.Success)
+                return match;
+
+            if (!spec.IgnoreEmpty || match.Length > 0)
+                return match;
+
+            position = match.Index + 1;
+        }
+
+        return Match.Empty;
+    }
+
+    private static IEnumerable<Match> EnumerateRegexMatches(string source, RegexSpec spec)
+    {
+        if (!spec.Global)
+        {
+            var first = FindFirstRegexMatch(source, spec);
+            if (first.Success)
+                yield return first;
+            yield break;
+        }
+
+        var position = 0;
+        while (position <= source.Length)
+        {
+            var match = spec.Regex.Match(source, position);
+            if (!match.Success)
+                yield break;
+
+            if (!spec.IgnoreEmpty || match.Length > 0)
+                yield return match;
+
+            position = match.Length == 0 ? match.Index + 1 : match.Index + match.Length;
+        }
+    }
+
+    private IEnumerable<string> EnumerateReplacementStrings(JsonElement matchObject)
+    {
+        foreach (var value in args[1].Evaluate(matchObject, _env))
+        {
+            if (value.ValueKind != JsonValueKind.String)
+                throw new JqException($"{GetTypeName(value)} ({GetValueText(value)}) is not a string");
+
+            yield return value.GetString() ?? "";
+        }
+    }
+
+    private static JsonElement CreateRegexMatchObject(Regex regex, Match match, bool promoteNamedCaptures = false)
+    {
+        return CreateElement(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("offset", match.Index);
+            writer.WriteNumber("length", match.Length);
+            writer.WriteString("string", match.Value);
+            writer.WritePropertyName("captures");
+            writer.WriteStartArray();
+            for (var i = 1; i < match.Groups.Count; i++)
+            {
+                var group = match.Groups[i];
+                var name = regex.GroupNameFromNumber(i);
+                var named = !int.TryParse(name, out _);
+
+                writer.WriteStartObject();
+                writer.WriteNumber("offset", group.Success ? group.Index : -1);
+                writer.WriteNumber("length", group.Success ? group.Length : 0);
+                if (group.Success)
+                    writer.WriteString("string", group.Value);
+                else
+                    writer.WriteNull("string");
+                if (named)
+                    writer.WriteString("name", name);
+                else
+                    writer.WriteNull("name");
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            if (promoteNamedCaptures)
+            {
+                foreach (var groupName in regex.GetGroupNames())
+                {
+                    if (int.TryParse(groupName, out _))
+                        continue;
+
+                    var group = match.Groups[groupName];
+                    writer.WritePropertyName(groupName);
+                    if (group.Success)
+                        writer.WriteStringValue(group.Value);
+                    else
+                        writer.WriteNullValue();
+                }
+            }
+            writer.WriteEndObject();
+        });
+    }
+
+    private static JsonElement CreateCaptureObject(Regex regex, Match match)
+    {
+        return CreateElement(writer =>
+        {
+            writer.WriteStartObject();
+            foreach (var name in regex.GetGroupNames())
+            {
+                if (name == "0" || int.TryParse(name, out _))
+                    continue;
+
+                var group = match.Groups[name];
+                writer.WritePropertyName(name);
+                if (group.Success)
+                    writer.WriteStringValue(group.Value);
+                else
+                    writer.WriteNullValue();
+            }
+            writer.WriteEndObject();
+        });
+    }
+
+    private readonly record struct RegexSpec(Regex Regex, bool Global, bool IgnoreEmpty);
 
     private IEnumerable<JsonElement> EvaluateIndex(JsonElement input, bool reverse)
     {

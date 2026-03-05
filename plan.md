@@ -177,7 +177,7 @@ Remaining parameterized builtins:
 - `@base64`, `@base64d`, `@html`, `@uri`, `@urid`, `@csv`, `@tsv`, `@sh`, `@json`, `@text`
 - Combined format with interpolation: `@foo "string with \(expr)"`
 
-### - [ ] Phase 12 — Regular Expressions
+### - [x] Phase 12 — Regular Expressions
 
 - `test(val)`, `test(regex; flags)`
 - `match(val)`, `match(regex; flags)`
