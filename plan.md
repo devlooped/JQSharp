@@ -152,7 +152,7 @@ Remaining parameterized builtins:
 - Variable scoping infrastructure
 - `$ENV` variable
 
-### - [ ] Phase 8 — reduce & foreach
+### - [x] Phase 8 — reduce & foreach
 
 - `reduce EXP as $var (INIT; UPDATE)` — depends on variable binding (Phase 7)
 - `foreach EXP as $var (INIT; UPDATE; EXTRACT)` — depends on variable binding (Phase 7)

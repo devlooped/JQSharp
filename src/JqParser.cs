@@ -297,6 +297,12 @@ public sealed class JqParser
         if (TryConsumeKeyword("if"))
             return ParseIfExpression();
 
+        if (TryConsumeKeyword("reduce"))
+            return ParseReduceExpression();
+
+        if (TryConsumeKeyword("foreach"))
+            return ParseForeachExpression();
+
         if (TryConsumeSequence(".."))
             return new RecurseFilter();
 
@@ -384,6 +390,85 @@ public sealed class JqParser
         }
 
         return new TryCatchFilter(body, new BuiltinFilter("empty"));
+    }
+
+    private JqFilter ParseReduceExpression()
+    {
+        var expression = ParsePostfix();
+        SkipWhitespace();
+        ExpectKeyword("as");
+        var pattern = ParsePattern();
+        var declared = pattern.VariableNames.Distinct(StringComparer.Ordinal).ToArray();
+        var newlyDeclared = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var name in declared)
+        {
+            if (_definedVariables.Add(name))
+                newlyDeclared.Add(name);
+        }
+
+        try
+        {
+            SkipWhitespace();
+            Expect('(');
+            JqFilter init;
+            JqFilter update;
+            init = ParsePipe();
+            SkipWhitespace();
+            Expect(';');
+            update = ParsePipe();
+            SkipWhitespace();
+            Expect(')');
+            return new ReduceFilter(expression, pattern, init, update);
+        }
+        finally
+        {
+            foreach (var name in newlyDeclared)
+                _definedVariables.Remove(name);
+        }
+    }
+
+    private JqFilter ParseForeachExpression()
+    {
+        var expression = ParsePostfix();
+        SkipWhitespace();
+        ExpectKeyword("as");
+        var pattern = ParsePattern();
+        var declared = pattern.VariableNames.Distinct(StringComparer.Ordinal).ToArray();
+        var newlyDeclared = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var name in declared)
+        {
+            if (_definedVariables.Add(name))
+                newlyDeclared.Add(name);
+        }
+
+        try
+        {
+            SkipWhitespace();
+            Expect('(');
+            JqFilter init;
+            JqFilter update;
+            JqFilter? extract = null;
+            init = ParsePipe();
+            SkipWhitespace();
+            Expect(';');
+            update = ParsePipe();
+            SkipWhitespace();
+            if (TryConsume(';'))
+            {
+                extract = ParsePipe();
+                SkipWhitespace();
+            }
+
+            Expect(')');
+            return new ForeachFilter(expression, pattern, init, update, extract);
+        }
+        finally
+        {
+            foreach (var name in newlyDeclared)
+                _definedVariables.Remove(name);
+        }
     }
 
     private JqFilter ParseIfElseBranch()
