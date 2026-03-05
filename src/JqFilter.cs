@@ -1,3 +1,4 @@
+using System;
 using System.Buffers;
 using System.Text.Json;
 
@@ -61,6 +62,70 @@ public abstract class JqFilter
     {
         if (input.ValueKind != JsonValueKind.Number)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a number");
+    }
+
+    protected static void RequireString(JsonElement input)
+    {
+        if (input.ValueKind != JsonValueKind.String)
+            throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a string");
+    }
+
+    private static readonly DateTimeOffset UnixEpoch = new(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    protected static DateTimeOffset FromUnixTimestamp(double seconds)
+    {
+        try
+        {
+            return UnixEpoch.AddSeconds(Math.Truncate(seconds));
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            throw new JqException($"Timestamp {seconds} is out of range");
+        }
+    }
+
+    protected static double ToUnixTimestamp(DateTimeOffset dt)
+        => (dt - UnixEpoch).TotalSeconds;
+
+    protected static JsonElement CreateBrokenDownTime(DateTimeOffset dt)
+    {
+        var dow = (int)dt.DayOfWeek; // 0=Sunday
+        var yday = dt.DayOfYear - 1; // 0-based
+        return CreateElement(writer =>
+        {
+            writer.WriteStartArray();
+            writer.WriteNumberValue(dt.Year);
+            writer.WriteNumberValue(dt.Month - 1); // 0-based month
+            writer.WriteNumberValue(dt.Day);
+            writer.WriteNumberValue(dt.Hour);
+            writer.WriteNumberValue(dt.Minute);
+            writer.WriteNumberValue(dt.Second);
+            writer.WriteNumberValue(dow);
+            writer.WriteNumberValue(yday);
+            writer.WriteEndArray();
+        });
+    }
+
+    protected static DateTimeOffset ParseBrokenDownTime(JsonElement input)
+    {
+        if (input.ValueKind != JsonValueKind.Array || input.GetArrayLength() < 6)
+            throw new JqException("Expected array of at least 6 elements for broken-down time");
+
+        var year = input[0].GetInt32();
+        var month = input[1].GetInt32() + 1; // convert 0-based to 1-based
+        var day = input[2].GetInt32();
+        var hour = input[3].GetInt32();
+        var minute = input[4].GetInt32();
+        var second = input[5].GetInt32();
+
+        try
+        {
+            return new DateTimeOffset(year, month, day, hour, minute, second, TimeSpan.Zero);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            throw new JqException("Invalid broken-down time values");
+        }
     }
 
     protected static bool IsTruthy(JsonElement value)

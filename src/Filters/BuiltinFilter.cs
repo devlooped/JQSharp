@@ -28,6 +28,7 @@ public sealed class BuiltinFilter : JqFilter
         "recurse", "halt", "error", "env", "builtins",
         "first", "last",
         "not",
+        "now", "todate", "todateiso8601", "fromdate", "fromdateiso8601", "gmtime", "localtime", "mktime",
     };
 
     private readonly string name;
@@ -132,6 +133,12 @@ public sealed class BuiltinFilter : JqFilter
             "builtins" => EvaluateBuiltins(),
             "first" => EvaluateFirst(input),
             "last" => EvaluateLast(input),
+            "now" => EvaluateNow(),
+            "todate" or "todateiso8601" => EvaluateToDateIso8601(input),
+            "fromdate" or "fromdateiso8601" => EvaluateFromDateIso8601(input),
+            "gmtime" => EvaluateGmtime(input),
+            "localtime" => EvaluateLocaltime(input),
+            "mktime" => EvaluateMktime(input),
             _ => throw new JqException($"Unknown builtin '{name}'."),
         };
     }
@@ -1111,5 +1118,47 @@ public sealed class BuiltinFilter : JqFilter
 
         yield return input.EnumerateArray().Last();
     }
+
+    private static IEnumerable<JsonElement> EvaluateNow()
+    {
+        yield return CreateNumberElement(ToUnixTimestamp(DateTimeOffset.UtcNow));
+    }
+
+    private static IEnumerable<JsonElement> EvaluateToDateIso8601(JsonElement input)
+    {
+        RequireNumber(input);
+        var dt = FromUnixTimestamp(input.GetDouble());
+        yield return CreateStringElement(dt.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private static IEnumerable<JsonElement> EvaluateFromDateIso8601(JsonElement input)
+    {
+        RequireString(input);
+        var str = input.GetString() ?? "";
+        if (!DateTimeOffset.TryParse(str, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
+            throw new JqException($"date \"{str}\" does not match format \"%Y-%m-%dT%H:%M:%SZ\"");
+        yield return CreateNumberElement(ToUnixTimestamp(dt));
+    }
+
+    private static IEnumerable<JsonElement> EvaluateGmtime(JsonElement input)
+    {
+        RequireNumber(input);
+        var dt = FromUnixTimestamp(input.GetDouble());
+        yield return CreateBrokenDownTime(dt);
+    }
+
+    private static IEnumerable<JsonElement> EvaluateLocaltime(JsonElement input)
+    {
+        RequireNumber(input);
+        var dt = FromUnixTimestamp(input.GetDouble()).ToLocalTime();
+        yield return CreateBrokenDownTime(dt);
+    }
+
+    private static IEnumerable<JsonElement> EvaluateMktime(JsonElement input)
+    {
+        var dt = ParseBrokenDownTime(input);
+        yield return CreateNumberElement(ToUnixTimestamp(dt));
+    }
+
 }
 

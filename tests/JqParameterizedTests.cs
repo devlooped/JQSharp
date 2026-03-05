@@ -162,6 +162,30 @@ public class JqParameterizedTests
     public void Fma_two_three_four()
         => Assert.Equal(["10"], EvaluateToStrings("fma(2;3;4)", "null"));
 
+    [Fact]
+    public void Strftime_formats_timestamp()
+        => Assert.Equal(["\"2015-03-05T23:51:47Z\""], EvaluateToStrings("""strftime("%Y-%m-%dT%H:%M:%SZ")""", "1425599507"));
+
+    [Fact]
+    public void Strftime_formats_date_only()
+        => Assert.Equal(["\"2015-03-05\""], EvaluateToStrings("""strftime("%Y-%m-%d")""", "1425599507"));
+
+    [Fact]
+    public void Strptime_parses_to_broken_down_time()
+        => Assert.Equal(["[2015,2,5,23,51,47,4,63]"], EvaluateToStrings("""strptime("%Y-%m-%dT%H:%M:%SZ")""", "\"2015-03-05T23:51:47Z\""));
+
+    [Fact]
+    public void Strptime_mktime_roundtrip()
+        => Assert.Equal(["1425599507"], EvaluateToStrings("""strptime("%Y-%m-%dT%H:%M:%SZ") | mktime""", "\"2015-03-05T23:51:47Z\""));
+
+    [Fact]
+    public void Strflocaltime_returns_string()
+    {
+        var results = Evaluate("""strflocaltime("%Y-%m-%d")""", "1425599507");
+        Assert.Single(results);
+        Assert.Equal(JsonValueKind.String, results[0].ValueKind);
+    }
+
     static string[] EvaluateToStrings(string expression, string inputJson)
         => Evaluate(expression, inputJson)
             .Select(static element => JsonSerializer.Serialize(element))

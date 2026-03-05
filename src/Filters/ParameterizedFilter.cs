@@ -12,6 +12,7 @@ public sealed class ParameterizedFilter : JqFilter
         "select", "map", "map_values", "sort_by", "group_by", "unique_by", "min_by", "max_by", "any", "all", "recurse", "paths", "walk", "del", "path", "pick", "isempty", "add",
         "range", "limit", "skip", "first", "last", "nth", "while", "until", "repeat", "with_entries", "setpath",
         "atan2", "pow", "fmax", "fmin", "fmod", "hypot", "remainder", "fma", "ldexp", "scalbln",
+        "strptime", "strftime", "strflocaltime",
     };
 
     private static readonly string[] knownBuiltinArities =
@@ -21,6 +22,7 @@ public sealed class ParameterizedFilter : JqFilter
         "select/1", "map/1", "map_values/1", "sort_by/1", "group_by/1", "unique_by/1", "min_by/1", "max_by/1", "any/1", "all/1", "recurse/1", "paths/1", "walk/1", "del/1", "path/1", "pick/1", "isempty/1", "add/1",
         "range/1", "range/2", "range/3", "any/2", "all/2", "recurse/2", "limit/2", "skip/2", "first/1", "last/1", "nth/1", "nth/2", "while/2", "until/2", "repeat/1", "with_entries/1", "setpath/2",
         "atan2/2", "pow/2", "fmax/2", "fmin/2", "fmod/2", "hypot/2", "remainder/2", "fma/3", "ldexp/2", "scalbln/2",
+        "strptime/1", "strftime/1", "strflocaltime/1",
     ];
 
     private readonly string name;
@@ -172,6 +174,9 @@ public sealed class ParameterizedFilter : JqFilter
             ("ldexp", 2) => EvaluateMathBinary(input, static (x, y) => x * Math.Pow(2, (int)y)),
             ("scalbln", 2) => EvaluateMathBinary(input, static (x, y) => x * Math.Pow(2, (int)y)),
             ("fma", 3) => EvaluateMathTernary(input, Math.FusedMultiplyAdd),
+            ("strftime", 1) => EvaluateStrftime(input),
+            ("strflocaltime", 1) => EvaluateStrflocaltime(input),
+            ("strptime", 1) => EvaluateStrptime(input),
 
             _ => throw new JqException($"Unknown function '{name}/{args.Length}'."),
         };
@@ -1794,6 +1799,52 @@ public sealed class ParameterizedFilter : JqFilter
                     yield return CreateMathResult(fn(a.GetDouble(), b.GetDouble(), c.GetDouble()));
                 }
             }
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateStrftime(JsonElement input)
+    {
+        RequireNumber(input);
+        var dt = FromUnixTimestamp(input.GetDouble());
+        foreach (var fmtEl in args[0].Evaluate(input, _env))
+        {
+            if (fmtEl.ValueKind != JsonValueKind.String)
+                throw new JqException($"{GetTypeName(fmtEl)} ({GetValueText(fmtEl)}) is not a string");
+            var fmt = fmtEl.GetString() ?? "";
+            yield return CreateStringElement(StrftimeFormat.Format(dt, fmt));
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateStrflocaltime(JsonElement input)
+    {
+        RequireNumber(input);
+        var dt = FromUnixTimestamp(input.GetDouble()).ToLocalTime();
+        foreach (var fmtEl in args[0].Evaluate(input, _env))
+        {
+            if (fmtEl.ValueKind != JsonValueKind.String)
+                throw new JqException($"{GetTypeName(fmtEl)} ({GetValueText(fmtEl)}) is not a string");
+            var fmt = fmtEl.GetString() ?? "";
+            yield return CreateStringElement(StrftimeFormat.Format(dt, fmt));
+        }
+    }
+
+    private IEnumerable<JsonElement> EvaluateStrptime(JsonElement input)
+    {
+        RequireString(input);
+        var str = input.GetString() ?? "";
+        foreach (var fmtEl in args[0].Evaluate(input, _env))
+        {
+            if (fmtEl.ValueKind != JsonValueKind.String)
+                throw new JqException($"{GetTypeName(fmtEl)} ({GetValueText(fmtEl)}) is not a string");
+            var fmt = fmtEl.GetString() ?? "";
+            var parts = StrftimeFormat.Parse(str, fmt);
+            yield return CreateElement(writer =>
+            {
+                writer.WriteStartArray();
+                foreach (var part in parts)
+                    writer.WriteNumberValue(part);
+                writer.WriteEndArray();
+            });
         }
     }
 

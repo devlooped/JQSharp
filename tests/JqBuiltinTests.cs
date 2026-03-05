@@ -526,6 +526,48 @@ public class JqBuiltinTests
     public void Length_throws_for_true()
         => Assert.ThrowsAny<Exception>(() => EvaluateToStrings("length", "true"));
 
+    [Fact]
+    public void Now_returns_unix_timestamp()
+    {
+        var results = Evaluate("now", "null");
+        Assert.Single(results);
+        Assert.True(results[0].ValueKind == JsonValueKind.Number);
+        Assert.True(results[0].GetDouble() > 1_000_000_000);
+    }
+
+    [Fact]
+    public void Todate_converts_timestamp_to_iso8601()
+        => Assert.Equal(["\"2015-03-05T23:51:47Z\""], EvaluateToStrings("todate", "1425599507"));
+
+    [Fact]
+    public void Fromdate_parses_iso8601_to_timestamp()
+        => Assert.Equal(["1425599507"], EvaluateToStrings("fromdate", "\"2015-03-05T23:51:47Z\""));
+
+    [Fact]
+    public void Gmtime_converts_epoch_zero()
+        => Assert.Equal(["[1970,0,1,0,0,0,4,0]"], EvaluateToStrings("gmtime", "0"));
+
+    [Fact]
+    public void Gmtime_converts_known_timestamp()
+        => Assert.Equal(["[2015,2,5,23,51,47,4,63]"], EvaluateToStrings("gmtime", "1425599507"));
+
+    [Fact]
+    public void Mktime_converts_broken_down_time()
+        => Assert.Equal(["1425599507"], EvaluateToStrings("mktime", "[2015,2,5,23,51,47,4,63]"));
+
+    [Fact]
+    public void Gmtime_mktime_roundtrip()
+        => Assert.Equal(["1425599507"], EvaluateToStrings("gmtime | mktime", "1425599507"));
+
+    [Fact]
+    public void Localtime_returns_8_element_array()
+    {
+        var results = Evaluate("localtime", "0");
+        Assert.Single(results);
+        Assert.Equal(JsonValueKind.Array, results[0].ValueKind);
+        Assert.Equal(8, results[0].GetArrayLength());
+    }
+
     static string[] EvaluateToStrings(string expression, string inputJson)
         => Evaluate(expression, inputJson)
             .Select(static element => JsonSerializer.Serialize(element))

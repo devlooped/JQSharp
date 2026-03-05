@@ -194,7 +194,7 @@ Remaining parameterized builtins:
 - Two-input: `atan2`, `pow`, `fmax`, `fmin`, `fmod`, `hypot`, `remainder`, etc.
 - Three-input: `fma`
 
-### - [ ] Phase 14 — Date Functions
+### - [x] Phase 14 — Date Functions
 
 - `now`, `todate`, `fromdate`, `todateiso8601`, `fromdateiso8601`
 - `strptime(fmt)`, `strftime(fmt)`, `strflocaltime(fmt)`

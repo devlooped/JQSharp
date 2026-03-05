@@ -327,6 +327,7 @@ Dispatched via a `switch` expression on the function name (~40 builtins). All ar
 | Type selectors | `arrays`, `objects`, `strings`, `numbers`, `nulls`, `values`, `scalars`, ... |
 | Collection ops | `keys`, `sort`, `unique`, `flatten`, `reverse`, `add`, `min`, `max`, ... |
 | Conversion | `tonumber`, `tostring`, `tojson`, `fromjson`, `explode`, `implode`, ... |
+| Date/Time | `now`, `todate`, `todateiso8601`, `fromdate`, `fromdateiso8601`, `gmtime`, `localtime`, `mktime` |
 | Math (one-input) | `abs`, `floor`, `sqrt`, `ceil`, `round`, `trunc`, `sin`, `cos`, `tan`, `acos`, `asin`, `atan`, `sinh`, `cosh`, `tanh`, `acosh`, `asinh`, `atanh`, `exp`, `exp2`, `expm1`, `log`, `log2`, `log10`, `logb`, `log1p`, `cbrt`, `fabs`, `erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1`, `nearbyint`, `modf`, `frexp` |
 
 ### 8.2 Parameterized Builtins (`ParameterizedFilter`)
@@ -341,6 +342,7 @@ Dispatched via a `switch` on `(name, args.Length)` (~50 signatures). Examples:
 | Generators | `range/1..3`, `limit/2`, `while/2`, `until/2`, `repeat/1`, ... |
 | Regex | `test/1..2`, `match/1..2`, `capture/1..2`, `scan/1..2`, `sub/2..3`, `gsub/2..3` |
 | Paths | `path/1`, `del/1`, `getpath/1`, `setpath/2`, `delpaths/1`, ... |
+| Date/Time | `strptime/1`, `strftime/1`, `strflocaltime/1` |
 | Math (multi-input) | `pow/2`, `atan2/2`, `fmax/2`, `fmin/2`, `fmod/2`, `hypot/2`, `remainder/2`, `ldexp/2`, `scalbln/2`, `fma/3` |
 
 ### 8.3 User-Defined Functions
@@ -425,6 +427,37 @@ The `@format` system supports 10 output formats:
 | `@base64d` | Base64 decoding |
 
 `FormattedStringFilter` handles the combined `@format "string \(expr)"` syntax, where literal parts pass through unchanged and interpolated expressions have the format applied.
+
+---
+
+## 11.1 Date Functions
+
+The date function system provides Unix timestamp manipulation and formatting:
+
+### Broken-Down Time Array
+
+Several date functions use an 8-element "broken-down time" array (matching C's `struct tm`):
+
+| Index | Field | Range | Notes |
+|-------|-------|-------|-------|
+| 0 | Year | full year (e.g., 2015) | |
+| 1 | Month | 0–11 | 0 = January |
+| 2 | Day | 1–31 | |
+| 3 | Hour | 0–23 | |
+| 4 | Minute | 0–59 | |
+| 5 | Second | 0–59 | |
+| 6 | Weekday | 0–6 | 0 = Sunday |
+| 7 | Year-day | 0–365 | 0-based |
+
+### strftime Format Conversion
+
+Since .NET uses different format specifiers than C's `strftime`, a custom `StrftimeFormat` utility class (`StrftimeFormat.cs`) provides direct rendering by walking the format string character-by-character. It supports all standard `%`-codes (`%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%Z`, `%j`, `%u`, `%w`, `%a`, `%A`, `%b`, `%B`, `%G`, `%V`, etc.) and a corresponding `Parse` method for `strptime`.
+
+### Timezone Behavior
+
+- `gmtime`, `todate`, `strftime` — always UTC
+- `localtime`, `strflocaltime` — use `TimeZoneInfo.Local`
+- `now` — returns `DateTimeOffset.UtcNow` as Unix timestamp (non-deterministic)
 
 ---
 
