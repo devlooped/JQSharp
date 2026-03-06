@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\JQ.csproj" />
+    <ProjectReference Include="..\JQSharp\JQSharp.csproj" />
   </ItemGroup>
 
 </Project>
