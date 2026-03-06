@@ -42,34 +42,37 @@ The public façade `Jq` composes both phases and clones output elements to decou
 
 ```
 jqsharp/
-├── JQ.slnx                     # Solution (src + tests)
+├── JQSharp.slnx                # Solution (src + tests)
 ├── src/
-│   ├── JQ.csproj                # Library — net10.0, System.Text.Json only
-│   ├── Jq.cs                    # Public façade: Evaluate() and Parse()
-│   ├── JqParser.cs              # Recursive-descent parser
-│   ├── JqFilter.cs              # Abstract base class for all filter nodes
-│   ├── JqEnvironment.cs         # Immutable variable/filter-binding environment
-│   ├── JqPattern.cs             # Destructuring pattern types
-│   ├── JqException.cs           # Runtime error (carries optional JsonElement)
-│   ├── JqHaltException.cs       # halt / halt_error control flow
-│   ├── FilterClosure.cs         # Pairs a JqFilter with its captured environment
-│   ├── PathResolver.cs          # Path algebra for assignment operators
-│   ├── MathExtra.cs             # Custom math functions (erf, tgamma, Bessel, etc.)
-│   └── Filters/                 # One file per AST node type (34 files)
-│       ├── IdentityFilter.cs
-│       ├── PipeFilter.cs
-│       ├── CommaFilter.cs
-│       ├── FieldFilter.cs
-│       ├── IndexFilter.cs
-│       ├── BuiltinFilter.cs     # All zero-arg builtins
-│       ├── ParameterizedFilter.cs # All parameterized builtins
-│       └── ...
-├── tests/
-│   ├── Tests.csproj             # xUnit test project
-│   ├── JqTestParser.cs          # Parses the jq test-suite format
-│   ├── Jq*Tests.cs              # Category-based test classes (11 files)
-│   └── suite/
-│       └── jq.test              # jq test suite (~1 990 test cases)
+│   ├── JQSharp/
+│   │   ├── JQSharp.csproj           # Library — net10.0, System.Text.Json only
+│   │   ├── Jq.cs                    # Public façade: Evaluate() and Parse()
+│   │   ├── JqParser.cs              # Recursive-descent parser
+│   │   ├── JqFilter.cs              # Abstract base class for all filter nodes
+│   │   ├── JqEnvironment.cs         # Immutable variable/filter-binding environment
+│   │   ├── JqPattern.cs             # Destructuring pattern types
+│   │   ├── JqException.cs           # Runtime error (carries optional JsonElement)
+│   │   ├── JqBreakException.cs      # break control flow (label/break)
+│   │   ├── JqHaltException.cs       # halt / halt_error control flow
+│   │   ├── FilterClosure.cs         # Pairs a JqFilter with its captured environment
+│   │   ├── PathResolver.cs          # Path algebra for assignment operators
+│   │   ├── MathExtra.cs             # Custom math functions (erf, tgamma, Bessel, etc.)
+│   │   ├── StrftimeFormat.cs        # strftime/strptime format rendering
+│   │   └── Filters/                 # One file per AST node type (37 files)
+│   │       ├── IdentityFilter.cs
+│   │       ├── PipeFilter.cs
+│   │       ├── CommaFilter.cs
+│   │       ├── FieldFilter.cs
+│   │       ├── IndexFilter.cs
+│   │       ├── BuiltinFilter.cs     # All zero-arg builtins
+│   │       ├── ParameterizedFilter.cs # All parameterized builtins
+│   │       └── ...
+│   └── Tests/
+│       ├── Tests.csproj             # xUnit test project
+│       ├── JqTestParser.cs          # Parses the jq test-suite format
+│       ├── Jq*Tests.cs              # Category-based test classes (12 files)
+│       └── suite/
+│           └── jq.test              # jq test suite (~1 990 test cases)
 └── docs/
     └── manual.md                # jq manual reference
 ```
@@ -528,6 +531,7 @@ flowchart TD
         C --> L["JqStringInterpolationTests"]
         C --> M["JqFormatStringTests"]
         C --> N["JqRegexTests"]
+        C --> O["JqAdvancedControlFlowTests"]
     end
 ```
 
