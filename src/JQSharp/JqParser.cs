@@ -286,7 +286,7 @@ sealed class JqParser
     {
         SkipWhitespace();
         JqFilter filter;
-        if (Peek() == '.' && Peek(1) != '.' && (IsIdentifierStart(Peek(1)) || Peek(1) == '['))
+        if (Peek() == '.' && Peek(1) != '.' && (IsIdentifierStart(Peek(1)) || Peek(1) == '"' || Peek(1) == '['))
             filter = new IdentityFilter();
         else
             filter = ParsePrimary();
@@ -305,6 +305,14 @@ sealed class JqParser
                 if (IsIdentifierStart(Peek()))
                 {
                     var name = ParseIdentifier();
+                    filter = new PipeFilter(filter, new FieldFilter(name));
+                    continue;
+                }
+
+                if (Peek() == '"')
+                {
+                    Consume();
+                    var name = ParseStringContent();
                     filter = new PipeFilter(filter, new FieldFilter(name));
                     continue;
                 }

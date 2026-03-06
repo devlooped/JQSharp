@@ -57,6 +57,14 @@ public class JqSelectorTests
         => Assert.Equal(["42"], EvaluateToStrings(".foo", """{"foo":42}"""));
 
     [Fact]
+    public void Quoted_field_access_returns_value_when_present()
+        => Assert.Equal(["42"], EvaluateToStrings(".\"foo\"", """{"foo":42}"""));
+
+    [Fact]
+    public void Chained_quoted_field_access_returns_nested_value()
+        => Assert.Equal(["20"], EvaluateToStrings(".\"foo\".\"bar\"", """{"foo":{"bar":20}}"""));
+
+    [Fact]
     public void Field_access_on_null_returns_null()
         => Assert.Equal(["null"], EvaluateToStrings(".foo", "null"));
 

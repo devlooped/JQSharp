@@ -6,6 +6,46 @@ namespace Devlooped.Tests;
 public class JqExpressionTests
 {
     [Fact]
+    public void Parse_concat()
+    {
+        var expression = Jq.Parse(
+            """
+            { "$type": (."type" // "typing") } + .
+            """);
+
+        Assert.NotNull(expression);
+    }
+
+    [Fact]
+    public void Parsed_concat_expression_includes_existing_type_when_present()
+    {
+        using var doc = JsonDocument.Parse("""{"type":"event","name":"foo"}""");
+        var results = Jq.Evaluate("""{ "$type": (."type" // "typing") } + .""", doc.RootElement)
+            .Select(static element => JsonSerializer.Serialize(element))
+            .ToArray();
+
+        Assert.Single(results);
+        using var output = JsonDocument.Parse(results[0]);
+        Assert.Equal("event", output.RootElement.GetProperty("$type").GetString());
+        Assert.Equal("event", output.RootElement.GetProperty("type").GetString());
+        Assert.Equal("foo", output.RootElement.GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public void Parsed_concat_expression_defaults_type_when_missing()
+    {
+        using var doc = JsonDocument.Parse("""{"name":"foo"}""");
+        var results = Jq.Evaluate("""{ "$type": (."type" // "typing") } + .""", doc.RootElement)
+            .Select(static element => JsonSerializer.Serialize(element))
+            .ToArray();
+
+        Assert.Single(results);
+        using var output = JsonDocument.Parse(results[0]);
+        Assert.Equal("typing", output.RootElement.GetProperty("$type").GetString());
+        Assert.Equal("foo", output.RootElement.GetProperty("name").GetString());
+    }
+
+    [Fact]
     public void Parse_returns_non_null_expression()
     {
         var expression = Jq.Parse(".");
