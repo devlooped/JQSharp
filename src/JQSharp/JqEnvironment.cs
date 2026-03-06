@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class JqEnvironment
+sealed class JqEnvironment
 {
     public static readonly JqEnvironment Empty = new(
         ImmutableDictionary<string, JsonElement>.Empty.WithComparers(StringComparer.Ordinal),

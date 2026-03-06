@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class BuiltinFilter : JqFilter
+sealed class BuiltinFilter : JqFilter
 {
     static readonly HashSet<string> builtinNames = new(StringComparer.Ordinal)
     {

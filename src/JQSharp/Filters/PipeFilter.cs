@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class PipeFilter : JqFilter
+sealed class PipeFilter : JqFilter
 {
     readonly JqFilter left;
     readonly JqFilter right;

@@ -25,7 +25,7 @@ public static class Jq
             yield return result.Clone();
     }
 
-    public static JqFilter Parse(string expression)
+    internal static JqFilter Parse(string expression)
     {
         if (string.IsNullOrWhiteSpace(expression))
             throw new JqException("Filter expression cannot be empty.");

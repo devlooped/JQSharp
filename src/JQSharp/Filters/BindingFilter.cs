@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class BindingFilter(JqFilter expression, JqPattern pattern, JqFilter body) : JqFilter
+sealed class BindingFilter(JqFilter expression, JqPattern pattern, JqFilter body) : JqFilter
 {
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {

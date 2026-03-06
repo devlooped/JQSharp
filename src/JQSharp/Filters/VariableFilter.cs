@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class VariableFilter(string name) : JqFilter
+sealed class VariableFilter(string name) : JqFilter
 {
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {

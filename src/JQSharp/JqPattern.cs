@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public abstract class JqPattern
+abstract class JqPattern
 {
     public abstract JqEnvironment Match(JsonElement value, JqEnvironment env, JsonElement input);
 
@@ -23,7 +23,7 @@ public abstract class JqPattern
     public abstract IEnumerable<string> VariableNames { get; }
 }
 
-public sealed class VariablePattern(string name) : JqPattern
+sealed class VariablePattern(string name) : JqPattern
 {
     public string Name { get; } = name;
 
@@ -32,7 +32,7 @@ public sealed class VariablePattern(string name) : JqPattern
     public override JqEnvironment Match(JsonElement value, JqEnvironment env, JsonElement input) => env.Bind(Name, value);
 }
 
-public sealed class ArrayPattern(JqPattern[] elements) : JqPattern
+sealed class ArrayPattern(JqPattern[] elements) : JqPattern
 {
     public JqPattern[] Elements { get; } = elements;
 
@@ -66,7 +66,7 @@ public sealed class ArrayPattern(JqPattern[] elements) : JqPattern
     }
 }
 
-public sealed class ObjectPattern(IReadOnlyList<(JqFilter KeyExpr, JqPattern ValuePattern)> entries) : JqPattern
+sealed class ObjectPattern(IReadOnlyList<(JqFilter KeyExpr, JqPattern ValuePattern)> entries) : JqPattern
 {
     public IReadOnlyList<(JqFilter KeyExpr, JqPattern ValuePattern)> Entries { get; } = entries;
 

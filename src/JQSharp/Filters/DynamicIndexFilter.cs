@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class DynamicIndexFilter : JqFilter
+sealed class DynamicIndexFilter : JqFilter
 {
     readonly JqFilter? source;
     readonly JqFilter indexExpression;

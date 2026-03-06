@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Devlooped;
 
-public sealed class ParameterizedFilter : JqFilter
+sealed class ParameterizedFilter : JqFilter
 {
     static readonly HashSet<string> knownNames = new(StringComparer.Ordinal)
     {

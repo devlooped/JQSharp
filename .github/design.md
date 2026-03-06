@@ -46,7 +46,7 @@ jqsharp/
 ├── src/
 │   ├── JQSharp/
 │   │   ├── JQSharp.csproj           # Library — net10.0, System.Text.Json only
-│   │   ├── Jq.cs                    # Public façade: Evaluate() and Parse()
+│   │   ├── Jq.cs                    # Public façade: Evaluate() (with internal Parse())
 │   │   ├── JqParser.cs              # Recursive-descent parser
 │   │   ├── JqFilter.cs              # Abstract base class for all filter nodes
 │   │   ├── JqEnvironment.cs         # Immutable variable/filter-binding environment

@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public abstract class JqFilter
+abstract class JqFilter
 {
     public abstract IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env);
 
@@ -25,7 +25,7 @@ public abstract class JqFilter
 
     protected static JsonElement CreateNullElement() => CreateElement(static writer => writer.WriteNullValue());
 
-    public static JsonElement CreateNullElementStatic() => CreateNullElement();
+    internal static JsonElement CreateNullElementStatic() => CreateNullElement();
 
     protected static JsonElement CreateStringElement(string value) => CreateElement(writer => writer.WriteStringValue(value));
 
@@ -157,7 +157,7 @@ public abstract class JqFilter
         };
     }
 
-    public static bool StructurallyEqual(JsonElement a, JsonElement b)
+    internal static bool StructurallyEqual(JsonElement a, JsonElement b)
     {
         if (a.ValueKind != b.ValueKind)
             return false;
@@ -229,9 +229,9 @@ public abstract class JqFilter
 
     protected static string GetValueText(JsonElement element) => element.GetRawText();
 
-    public static string GetTypeNameStatic(JsonElement element) => GetTypeName(element);
+    internal static string GetTypeNameStatic(JsonElement element) => GetTypeName(element);
 
-    public static string GetValueTextStatic(JsonElement element) => GetValueText(element);
+    internal static string GetValueTextStatic(JsonElement element) => GetValueText(element);
 
     static int CompareArrays(JsonElement leftValue, JsonElement rightValue)
     {

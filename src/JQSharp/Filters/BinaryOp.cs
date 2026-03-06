@@ -1,6 +1,6 @@
 namespace Devlooped;
 
-public enum BinaryOp
+enum BinaryOp
 {
     Add,
     Subtract,
