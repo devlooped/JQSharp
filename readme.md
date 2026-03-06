@@ -1,5 +1,4 @@
-![Icon](assets/img/icon.png) JQSharp
-============
+# ./jq# 
 
 [![Version](https://img.shields.io/nuget/vpre/Devlooped.JQSharp.svg?color=royalblue)](https://www.nuget.org/packages/Devlooped.JQSharp)
 [![Downloads](https://img.shields.io/nuget/dt/Devlooped.JQSharp.svg?color=darkmagenta)](https://www.nuget.org/packages/Devlooped.JQSharp)
