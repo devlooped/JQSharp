@@ -10,7 +10,7 @@ public sealed class FormatFilter : JqFilter
         "text", "json", "html", "uri", "urid", "csv", "tsv", "sh", "base64", "base64d"
     };
 
-    private readonly string formatName;
+    readonly string formatName;
 
     public FormatFilter(string formatName)
     {
@@ -43,14 +43,14 @@ public sealed class FormatFilter : JqFilter
         };
     }
 
-    private static string FormatText(JsonElement input)
+    static string FormatText(JsonElement input)
     {
         if (input.ValueKind == JsonValueKind.String)
             return input.GetString() ?? string.Empty;
         return JsonSerializer.Serialize(input);
     }
 
-    private static string FormatHtml(JsonElement input)
+    static string FormatHtml(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"string ({GetValueText(input)}) and {GetTypeName(input)} ({GetValueText(input)}) cannot be iterated over");
@@ -64,7 +64,7 @@ public sealed class FormatFilter : JqFilter
             .Replace("\"", "&quot;");
     }
 
-    private static string FormatUri(JsonElement input)
+    static string FormatUri(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not valid in a URI");
@@ -83,7 +83,7 @@ public sealed class FormatFilter : JqFilter
         return sb.ToString();
     }
 
-    private static string FormatUrid(JsonElement input)
+    static string FormatUrid(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a valid URI-encoded string");
@@ -91,7 +91,7 @@ public sealed class FormatFilter : JqFilter
         return Uri.UnescapeDataString(str);
     }
 
-    private static string FormatCsv(JsonElement input)
+    static string FormatCsv(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be csv-formatted, only arrays");
@@ -133,7 +133,7 @@ public sealed class FormatFilter : JqFilter
         return sb.ToString();
     }
 
-    private static string FormatTsv(JsonElement input)
+    static string FormatTsv(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be tsv-formatted, only arrays");
@@ -162,7 +162,7 @@ public sealed class FormatFilter : JqFilter
         return sb.ToString();
     }
 
-    private static string FormatSh(JsonElement input)
+    static string FormatSh(JsonElement input)
     {
         if (input.ValueKind == JsonValueKind.Array)
         {
@@ -177,13 +177,13 @@ public sealed class FormatFilter : JqFilter
         return ShQuote(input.GetString() ?? string.Empty);
     }
 
-    private static string ShQuote(string s)
+    static string ShQuote(string s)
     {
         // Wrap in single quotes, escape any single quotes as '\''
         return "'" + s.Replace("'", "'\\''") + "'";
     }
 
-    private static string FormatBase64(JsonElement input)
+    static string FormatBase64(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be base64-encoded");
@@ -191,7 +191,7 @@ public sealed class FormatFilter : JqFilter
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(str));
     }
 
-    private static string FormatBase64d(JsonElement input)
+    static string FormatBase64d(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be base64-decoded");

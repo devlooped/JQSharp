@@ -4,7 +4,7 @@ namespace Devlooped;
 
 public sealed class IndexFilter : JqFilter
 {
-    private readonly int index;
+    readonly int index;
 
     public IndexFilter(int index)
     {

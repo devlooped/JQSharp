@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Devlooped;
 
-internal static class StrftimeFormat
+static class StrftimeFormat
 {
     public static string Format(DateTimeOffset dt, string format)
     {

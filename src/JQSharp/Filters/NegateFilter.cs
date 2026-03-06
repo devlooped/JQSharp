@@ -4,7 +4,7 @@ namespace Devlooped;
 
 public sealed class NegateFilter : JqFilter
 {
-    private readonly JqFilter inner;
+    readonly JqFilter inner;
 
     public NegateFilter(JqFilter inner)
     {

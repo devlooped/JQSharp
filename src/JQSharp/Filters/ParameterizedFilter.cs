@@ -5,7 +5,7 @@ namespace Devlooped;
 
 public sealed class ParameterizedFilter : JqFilter
 {
-    private static readonly HashSet<string> knownNames = new(StringComparer.Ordinal)
+    static readonly HashSet<string> knownNames = new(StringComparer.Ordinal)
     {
         "has", "contains", "inside", "startswith", "endswith", "ltrimstr", "rtrimstr", "trimstr", "split", "join", "index", "rindex", "indices", "in", "INDEX", "IN", "JOIN", "getpath", "delpaths", "bsearch", "flatten", "combinations", "error", "halt_error",
         "test", "match", "capture", "scan", "splits", "sub", "gsub",
@@ -15,7 +15,7 @@ public sealed class ParameterizedFilter : JqFilter
         "strptime", "strftime", "strflocaltime",
     };
 
-    private static readonly string[] knownBuiltinArities =
+    static readonly string[] knownBuiltinArities =
     [
         "has/1", "contains/1", "inside/1", "startswith/1", "endswith/1", "ltrimstr/1", "rtrimstr/1", "trimstr/1", "split/1", "join/1", "index/1", "rindex/1", "indices/1", "in/1", "INDEX/1", "INDEX/2", "IN/1", "IN/2", "JOIN/2", "getpath/1", "delpaths/1", "bsearch/1", "flatten/1", "combinations/1", "error/1", "halt_error/1",
         "test/1", "test/2", "match/1", "match/2", "capture/1", "capture/2", "scan/1", "scan/2", "split/2", "splits/1", "splits/2", "sub/2", "sub/3", "gsub/2", "gsub/3",
@@ -25,9 +25,9 @@ public sealed class ParameterizedFilter : JqFilter
         "strptime/1", "strftime/1", "strflocaltime/1",
     ];
 
-    private readonly string name;
-    private readonly JqFilter[] args;
-    private JqEnvironment _env = JqEnvironment.Empty;
+    readonly string name;
+    readonly JqFilter[] args;
+    JqEnvironment _env = JqEnvironment.Empty;
 
     public ParameterizedFilter(string name, JqFilter[] args)
     {
@@ -187,13 +187,13 @@ public sealed class ParameterizedFilter : JqFilter
         };
     }
 
-    private IEnumerable<JsonElement> EvaluateHas(JsonElement input)
+    IEnumerable<JsonElement> EvaluateHas(JsonElement input)
     {
         foreach (var key in args[0].Evaluate(input, _env))
             yield return CreateBooleanElement(Has(input, key));
     }
 
-    private static bool Has(JsonElement container, JsonElement key)
+    static bool Has(JsonElement container, JsonElement key)
     {
         if (container.ValueKind == JsonValueKind.Object && key.ValueKind == JsonValueKind.String)
             return container.TryGetProperty(key.GetString() ?? "", out _);
@@ -203,19 +203,19 @@ public sealed class ParameterizedFilter : JqFilter
         return false;
     }
 
-    private IEnumerable<JsonElement> EvaluateContains(JsonElement input)
+    IEnumerable<JsonElement> EvaluateContains(JsonElement input)
     {
         foreach (var value in args[0].Evaluate(input, _env))
             yield return CreateBooleanElement(Contains(input, value));
     }
 
-    private IEnumerable<JsonElement> EvaluateInside(JsonElement input)
+    IEnumerable<JsonElement> EvaluateInside(JsonElement input)
     {
         foreach (var value in args[0].Evaluate(input, _env))
             yield return CreateBooleanElement(Contains(value, input));
     }
 
-    private IEnumerable<JsonElement> EvaluateStartswith(JsonElement input)
+    IEnumerable<JsonElement> EvaluateStartswith(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a string");
@@ -230,7 +230,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateEndswith(JsonElement input)
+    IEnumerable<JsonElement> EvaluateEndswith(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a string");
@@ -245,7 +245,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateTrimstr(JsonElement input, bool left, bool right)
+    IEnumerable<JsonElement> EvaluateTrimstr(JsonElement input, bool left, bool right)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a string");
@@ -274,7 +274,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateSplit(JsonElement input)
+    IEnumerable<JsonElement> EvaluateSplit(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a string");
@@ -300,7 +300,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateJoin(JsonElement input)
+    IEnumerable<JsonElement> EvaluateJoin(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -329,14 +329,14 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateTest(JsonElement input)
+    IEnumerable<JsonElement> EvaluateTest(JsonElement input)
     {
         var source = ReadRegexInput(input);
         foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
             yield return CreateBooleanElement(FindFirstRegexMatch(source, regex).Success);
     }
 
-    private IEnumerable<JsonElement> EvaluateMatch(JsonElement input)
+    IEnumerable<JsonElement> EvaluateMatch(JsonElement input)
     {
         var source = ReadRegexInput(input);
         foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
@@ -357,7 +357,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateCapture(JsonElement input)
+    IEnumerable<JsonElement> EvaluateCapture(JsonElement input)
     {
         var source = ReadRegexInput(input);
         foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
@@ -370,7 +370,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateScan(JsonElement input)
+    IEnumerable<JsonElement> EvaluateScan(JsonElement input)
     {
         var source = ReadRegexInput(input);
         foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
@@ -401,7 +401,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateRegexSplit(JsonElement input)
+    IEnumerable<JsonElement> EvaluateRegexSplit(JsonElement input)
     {
         var source = ReadRegexInput(input);
         foreach (var regex in EnumerateRegexes(input, 0, 1))
@@ -417,7 +417,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateSplits(JsonElement input)
+    IEnumerable<JsonElement> EvaluateSplits(JsonElement input)
     {
         var source = ReadRegexInput(input);
         foreach (var regex in EnumerateRegexes(input, 0, args.Length == 2 ? 1 : null))
@@ -427,7 +427,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateSub(JsonElement input)
+    IEnumerable<JsonElement> EvaluateSub(JsonElement input)
     {
         var source = ReadRegexInput(input);
         foreach (var regex in EnumerateRegexes(input, 0, args.Length == 3 ? 2 : null))
@@ -447,7 +447,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateGsub(JsonElement input)
+    IEnumerable<JsonElement> EvaluateGsub(JsonElement input)
     {
         var source = ReadRegexInput(input);
         foreach (var regex in EnumerateRegexes(input, 0, args.Length == 3 ? 2 : null))
@@ -488,7 +488,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private string ReadRegexInput(JsonElement input)
+    string ReadRegexInput(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a string");
@@ -496,7 +496,7 @@ public sealed class ParameterizedFilter : JqFilter
         return input.GetString() ?? "";
     }
 
-    private IEnumerable<RegexSpec> EnumerateRegexes(JsonElement input, int patternArgIndex, int? flagsArgIndex)
+    IEnumerable<RegexSpec> EnumerateRegexes(JsonElement input, int patternArgIndex, int? flagsArgIndex)
     {
         if (flagsArgIndex is null)
         {
@@ -514,7 +514,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private static string ReadRegexPattern(JsonElement value)
+    static string ReadRegexPattern(JsonElement value)
     {
         if (value.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(value)} ({GetValueText(value)}) is not a string");
@@ -522,7 +522,7 @@ public sealed class ParameterizedFilter : JqFilter
         return value.GetString() ?? "";
     }
 
-    private static string ReadRegexFlags(JsonElement value)
+    static string ReadRegexFlags(JsonElement value)
     {
         if (value.ValueKind == JsonValueKind.Null)
             return "";
@@ -532,7 +532,7 @@ public sealed class ParameterizedFilter : JqFilter
         return value.GetString() ?? "";
     }
 
-    private static RegexSpec CompileRegex(string pattern, string flags)
+    static RegexSpec CompileRegex(string pattern, string flags)
     {
         var options = RegexOptions.CultureInvariant;
         var global = false;
@@ -572,7 +572,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private static Match FindFirstRegexMatch(string source, RegexSpec spec)
+    static Match FindFirstRegexMatch(string source, RegexSpec spec)
     {
         var position = 0;
         while (position <= source.Length)
@@ -590,7 +590,7 @@ public sealed class ParameterizedFilter : JqFilter
         return Match.Empty;
     }
 
-    private static IEnumerable<Match> EnumerateRegexMatches(string source, RegexSpec spec)
+    static IEnumerable<Match> EnumerateRegexMatches(string source, RegexSpec spec)
     {
         if (!spec.Global)
         {
@@ -614,7 +614,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<string> EnumerateReplacementStrings(JsonElement matchObject)
+    IEnumerable<string> EnumerateReplacementStrings(JsonElement matchObject)
     {
         foreach (var value in args[1].Evaluate(matchObject, _env))
         {
@@ -625,7 +625,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private static JsonElement CreateRegexMatchObject(Regex regex, Match match, bool promoteNamedCaptures = false)
+    static JsonElement CreateRegexMatchObject(Regex regex, Match match, bool promoteNamedCaptures = false)
     {
         return CreateElement(writer =>
         {
@@ -674,7 +674,7 @@ public sealed class ParameterizedFilter : JqFilter
         });
     }
 
-    private static JsonElement CreateCaptureObject(Regex regex, Match match)
+    static JsonElement CreateCaptureObject(Regex regex, Match match)
     {
         return CreateElement(writer =>
         {
@@ -695,9 +695,9 @@ public sealed class ParameterizedFilter : JqFilter
         });
     }
 
-    private readonly record struct RegexSpec(Regex Regex, bool Global, bool IgnoreEmpty);
+    readonly record struct RegexSpec(Regex Regex, bool Global, bool IgnoreEmpty);
 
-    private IEnumerable<JsonElement> EvaluateIndex(JsonElement input, bool reverse)
+    IEnumerable<JsonElement> EvaluateIndex(JsonElement input, bool reverse)
     {
         foreach (var needle in args[0].Evaluate(input, _env))
         {
@@ -729,7 +729,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private static int FindIndex(JsonElement[] haystack, JsonElement needle, bool reverse)
+    static int FindIndex(JsonElement[] haystack, JsonElement needle, bool reverse)
     {
         var targetArray = needle.ValueKind == JsonValueKind.Array ? needle.EnumerateArray().ToArray() : null;
         if (targetArray is not null)
@@ -778,7 +778,7 @@ public sealed class ParameterizedFilter : JqFilter
         return -1;
     }
 
-    private static bool MatchesAt(JsonElement[] haystack, JsonElement[] target, int start)
+    static bool MatchesAt(JsonElement[] haystack, JsonElement[] target, int start)
     {
         for (var i = 0; i < target.Length; i++)
         {
@@ -789,7 +789,7 @@ public sealed class ParameterizedFilter : JqFilter
         return true;
     }
 
-    private IEnumerable<JsonElement> EvaluateIndices(JsonElement input)
+    IEnumerable<JsonElement> EvaluateIndices(JsonElement input)
     {
         foreach (var needle in args[0].Evaluate(input, _env))
         {
@@ -873,13 +873,13 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateIn(JsonElement input)
+    IEnumerable<JsonElement> EvaluateIn(JsonElement input)
     {
         foreach (var value in args[0].Evaluate(input, _env))
             yield return CreateBooleanElement(Has(value, input));
     }
 
-    private IEnumerable<JsonElement> EvaluateINDEX1(JsonElement input)
+    IEnumerable<JsonElement> EvaluateINDEX1(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"Cannot index {GetTypeName(input)}: not an array");
@@ -887,13 +887,13 @@ public sealed class ParameterizedFilter : JqFilter
         yield return BuildIndexObject(input.EnumerateArray(), args[0]);
     }
 
-    private IEnumerable<JsonElement> EvaluateINDEX2(JsonElement input)
+    IEnumerable<JsonElement> EvaluateINDEX2(JsonElement input)
     {
         var stream = args[0].Evaluate(input, _env);
         yield return BuildIndexObject(stream, args[1]);
     }
 
-    private JsonElement BuildIndexObject(IEnumerable<JsonElement> stream, JqFilter keySelector)
+    JsonElement BuildIndexObject(IEnumerable<JsonElement> stream, JqFilter keySelector)
     {
         var valuesByKey = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var value in stream)
@@ -917,7 +917,7 @@ public sealed class ParameterizedFilter : JqFilter
         });
     }
 
-    private IEnumerable<JsonElement> EvaluateIN1(JsonElement input)
+    IEnumerable<JsonElement> EvaluateIN1(JsonElement input)
     {
         var found = false;
         foreach (var candidate in args[0].Evaluate(input, _env))
@@ -932,7 +932,7 @@ public sealed class ParameterizedFilter : JqFilter
         yield return CreateBooleanElement(found);
     }
 
-    private IEnumerable<JsonElement> EvaluateIN2(JsonElement input)
+    IEnumerable<JsonElement> EvaluateIN2(JsonElement input)
     {
         var source = args[0].Evaluate(input, _env).ToArray();
         var stream = args[1].Evaluate(input, _env).ToArray();
@@ -940,7 +940,7 @@ public sealed class ParameterizedFilter : JqFilter
         yield return CreateBooleanElement(found);
     }
 
-    private IEnumerable<JsonElement> EvaluateJOIN2(JsonElement input)
+    IEnumerable<JsonElement> EvaluateJOIN2(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"Cannot join {GetTypeName(input)}: not an array");
@@ -971,7 +971,7 @@ public sealed class ParameterizedFilter : JqFilter
         });
     }
 
-    private IEnumerable<JsonElement> EvaluateGetPath(JsonElement input)
+    IEnumerable<JsonElement> EvaluateGetPath(JsonElement input)
     {
         foreach (var path in args[0].Evaluate(input, _env))
         {
@@ -983,7 +983,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateDelpaths(JsonElement input)
+    IEnumerable<JsonElement> EvaluateDelpaths(JsonElement input)
     {
         var result = input;
         foreach (var value in args[0].Evaluate(input, _env))
@@ -1003,7 +1003,7 @@ public sealed class ParameterizedFilter : JqFilter
         yield return result;
     }
 
-    private IEnumerable<JsonElement> EvaluateBsearch(JsonElement input)
+    IEnumerable<JsonElement> EvaluateBsearch(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1035,7 +1035,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateFlatten(JsonElement input)
+    IEnumerable<JsonElement> EvaluateFlatten(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be flattened");
@@ -1057,7 +1057,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private static void Flatten(JsonElement input, int depth, List<JsonElement> values)
+    static void Flatten(JsonElement input, int depth, List<JsonElement> values)
     {
         foreach (var value in input.EnumerateArray())
         {
@@ -1068,7 +1068,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateCombinations(JsonElement input)
+    IEnumerable<JsonElement> EvaluateCombinations(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1088,7 +1088,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private static IEnumerable<JsonElement> Power(JsonElement[] values, int n, List<JsonElement> current)
+    static IEnumerable<JsonElement> Power(JsonElement[] values, int n, List<JsonElement> current)
     {
         if (n == 0)
         {
@@ -1111,7 +1111,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateSelect(JsonElement input)
+    IEnumerable<JsonElement> EvaluateSelect(JsonElement input)
     {
         foreach (var value in args[0].Evaluate(input, _env))
         {
@@ -1120,7 +1120,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateMap(JsonElement input)
+    IEnumerable<JsonElement> EvaluateMap(JsonElement input)
     {
         var values = new List<JsonElement>();
         if (input.ValueKind == JsonValueKind.Array)
@@ -1153,7 +1153,7 @@ public sealed class ParameterizedFilter : JqFilter
         });
     }
 
-    private IEnumerable<JsonElement> EvaluateMapValues(JsonElement input)
+    IEnumerable<JsonElement> EvaluateMapValues(JsonElement input)
     {
         if (input.ValueKind == JsonValueKind.Array)
         {
@@ -1201,7 +1201,7 @@ public sealed class ParameterizedFilter : JqFilter
         throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is neither array nor object");
     }
 
-    private IEnumerable<JsonElement> EvaluateSortBy(JsonElement input)
+    IEnumerable<JsonElement> EvaluateSortBy(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1219,7 +1219,7 @@ public sealed class ParameterizedFilter : JqFilter
         });
     }
 
-    private IEnumerable<JsonElement> EvaluateGroupBy(JsonElement input)
+    IEnumerable<JsonElement> EvaluateGroupBy(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1246,7 +1246,7 @@ public sealed class ParameterizedFilter : JqFilter
         });
     }
 
-    private IEnumerable<JsonElement> EvaluateUniqueBy(JsonElement input)
+    IEnumerable<JsonElement> EvaluateUniqueBy(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1271,7 +1271,7 @@ public sealed class ParameterizedFilter : JqFilter
         });
     }
 
-    private IEnumerable<JsonElement> EvaluateMinBy(JsonElement input)
+    IEnumerable<JsonElement> EvaluateMinBy(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1298,7 +1298,7 @@ public sealed class ParameterizedFilter : JqFilter
         yield return selected;
     }
 
-    private IEnumerable<JsonElement> EvaluateMaxBy(JsonElement input)
+    IEnumerable<JsonElement> EvaluateMaxBy(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1325,7 +1325,7 @@ public sealed class ParameterizedFilter : JqFilter
         yield return selected;
     }
 
-    private IEnumerable<JsonElement> EvaluateAny(JsonElement input)
+    IEnumerable<JsonElement> EvaluateAny(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1342,7 +1342,7 @@ public sealed class ParameterizedFilter : JqFilter
         yield return CreateBooleanElement(false);
     }
 
-    private IEnumerable<JsonElement> EvaluateAll(JsonElement input)
+    IEnumerable<JsonElement> EvaluateAll(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1359,13 +1359,13 @@ public sealed class ParameterizedFilter : JqFilter
         yield return CreateBooleanElement(true);
     }
 
-    private IEnumerable<JsonElement> EvaluateRecurse(JsonElement input)
+    IEnumerable<JsonElement> EvaluateRecurse(JsonElement input)
     {
         foreach (var value in Recurse1(input, args[0]))
             yield return value;
     }
 
-    private IEnumerable<JsonElement> Recurse1(JsonElement value, JqFilter next)
+    IEnumerable<JsonElement> Recurse1(JsonElement value, JqFilter next)
     {
         yield return value;
 
@@ -1386,7 +1386,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluatePaths(JsonElement input)
+    IEnumerable<JsonElement> EvaluatePaths(JsonElement input)
     {
         foreach (var path in EnumerateAllPaths(input, []))
         {
@@ -1398,7 +1398,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private static IEnumerable<JsonElement[]> EnumerateAllPaths(JsonElement input, JsonElement[] prefix)
+    static IEnumerable<JsonElement[]> EnumerateAllPaths(JsonElement input, JsonElement[] prefix)
     {
         if (input.ValueKind == JsonValueKind.Array)
         {
@@ -1424,12 +1424,12 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateWalk(JsonElement input)
+    IEnumerable<JsonElement> EvaluateWalk(JsonElement input)
     {
         yield return WalkCore(input, args[0]);
     }
 
-    private JsonElement WalkCore(JsonElement input, JqFilter f)
+    JsonElement WalkCore(JsonElement input, JqFilter f)
     {
         if (input.ValueKind == JsonValueKind.Array)
         {
@@ -1471,7 +1471,7 @@ public sealed class ParameterizedFilter : JqFilter
         return f.Evaluate(input, _env).FirstOrDefault(CreateNullElement());
     }
 
-    private IEnumerable<JsonElement> EvaluateDel(JsonElement input)
+    IEnumerable<JsonElement> EvaluateDel(JsonElement input)
     {
         var result = input;
         foreach (var path in PathResolver.GetPaths(args[0], input, _env))
@@ -1479,13 +1479,13 @@ public sealed class ParameterizedFilter : JqFilter
         yield return result;
     }
 
-    private IEnumerable<JsonElement> EvaluatePath(JsonElement input)
+    IEnumerable<JsonElement> EvaluatePath(JsonElement input)
     {
         foreach (var path in PathResolver.GetPaths(args[0], input, _env))
             yield return PathResolver.CreatePathValue(path);
     }
 
-    private IEnumerable<JsonElement> EvaluatePick(JsonElement input)
+    IEnumerable<JsonElement> EvaluatePick(JsonElement input)
     {
         var result = CreateNullElement();
         foreach (var path in PathResolver.GetPaths(args[0], input, _env))
@@ -1499,7 +1499,7 @@ public sealed class ParameterizedFilter : JqFilter
         yield return result;
     }
 
-    private IEnumerable<JsonElement> EvaluateAdd(JsonElement input)
+    IEnumerable<JsonElement> EvaluateAdd(JsonElement input)
     {
         var values = args[0].Evaluate(input, _env).ToArray();
         if (values.Length == 0)
@@ -1515,7 +1515,7 @@ public sealed class ParameterizedFilter : JqFilter
         yield return current;
     }
 
-    private static JsonElement Add(JsonElement left, JsonElement right)
+    static JsonElement Add(JsonElement left, JsonElement right)
     {
         if (left.ValueKind == JsonValueKind.Null)
             return right;
@@ -1571,7 +1571,7 @@ public sealed class ParameterizedFilter : JqFilter
         throw new JqException($"{GetTypeName(left)} ({GetValueText(left)}) and {GetTypeName(right)} ({GetValueText(right)}) cannot be added");
     }
 
-    private IEnumerable<JsonElement> EvaluateRange(JsonElement input)
+    IEnumerable<JsonElement> EvaluateRange(JsonElement input)
     {
         var start = 0d;
         var end = 0d;
@@ -1611,7 +1611,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private static IEnumerable<double> Range(double start, double end, double by)
+    static IEnumerable<double> Range(double start, double end, double by)
     {
         if (by == 0)
             yield break;
@@ -1627,7 +1627,7 @@ public sealed class ParameterizedFilter : JqFilter
             yield return i;
     }
 
-    private IEnumerable<JsonElement> EvaluateAny2(JsonElement input)
+    IEnumerable<JsonElement> EvaluateAny2(JsonElement input)
     {
         foreach (var value in args[0].Evaluate(input, _env))
         {
@@ -1641,7 +1641,7 @@ public sealed class ParameterizedFilter : JqFilter
         yield return CreateBooleanElement(false);
     }
 
-    private IEnumerable<JsonElement> EvaluateAll2(JsonElement input)
+    IEnumerable<JsonElement> EvaluateAll2(JsonElement input)
     {
         foreach (var value in args[0].Evaluate(input, _env))
         {
@@ -1655,13 +1655,13 @@ public sealed class ParameterizedFilter : JqFilter
         yield return CreateBooleanElement(true);
     }
 
-    private IEnumerable<JsonElement> EvaluateRecurse2(JsonElement input)
+    IEnumerable<JsonElement> EvaluateRecurse2(JsonElement input)
     {
         foreach (var value in Recurse2(input, args[0], args[1]))
             yield return value;
     }
 
-    private IEnumerable<JsonElement> Recurse2(JsonElement input, JqFilter next, JqFilter condition)
+    IEnumerable<JsonElement> Recurse2(JsonElement input, JqFilter next, JqFilter condition)
     {
         if (!condition.Evaluate(input, _env).Any(IsTruthy))
             yield break;
@@ -1684,7 +1684,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateLimit(JsonElement input)
+    IEnumerable<JsonElement> EvaluateLimit(JsonElement input)
     {
         var n = Math.Max(ReadInt(args[0], input, 0), 0);
         if (n == 0)
@@ -1700,7 +1700,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateSkip(JsonElement input)
+    IEnumerable<JsonElement> EvaluateSkip(JsonElement input)
     {
         var n = Math.Max(ReadInt(args[0], input, 0), 0);
         var count = 0;
@@ -1716,7 +1716,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateFirst(JsonElement input)
+    IEnumerable<JsonElement> EvaluateFirst(JsonElement input)
     {
         foreach (var value in args[0].Evaluate(input, _env))
         {
@@ -1725,7 +1725,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateLast(JsonElement input)
+    IEnumerable<JsonElement> EvaluateLast(JsonElement input)
     {
         var found = false;
         JsonElement last = default;
@@ -1739,7 +1739,7 @@ public sealed class ParameterizedFilter : JqFilter
             yield return last;
     }
 
-    private IEnumerable<JsonElement> EvaluateNth(JsonElement input)
+    IEnumerable<JsonElement> EvaluateNth(JsonElement input)
     {
         var n = ReadInt(args[0], input, -1);
         if (n < 0)
@@ -1752,7 +1752,7 @@ public sealed class ParameterizedFilter : JqFilter
             yield return input[n];
     }
 
-    private IEnumerable<JsonElement> EvaluateNth2(JsonElement input)
+    IEnumerable<JsonElement> EvaluateNth2(JsonElement input)
     {
         var n = ReadInt(args[0], input, -1);
         if (n < 0)
@@ -1771,7 +1771,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateWhile(JsonElement input)
+    IEnumerable<JsonElement> EvaluateWhile(JsonElement input)
     {
         var current = input;
         while (args[0].Evaluate(current, _env).Any(IsTruthy))
@@ -1781,7 +1781,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateUntil(JsonElement input)
+    IEnumerable<JsonElement> EvaluateUntil(JsonElement input)
     {
         var current = input;
         while (!args[0].Evaluate(current, _env).Any(IsTruthy))
@@ -1790,13 +1790,13 @@ public sealed class ParameterizedFilter : JqFilter
         yield return current;
     }
 
-    private IEnumerable<JsonElement> EvaluateRepeat(JsonElement input)
+    IEnumerable<JsonElement> EvaluateRepeat(JsonElement input)
     {
         foreach (var value in Repeat1(input, args[0]))
             yield return value;
     }
 
-    private IEnumerable<JsonElement> Repeat1(JsonElement input, JqFilter update)
+    IEnumerable<JsonElement> Repeat1(JsonElement input, JqFilter update)
     {
         JsonElement[] outputs;
         try
@@ -1816,7 +1816,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateWithEntries(JsonElement input)
+    IEnumerable<JsonElement> EvaluateWithEntries(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Object)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an object");
@@ -1858,7 +1858,7 @@ public sealed class ParameterizedFilter : JqFilter
         });
     }
 
-    private IEnumerable<JsonElement> EvaluateSetpath(JsonElement input)
+    IEnumerable<JsonElement> EvaluateSetpath(JsonElement input)
     {
         var value = args[1].Evaluate(input, _env).FirstOrDefault(CreateNullElement());
         var result = input;
@@ -1869,7 +1869,7 @@ public sealed class ParameterizedFilter : JqFilter
     }
 
     // Phase 13: Math functions
-    private IEnumerable<JsonElement> EvaluateMathBinary(JsonElement input, Func<double, double, double> fn)
+    IEnumerable<JsonElement> EvaluateMathBinary(JsonElement input, Func<double, double, double> fn)
     {
         foreach (var a in args[0].Evaluate(input, _env))
         {
@@ -1882,7 +1882,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateMathTernary(JsonElement input, Func<double, double, double, double> fn)
+    IEnumerable<JsonElement> EvaluateMathTernary(JsonElement input, Func<double, double, double, double> fn)
     {
         foreach (var a in args[0].Evaluate(input, _env))
         {
@@ -1899,7 +1899,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateStrftime(JsonElement input)
+    IEnumerable<JsonElement> EvaluateStrftime(JsonElement input)
     {
         RequireNumber(input);
         var dt = FromUnixTimestamp(input.GetDouble());
@@ -1912,7 +1912,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateStrflocaltime(JsonElement input)
+    IEnumerable<JsonElement> EvaluateStrflocaltime(JsonElement input)
     {
         RequireNumber(input);
         var dt = FromUnixTimestamp(input.GetDouble()).ToLocalTime();
@@ -1925,7 +1925,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private IEnumerable<JsonElement> EvaluateStrptime(JsonElement input)
+    IEnumerable<JsonElement> EvaluateStrptime(JsonElement input)
     {
         RequireString(input);
         var str = input.GetString() ?? "";
@@ -1945,7 +1945,7 @@ public sealed class ParameterizedFilter : JqFilter
         }
     }
 
-    private static bool TryReadIndex(JsonElement value, int length, out int index)
+    static bool TryReadIndex(JsonElement value, int length, out int index)
     {
         index = 0;
         if (value.ValueKind != JsonValueKind.Number)
@@ -1962,12 +1962,12 @@ public sealed class ParameterizedFilter : JqFilter
         return true;
     }
 
-    private static bool IsInteger(double number) =>
+    static bool IsInteger(double number) =>
         !double.IsNaN(number) &&
         !double.IsInfinity(number) &&
         Math.Floor(number) == number;
 
-    private static double ReadNumber(JsonElement value)
+    static double ReadNumber(JsonElement value)
     {
         if (value.ValueKind != JsonValueKind.Number)
             throw new JqException($"{GetTypeName(value)} ({GetValueText(value)}) is not a number");
@@ -1975,7 +1975,7 @@ public sealed class ParameterizedFilter : JqFilter
         return value.GetDouble();
     }
 
-    private int ReadInt(JqFilter filter, JsonElement input, int fallback)
+    int ReadInt(JqFilter filter, JsonElement input, int fallback)
     {
         var result = filter.Evaluate(input, _env).FirstOrDefault(CreateNumberElement(fallback));
         if (result.ValueKind != JsonValueKind.Number)

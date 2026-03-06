@@ -4,8 +4,8 @@ namespace Devlooped;
 
 public sealed class SliceFilter : JqFilter
 {
-    private readonly int? start;
-    private readonly int? end;
+    readonly int? start;
+    readonly int? end;
 
     public SliceFilter(int? start, int? end)
     {
@@ -57,7 +57,7 @@ public sealed class SliceFilter : JqFilter
         throw new JqException($"Cannot slice {GetTypeName(input)}");
     }
 
-    private (int Start, int End) Normalize(int length)
+    (int Start, int End) Normalize(int length)
     {
         var normalizedStart = NormalizeBound(start, length, 0);
         var normalizedEnd = NormalizeBound(end, length, length);
@@ -78,7 +78,7 @@ public sealed class SliceFilter : JqFilter
         return (normalizedStart, normalizedEnd);
     }
 
-    private static int NormalizeBound(int? value, int length, int fallback)
+    static int NormalizeBound(int? value, int length, int fallback)
     {
         if (!value.HasValue)
             return fallback;

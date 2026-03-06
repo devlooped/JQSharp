@@ -4,8 +4,8 @@ namespace Devlooped;
 
 public sealed class TryCatchFilter : JqFilter
 {
-    private readonly JqFilter body;
-    private readonly JqFilter catchFilter;
+    readonly JqFilter body;
+    readonly JqFilter catchFilter;
 
     public TryCatchFilter(JqFilter body, JqFilter catchFilter)
     {

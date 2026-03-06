@@ -6,7 +6,7 @@ namespace Devlooped;
 
 public sealed class BuiltinFilter : JqFilter
 {
-    private static readonly HashSet<string> builtinNames = new(StringComparer.Ordinal)
+    static readonly HashSet<string> builtinNames = new(StringComparer.Ordinal)
     {
         "empty",
         "type", "length", "utf8bytelength", "infinite", "nan",
@@ -31,7 +31,7 @@ public sealed class BuiltinFilter : JqFilter
         "now", "todate", "todateiso8601", "fromdate", "fromdateiso8601", "gmtime", "localtime", "mktime",
     };
 
-    private readonly string name;
+    readonly string name;
 
     public BuiltinFilter(string name)
     {
@@ -144,18 +144,18 @@ public sealed class BuiltinFilter : JqFilter
     }
 
     // Generator
-    private static IEnumerable<JsonElement> EvaluateEmpty()
+    static IEnumerable<JsonElement> EvaluateEmpty()
     {
         yield break;
     }
 
     // Type introspection
-    private static IEnumerable<JsonElement> EvaluateType(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateType(JsonElement input)
     {
         yield return CreateStringElement(GetTypeName(input));
     }
 
-    private static IEnumerable<JsonElement> EvaluateLength(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateLength(JsonElement input)
     {
         switch (input.ValueKind)
         {
@@ -192,7 +192,7 @@ public sealed class BuiltinFilter : JqFilter
         }
     }
 
-    private static IEnumerable<JsonElement> EvaluateUtf8ByteLength(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateUtf8ByteLength(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) only strings have UTF-8 byte length");
@@ -201,19 +201,19 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateNumberElement(Encoding.UTF8.GetByteCount(str));
     }
 
-    private static IEnumerable<JsonElement> EvaluateInfinite()
+    static IEnumerable<JsonElement> EvaluateInfinite()
     {
         // jq outputs 1.7976931348623157e+308 for infinite
         yield return CreateNumberElement(double.MaxValue);
     }
 
-    private static IEnumerable<JsonElement> EvaluateNan()
+    static IEnumerable<JsonElement> EvaluateNan()
     {
         // JSON cannot represent NaN; jq outputs null
         yield return CreateNullElement();
     }
 
-    private static IEnumerable<JsonElement> EvaluateIsInfinite(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateIsInfinite(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Number)
         {
@@ -224,7 +224,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateBooleanElement(double.IsInfinity(val) || val == double.MaxValue || val == double.MinValue);
     }
 
-    private static IEnumerable<JsonElement> EvaluateIsNan(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateIsNan(JsonElement input)
     {
         // Since we represent nan as null, check for null from nan context
         if (input.ValueKind == JsonValueKind.Null)
@@ -240,7 +240,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateBooleanElement(false);
     }
 
-    private static IEnumerable<JsonElement> EvaluateIsFinite(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateIsFinite(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Number)
         {
@@ -259,7 +259,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateBooleanElement(!isInf);
     }
 
-    private static IEnumerable<JsonElement> EvaluateIsNormal(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateIsNormal(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Number)
         {
@@ -271,37 +271,37 @@ public sealed class BuiltinFilter : JqFilter
     }
 
     // Type selectors
-    private static IEnumerable<JsonElement> EvaluateTypeSelector(JsonElement input, JsonValueKind kind)
+    static IEnumerable<JsonElement> EvaluateTypeSelector(JsonElement input, JsonValueKind kind)
     {
         if (input.ValueKind == kind)
             yield return input;
     }
 
-    private static IEnumerable<JsonElement> EvaluateIterables(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateIterables(JsonElement input)
     {
         if (input.ValueKind is JsonValueKind.Array or JsonValueKind.Object)
             yield return input;
     }
 
-    private static IEnumerable<JsonElement> EvaluateBooleans(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateBooleans(JsonElement input)
     {
         if (input.ValueKind is JsonValueKind.True or JsonValueKind.False)
             yield return input;
     }
 
-    private static IEnumerable<JsonElement> EvaluateNumbers(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateNumbers(JsonElement input)
     {
         if (input.ValueKind == JsonValueKind.Number)
             yield return input;
     }
 
-    private static IEnumerable<JsonElement> EvaluateNormals(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateNormals(JsonElement input)
     {
         if (input.ValueKind == JsonValueKind.Number && double.IsNormal(input.GetDouble()))
             yield return input;
     }
 
-    private static IEnumerable<JsonElement> EvaluateFinites(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateFinites(JsonElement input)
     {
         // jq: finites passes through values that are finite (including null representing nan)
         if (input.ValueKind == JsonValueKind.Null)
@@ -318,20 +318,20 @@ public sealed class BuiltinFilter : JqFilter
         }
     }
 
-    private static IEnumerable<JsonElement> EvaluateValues(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateValues(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Null)
             yield return input;
     }
 
-    private static IEnumerable<JsonElement> EvaluateScalars(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateScalars(JsonElement input)
     {
         if (input.ValueKind is not JsonValueKind.Array and not JsonValueKind.Object)
             yield return input;
     }
 
     // Object/Array builtins
-    private static IEnumerable<JsonElement> EvaluateKeys(JsonElement input, bool sorted)
+    static IEnumerable<JsonElement> EvaluateKeys(JsonElement input, bool sorted)
     {
         if (input.ValueKind == JsonValueKind.Array)
         {
@@ -366,7 +366,7 @@ public sealed class BuiltinFilter : JqFilter
         throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) has no keys");
     }
 
-    private static IEnumerable<JsonElement> EvaluateReverse(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateReverse(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be reversed");
@@ -382,7 +382,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluateSort(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateSort(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be sorted");
@@ -398,7 +398,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluateUnique(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateUnique(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -422,7 +422,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluateFlatten(JsonElement input, int depth)
+    static IEnumerable<JsonElement> EvaluateFlatten(JsonElement input, int depth)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be flattened");
@@ -438,7 +438,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static void FlattenRecursive(JsonElement array, int depth, List<JsonElement> result)
+    static void FlattenRecursive(JsonElement array, int depth, List<JsonElement> result)
     {
         foreach (var item in array.EnumerateArray())
         {
@@ -449,7 +449,7 @@ public sealed class BuiltinFilter : JqFilter
         }
     }
 
-    private static IEnumerable<JsonElement> EvaluateAdd(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateAdd(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -468,7 +468,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return accumulator;
     }
 
-    private static JsonElement AddValues(JsonElement left, JsonElement right)
+    static JsonElement AddValues(JsonElement left, JsonElement right)
     {
         if (left.ValueKind == JsonValueKind.Null)
             return right;
@@ -525,7 +525,7 @@ public sealed class BuiltinFilter : JqFilter
             $"{GetTypeName(left)} ({GetValueText(left)}) and {GetTypeName(right)} ({GetValueText(right)}) cannot be added");
     }
 
-    private static IEnumerable<JsonElement> EvaluateAny(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateAny(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -541,7 +541,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateBooleanElement(false);
     }
 
-    private static IEnumerable<JsonElement> EvaluateAll(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateAll(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -557,7 +557,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateBooleanElement(true);
     }
 
-    private static IEnumerable<JsonElement> EvaluateMin(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateMin(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -578,7 +578,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return min;
     }
 
-    private static IEnumerable<JsonElement> EvaluateMax(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateMax(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -599,7 +599,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return max;
     }
 
-    private static IEnumerable<JsonElement> EvaluateToEntries(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateToEntries(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Object)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an object");
@@ -619,7 +619,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluateFromEntries(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateFromEntries(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -656,13 +656,13 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluatePaths(JsonElement input)
+    static IEnumerable<JsonElement> EvaluatePaths(JsonElement input)
     {
         foreach (var path in EnumeratePaths(input))
             yield return path;
     }
 
-    private static IEnumerable<JsonElement> EnumeratePaths(JsonElement input)
+    static IEnumerable<JsonElement> EnumeratePaths(JsonElement input)
     {
         if (input.ValueKind == JsonValueKind.Array)
         {
@@ -722,7 +722,7 @@ public sealed class BuiltinFilter : JqFilter
         }
     }
 
-    private static IEnumerable<JsonElement> EvaluateTranspose(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateTranspose(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be transposed");
@@ -763,7 +763,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluateCombinations(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateCombinations(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -790,7 +790,7 @@ public sealed class BuiltinFilter : JqFilter
             yield return combo;
     }
 
-    private static IEnumerable<JsonElement> CartesianProduct(List<JsonElement[]> arrays, int index)
+    static IEnumerable<JsonElement> CartesianProduct(List<JsonElement[]> arrays, int index)
     {
         if (index == arrays.Count)
         {
@@ -821,7 +821,7 @@ public sealed class BuiltinFilter : JqFilter
     }
 
     // Conversion builtins
-    private static IEnumerable<JsonElement> EvaluateToNumber(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateToNumber(JsonElement input)
     {
         if (input.ValueKind == JsonValueKind.Number)
         {
@@ -843,7 +843,7 @@ public sealed class BuiltinFilter : JqFilter
         throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be converted to number");
     }
 
-    private static IEnumerable<JsonElement> EvaluateToString(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateToString(JsonElement input)
     {
         if (input.ValueKind == JsonValueKind.String)
         {
@@ -855,12 +855,12 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateStringElement(JsonSerializer.Serialize(input));
     }
 
-    private static IEnumerable<JsonElement> EvaluateToJson(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateToJson(JsonElement input)
     {
         yield return CreateStringElement(JsonSerializer.Serialize(input));
     }
 
-    private static IEnumerable<JsonElement> EvaluateFromJson(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateFromJson(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be parsed as JSON");
@@ -870,7 +870,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return doc.RootElement.Clone();
     }
 
-    private static IEnumerable<JsonElement> EvaluateExplode(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateExplode(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be exploded");
@@ -897,7 +897,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluateImplode(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateImplode(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be imploded");
@@ -914,7 +914,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateStringElement(sb.ToString());
     }
 
-    private static IEnumerable<JsonElement> EvaluateAsciiDowncase(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateAsciiDowncase(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be ascii_downcased");
@@ -923,7 +923,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateStringElement(str.ToLowerInvariant());
     }
 
-    private static IEnumerable<JsonElement> EvaluateAsciiUpcase(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateAsciiUpcase(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.String)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be ascii_upcased");
@@ -933,7 +933,7 @@ public sealed class BuiltinFilter : JqFilter
     }
 
     // Math builtins
-    private static IEnumerable<JsonElement> EvaluateAbs(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateAbs(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Number)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be negated");
@@ -941,7 +941,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateNumberElement(Math.Abs(input.GetDouble()));
     }
 
-    private static IEnumerable<JsonElement> EvaluateFloor(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateFloor(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Number)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be floored");
@@ -949,7 +949,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateNumberElement(Math.Floor(input.GetDouble()));
     }
 
-    private static IEnumerable<JsonElement> EvaluateSqrt(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateSqrt(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Number)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) cannot be sqrt'd");
@@ -958,13 +958,13 @@ public sealed class BuiltinFilter : JqFilter
     }
 
     // Phase 13: Math functions
-    private static IEnumerable<JsonElement> EvaluateMathUnary(JsonElement input, Func<double, double> fn)
+    static IEnumerable<JsonElement> EvaluateMathUnary(JsonElement input, Func<double, double> fn)
     {
         RequireNumber(input);
         yield return CreateMathResult(fn(input.GetDouble()));
     }
 
-    private static IEnumerable<JsonElement> EvaluateLogb(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateLogb(JsonElement input)
     {
         RequireNumber(input);
         var x = input.GetDouble();
@@ -974,7 +974,7 @@ public sealed class BuiltinFilter : JqFilter
             yield return CreateMathResult(Math.ILogB(x));
     }
 
-    private static IEnumerable<JsonElement> EvaluateModf(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateModf(JsonElement input)
     {
         RequireNumber(input);
         var x = input.GetDouble();
@@ -989,7 +989,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluateFrexp(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateFrexp(JsonElement input)
     {
         RequireNumber(input);
         var x = input.GetDouble();
@@ -1029,7 +1029,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static void WriteNumber(Utf8JsonWriter writer, double value)
+    static void WriteNumber(Utf8JsonWriter writer, double value)
     {
         if (value >= long.MinValue && value <= long.MaxValue && Math.Floor(value) == value)
             writer.WriteNumberValue((long)value);
@@ -1038,12 +1038,12 @@ public sealed class BuiltinFilter : JqFilter
     }
 
     // Other builtins
-    private static IEnumerable<JsonElement> EvaluateRecurse(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateRecurse(JsonElement input)
     {
         return Traverse(input);
     }
 
-    private static IEnumerable<JsonElement> Traverse(JsonElement current)
+    static IEnumerable<JsonElement> Traverse(JsonElement current)
     {
         yield return current;
 
@@ -1065,7 +1065,7 @@ public sealed class BuiltinFilter : JqFilter
         }
     }
 
-    private static IEnumerable<JsonElement> EvaluateEnv()
+    static IEnumerable<JsonElement> EvaluateEnv()
     {
         var envVars = Environment.GetEnvironmentVariables();
         yield return CreateElement(writer =>
@@ -1079,7 +1079,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluateBuiltins()
+    static IEnumerable<JsonElement> EvaluateBuiltins()
     {
         var names = builtinNames
             .Select(static name => $"{name}/0")
@@ -1097,7 +1097,7 @@ public sealed class BuiltinFilter : JqFilter
         });
     }
 
-    private static IEnumerable<JsonElement> EvaluateFirst(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateFirst(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1108,7 +1108,7 @@ public sealed class BuiltinFilter : JqFilter
         yield return input.EnumerateArray().First();
     }
 
-    private static IEnumerable<JsonElement> EvaluateLast(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateLast(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Array)
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not an array");
@@ -1119,19 +1119,19 @@ public sealed class BuiltinFilter : JqFilter
         yield return input.EnumerateArray().Last();
     }
 
-    private static IEnumerable<JsonElement> EvaluateNow()
+    static IEnumerable<JsonElement> EvaluateNow()
     {
         yield return CreateNumberElement(ToUnixTimestamp(DateTimeOffset.UtcNow));
     }
 
-    private static IEnumerable<JsonElement> EvaluateToDateIso8601(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateToDateIso8601(JsonElement input)
     {
         RequireNumber(input);
         var dt = FromUnixTimestamp(input.GetDouble());
         yield return CreateStringElement(dt.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture));
     }
 
-    private static IEnumerable<JsonElement> EvaluateFromDateIso8601(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateFromDateIso8601(JsonElement input)
     {
         RequireString(input);
         var str = input.GetString() ?? "";
@@ -1140,21 +1140,21 @@ public sealed class BuiltinFilter : JqFilter
         yield return CreateNumberElement(ToUnixTimestamp(dt));
     }
 
-    private static IEnumerable<JsonElement> EvaluateGmtime(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateGmtime(JsonElement input)
     {
         RequireNumber(input);
         var dt = FromUnixTimestamp(input.GetDouble());
         yield return CreateBrokenDownTime(dt);
     }
 
-    private static IEnumerable<JsonElement> EvaluateLocaltime(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateLocaltime(JsonElement input)
     {
         RequireNumber(input);
         var dt = FromUnixTimestamp(input.GetDouble()).ToLocalTime();
         yield return CreateBrokenDownTime(dt);
     }
 
-    private static IEnumerable<JsonElement> EvaluateMktime(JsonElement input)
+    static IEnumerable<JsonElement> EvaluateMktime(JsonElement input)
     {
         var dt = ParseBrokenDownTime(input);
         yield return CreateNumberElement(ToUnixTimestamp(dt));

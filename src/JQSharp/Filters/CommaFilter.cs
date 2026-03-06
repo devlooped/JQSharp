@@ -4,8 +4,8 @@ namespace Devlooped;
 
 public sealed class CommaFilter : JqFilter
 {
-    private readonly JqFilter left;
-    private readonly JqFilter right;
+    readonly JqFilter left;
+    readonly JqFilter right;
 
     public CommaFilter(JqFilter left, JqFilter right)
     {

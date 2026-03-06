@@ -1,11 +1,11 @@
-using Devlooped;
 using System.Text.Json;
+using Devlooped;
 
 namespace Devlooped.Tests;
 
 public class JqAdvancedControlFlowTests
 {
-    private static string[] EvaluateToStrings(string expression, string inputJson)
+    static string[] EvaluateToStrings(string expression, string inputJson)
     {
         using var document = JsonDocument.Parse(inputJson);
         return Jq.Evaluate(expression, document.RootElement)

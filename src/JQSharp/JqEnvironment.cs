@@ -10,10 +10,10 @@ public sealed class JqEnvironment
         ImmutableDictionary<string, JsonElement>.Empty.WithComparers(StringComparer.Ordinal),
         ImmutableDictionary<string, FilterClosure>.Empty.WithComparers(StringComparer.Ordinal));
 
-    private readonly ImmutableDictionary<string, JsonElement> bindings;
-    private readonly ImmutableDictionary<string, FilterClosure> filterBindings;
+    readonly ImmutableDictionary<string, JsonElement> bindings;
+    readonly ImmutableDictionary<string, FilterClosure> filterBindings;
 
-    private JqEnvironment(
+    JqEnvironment(
         ImmutableDictionary<string, JsonElement> bindings,
         ImmutableDictionary<string, FilterClosure> filterBindings)
     {

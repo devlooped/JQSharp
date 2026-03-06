@@ -70,7 +70,7 @@ public abstract class JqFilter
             throw new JqException($"{GetTypeName(input)} ({GetValueText(input)}) is not a string");
     }
 
-    private static readonly DateTimeOffset UnixEpoch = new(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    static readonly DateTimeOffset UnixEpoch = new(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     protected static DateTimeOffset FromUnixTimestamp(double seconds)
     {
@@ -174,40 +174,40 @@ public abstract class JqFilter
             case JsonValueKind.String:
                 return string.Equals(a.GetString(), b.GetString(), StringComparison.Ordinal);
             case JsonValueKind.Array:
-            {
-                var leftItems = a.EnumerateArray().ToArray();
-                var rightItems = b.EnumerateArray().ToArray();
-                if (leftItems.Length != rightItems.Length)
-                    return false;
-
-                for (var i = 0; i < leftItems.Length; i++)
                 {
-                    if (!StructurallyEqual(leftItems[i], rightItems[i]))
+                    var leftItems = a.EnumerateArray().ToArray();
+                    var rightItems = b.EnumerateArray().ToArray();
+                    if (leftItems.Length != rightItems.Length)
                         return false;
-                }
 
-                return true;
-            }
+                    for (var i = 0; i < leftItems.Length; i++)
+                    {
+                        if (!StructurallyEqual(leftItems[i], rightItems[i]))
+                            return false;
+                    }
+
+                    return true;
+                }
             case JsonValueKind.Object:
-            {
-                var leftProperties = a.EnumerateObject().ToArray();
-                var rightProperties = b.EnumerateObject().ToArray();
-                if (leftProperties.Length != rightProperties.Length)
-                    return false;
-
-                var leftSorted = leftProperties.OrderBy(static property => property.Name, StringComparer.Ordinal).ToArray();
-                var rightSorted = rightProperties.OrderBy(static property => property.Name, StringComparer.Ordinal).ToArray();
-
-                for (var i = 0; i < leftSorted.Length; i++)
                 {
-                    if (!string.Equals(leftSorted[i].Name, rightSorted[i].Name, StringComparison.Ordinal))
+                    var leftProperties = a.EnumerateObject().ToArray();
+                    var rightProperties = b.EnumerateObject().ToArray();
+                    if (leftProperties.Length != rightProperties.Length)
                         return false;
-                    if (!StructurallyEqual(leftSorted[i].Value, rightSorted[i].Value))
-                        return false;
-                }
 
-                return true;
-            }
+                    var leftSorted = leftProperties.OrderBy(static property => property.Name, StringComparer.Ordinal).ToArray();
+                    var rightSorted = rightProperties.OrderBy(static property => property.Name, StringComparer.Ordinal).ToArray();
+
+                    for (var i = 0; i < leftSorted.Length; i++)
+                    {
+                        if (!string.Equals(leftSorted[i].Name, rightSorted[i].Name, StringComparison.Ordinal))
+                            return false;
+                        if (!StructurallyEqual(leftSorted[i].Value, rightSorted[i].Value))
+                            return false;
+                    }
+
+                    return true;
+                }
             default:
                 return false;
         }
@@ -233,7 +233,7 @@ public abstract class JqFilter
 
     public static string GetValueTextStatic(JsonElement element) => GetValueText(element);
 
-    private static int CompareArrays(JsonElement leftValue, JsonElement rightValue)
+    static int CompareArrays(JsonElement leftValue, JsonElement rightValue)
     {
         var leftItems = leftValue.EnumerateArray().ToArray();
         var rightItems = rightValue.EnumerateArray().ToArray();
@@ -248,7 +248,7 @@ public abstract class JqFilter
         return leftItems.Length.CompareTo(rightItems.Length);
     }
 
-    private static int CompareObjects(JsonElement leftValue, JsonElement rightValue)
+    static int CompareObjects(JsonElement leftValue, JsonElement rightValue)
     {
         var leftSorted = leftValue.EnumerateObject()
             .OrderBy(static property => property.Name, StringComparer.Ordinal)
@@ -271,7 +271,7 @@ public abstract class JqFilter
         return leftSorted.Length.CompareTo(rightSorted.Length);
     }
 
-    private static int GetRank(JsonElement element)
+    static int GetRank(JsonElement element)
     {
         return element.ValueKind switch
         {
@@ -286,6 +286,6 @@ public abstract class JqFilter
         };
     }
 
-    private static bool GetBooleanValue(JsonElement element) => element.ValueKind == JsonValueKind.True;
+    static bool GetBooleanValue(JsonElement element) => element.ValueKind == JsonValueKind.True;
 }
 

@@ -5,9 +5,9 @@ namespace Devlooped;
 
 public sealed class BinaryOpFilter : JqFilter
 {
-    private readonly JqFilter left;
-    private readonly BinaryOp op;
-    private readonly JqFilter right;
+    readonly JqFilter left;
+    readonly BinaryOp op;
+    readonly JqFilter right;
 
     public BinaryOpFilter(JqFilter left, BinaryOp op, JqFilter right)
     {
@@ -25,7 +25,7 @@ public sealed class BinaryOpFilter : JqFilter
         }
     }
 
-    private JsonElement EvaluatePair(JsonElement leftValue, JsonElement rightValue)
+    JsonElement EvaluatePair(JsonElement leftValue, JsonElement rightValue)
     {
         return op switch
         {
@@ -46,7 +46,7 @@ public sealed class BinaryOpFilter : JqFilter
         };
     }
 
-    private JsonElement EvaluateAdd(JsonElement leftValue, JsonElement rightValue)
+    JsonElement EvaluateAdd(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Null)
             return rightValue;
@@ -78,7 +78,7 @@ public sealed class BinaryOpFilter : JqFilter
         throw CreateTypeError(leftValue, rightValue, "added");
     }
 
-    private JsonElement EvaluateSubtract(JsonElement leftValue, JsonElement rightValue)
+    JsonElement EvaluateSubtract(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Number && rightValue.ValueKind == JsonValueKind.Number)
             return CreateNumberElement(leftValue.GetDouble() - rightValue.GetDouble());
@@ -103,7 +103,7 @@ public sealed class BinaryOpFilter : JqFilter
         throw CreateTypeError(leftValue, rightValue, "subtracted");
     }
 
-    private JsonElement EvaluateMultiply(JsonElement leftValue, JsonElement rightValue)
+    JsonElement EvaluateMultiply(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Number && rightValue.ValueKind == JsonValueKind.Number)
             return CreateNumberElement(leftValue.GetDouble() * rightValue.GetDouble());
@@ -129,7 +129,7 @@ public sealed class BinaryOpFilter : JqFilter
         throw CreateTypeError(leftValue, rightValue, "multiplied");
     }
 
-    private JsonElement EvaluateDivide(JsonElement leftValue, JsonElement rightValue)
+    JsonElement EvaluateDivide(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Number && rightValue.ValueKind == JsonValueKind.Number)
         {
@@ -160,7 +160,7 @@ public sealed class BinaryOpFilter : JqFilter
         throw CreateTypeError(leftValue, rightValue, "divided");
     }
 
-    private JsonElement EvaluateModulo(JsonElement leftValue, JsonElement rightValue)
+    JsonElement EvaluateModulo(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Number && rightValue.ValueKind == JsonValueKind.Number)
         {
@@ -177,7 +177,7 @@ public sealed class BinaryOpFilter : JqFilter
         throw CreateTypeError(leftValue, rightValue, "divided (remainder)");
     }
 
-    private JsonElement RepeatString(string text, double count, JsonElement leftValue, JsonElement rightValue)
+    JsonElement RepeatString(string text, double count, JsonElement leftValue, JsonElement rightValue)
     {
         var repeats = Math.Floor(count);
         if (double.IsNaN(repeats) || repeats <= 0d)
@@ -193,7 +193,7 @@ public sealed class BinaryOpFilter : JqFilter
         return CreateStringElement(builder.ToString());
     }
 
-    private static JsonElement MergeObjects(JsonElement leftValue, JsonElement rightValue, bool recursive)
+    static JsonElement MergeObjects(JsonElement leftValue, JsonElement rightValue, bool recursive)
     {
         var merged = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 
@@ -226,7 +226,7 @@ public sealed class BinaryOpFilter : JqFilter
         });
     }
 
-    private static JqException CreateTypeError(JsonElement leftValue, JsonElement rightValue, string verbForOp)
+    static JqException CreateTypeError(JsonElement leftValue, JsonElement rightValue, string verbForOp)
     {
         return new JqException(
             $"{GetTypeName(leftValue)} ({GetValueText(leftValue)}) and {GetTypeName(rightValue)} ({GetValueText(rightValue)}) cannot be {verbForOp}");

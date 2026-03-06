@@ -16,7 +16,7 @@ public sealed class VariableFilter(string name) : JqFilter
         yield return env.Get(name);
     }
 
-    private static JsonElement BuildEnvObject()
+    static JsonElement BuildEnvObject()
     {
         var envVars = Environment.GetEnvironmentVariables();
         return CreateElement(writer =>

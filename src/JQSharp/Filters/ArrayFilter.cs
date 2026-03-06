@@ -4,7 +4,7 @@ namespace Devlooped;
 
 public sealed class ArrayFilter : JqFilter
 {
-    private readonly JqFilter inner;
+    readonly JqFilter inner;
 
     public ArrayFilter(JqFilter inner)
     {

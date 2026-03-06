@@ -4,7 +4,7 @@ namespace Devlooped;
 
 public sealed class FieldFilter : JqFilter
 {
-    private readonly string field;
+    readonly string field;
 
     public FieldFilter(string field)
     {

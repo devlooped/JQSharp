@@ -4,7 +4,7 @@ namespace Devlooped;
 
 public sealed class LiteralFilter : JqFilter
 {
-    private readonly JsonElement value;
+    readonly JsonElement value;
 
     public LiteralFilter(JsonElement value)
     {

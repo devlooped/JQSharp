@@ -4,8 +4,8 @@ namespace Devlooped;
 
 public sealed class PipeFilter : JqFilter
 {
-    private readonly JqFilter left;
-    private readonly JqFilter right;
+    readonly JqFilter left;
+    readonly JqFilter right;
 
     public PipeFilter(JqFilter left, JqFilter right)
     {

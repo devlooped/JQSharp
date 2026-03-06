@@ -6,11 +6,11 @@ namespace Devlooped;
 
 public sealed class JqParser
 {
-    private readonly string text;
-    private readonly HashSet<string> _definedVariables = new(StringComparer.Ordinal);
-    private readonly Dictionary<(string Name, int Arity), UserFunctionDef> _definedFunctions = new();
-    private readonly HashSet<string> _definedFilterParams = new(StringComparer.Ordinal);
-    private int position;
+    readonly string text;
+    readonly HashSet<string> _definedVariables = new(StringComparer.Ordinal);
+    readonly Dictionary<(string Name, int Arity), UserFunctionDef> _definedFunctions = new();
+    readonly HashSet<string> _definedFilterParams = new(StringComparer.Ordinal);
+    int position;
 
     public JqParser(string text)
     {
@@ -36,7 +36,7 @@ public sealed class JqParser
         return filter;
     }
 
-    private JqFilter ParsePipe()
+    JqFilter ParsePipe()
     {
         var left = ParseComma();
         SkipWhitespace();
@@ -94,7 +94,7 @@ public sealed class JqParser
         return new PipeFilter(left, right);
     }
 
-    private JqFilter ParseComma()
+    JqFilter ParseComma()
     {
         var left = ParseAssignment();
         while (true)
@@ -110,7 +110,7 @@ public sealed class JqParser
         return left;
     }
 
-    private JqFilter ParseAssignment()
+    JqFilter ParseAssignment()
     {
         var left = ParseOr();
         SkipWhitespace();
@@ -138,7 +138,7 @@ public sealed class JqParser
         return left;
     }
 
-    private JqFilter ParseOr()
+    JqFilter ParseOr()
     {
         var left = ParseAnd();
         while (true)
@@ -154,7 +154,7 @@ public sealed class JqParser
         return left;
     }
 
-    private JqFilter ParseAnd()
+    JqFilter ParseAnd()
     {
         var left = ParseComparison();
         while (true)
@@ -170,7 +170,7 @@ public sealed class JqParser
         return left;
     }
 
-    private JqFilter ParseComparison()
+    JqFilter ParseComparison()
     {
         var left = ParseAlternative();
         SkipWhitespace();
@@ -194,7 +194,7 @@ public sealed class JqParser
         return new BinaryOpFilter(left, op, right);
     }
 
-    private JqFilter ParseAlternative()
+    JqFilter ParseAlternative()
     {
         var left = ParseAdditive();
         while (true)
@@ -212,7 +212,7 @@ public sealed class JqParser
         return left;
     }
 
-    private JqFilter ParseAdditive()
+    JqFilter ParseAdditive()
     {
         var left = ParseMultiplicative();
         while (true)
@@ -240,7 +240,7 @@ public sealed class JqParser
         return left;
     }
 
-    private JqFilter ParseMultiplicative()
+    JqFilter ParseMultiplicative()
     {
         var left = ParseUnary();
         while (true)
@@ -273,7 +273,7 @@ public sealed class JqParser
         return left;
     }
 
-    private JqFilter ParseUnary()
+    JqFilter ParseUnary()
     {
         SkipWhitespace();
         if (TryConsume('-'))
@@ -282,7 +282,7 @@ public sealed class JqParser
         return ParsePostfix();
     }
 
-    private JqFilter ParsePostfix()
+    JqFilter ParsePostfix()
     {
         SkipWhitespace();
         JqFilter filter;
@@ -336,7 +336,7 @@ public sealed class JqParser
         return filter;
     }
 
-    private JqFilter ParsePrimary()
+    JqFilter ParsePrimary()
     {
         SkipWhitespace();
 
@@ -464,7 +464,7 @@ public sealed class JqParser
         throw Error($"Unexpected character '{Current}'.");
     }
 
-    private JqFilter ParseIfExpression()
+    JqFilter ParseIfExpression()
     {
         var condition = ParsePipe();
         SkipWhitespace();
@@ -478,7 +478,7 @@ public sealed class JqParser
         return new ConditionalFilter(condition, thenBranch, elseBranch);
     }
 
-    private JqFilter ParseTryExpression()
+    JqFilter ParseTryExpression()
     {
         var body = ParsePostfix();
         SkipWhitespace();
@@ -491,7 +491,7 @@ public sealed class JqParser
         return new TryCatchFilter(body, new BuiltinFilter("empty"));
     }
 
-    private JqFilter ParseDefExpression()
+    JqFilter ParseDefExpression()
     {
         SkipWhitespace();
         var name = ParseIdentifier();
@@ -589,7 +589,7 @@ public sealed class JqParser
         }
     }
 
-    private JqFilter ParseReduceExpression()
+    JqFilter ParseReduceExpression()
     {
         var expression = ParsePostfix();
         SkipWhitespace();
@@ -625,7 +625,7 @@ public sealed class JqParser
         }
     }
 
-    private JqFilter ParseForeachExpression()
+    JqFilter ParseForeachExpression()
     {
         var expression = ParsePostfix();
         SkipWhitespace();
@@ -668,7 +668,7 @@ public sealed class JqParser
         }
     }
 
-    private JqFilter ParseLabelExpression()
+    JqFilter ParseLabelExpression()
     {
         SkipWhitespace();
         Expect('$');
@@ -689,7 +689,7 @@ public sealed class JqParser
         }
     }
 
-    private JqFilter ParseBreakExpression()
+    JqFilter ParseBreakExpression()
     {
         SkipWhitespace();
         Expect('$');
@@ -701,7 +701,7 @@ public sealed class JqParser
         return new BreakFilter(name);
     }
 
-    private JqFilter ParseIfElseBranch()
+    JqFilter ParseIfElseBranch()
     {
         SkipWhitespace();
         if (TryConsumeKeyword("elif"))
@@ -720,7 +720,7 @@ public sealed class JqParser
         return new IdentityFilter();
     }
 
-    private JqFilter ParseBracketOperation()
+    JqFilter ParseBracketOperation()
     {
         Expect('[');
         SkipWhitespace();
@@ -757,7 +757,7 @@ public sealed class JqParser
         return new DynamicIndexFilter(expression);
     }
 
-    private JqPattern ParsePattern()
+    JqPattern ParsePattern()
     {
         SkipWhitespace();
         if (TryConsume('$'))
@@ -775,7 +775,7 @@ public sealed class JqParser
         throw Error("Expected pattern (variable, array, or object).");
     }
 
-    private JqPattern ParseArrayPattern()
+    JqPattern ParseArrayPattern()
     {
         Expect('[');
         SkipWhitespace();
@@ -797,7 +797,7 @@ public sealed class JqParser
         return new ArrayPattern(items.ToArray());
     }
 
-    private JqPattern ParseObjectPattern()
+    JqPattern ParseObjectPattern()
     {
         Expect('{');
         SkipWhitespace();
@@ -855,7 +855,7 @@ public sealed class JqParser
         return new ObjectPattern(entries);
     }
 
-    private bool TryParseSlice(out JqFilter filter)
+    bool TryParseSlice(out JqFilter filter)
     {
         filter = null!;
         var startPos = position;
@@ -896,7 +896,7 @@ public sealed class JqParser
         return true;
     }
 
-    private JqFilter ParseArrayConstructor()
+    JqFilter ParseArrayConstructor()
     {
         Expect('[');
         SkipWhitespace();
@@ -909,7 +909,7 @@ public sealed class JqParser
         return new ArrayFilter(inner);
     }
 
-    private JqFilter ParseObjectConstructor()
+    JqFilter ParseObjectConstructor()
     {
         Expect('{');
         SkipWhitespace();
@@ -940,7 +940,7 @@ public sealed class JqParser
         return new ObjectFilter(pairs.ToArray());
     }
 
-    private JqFilter ParseObjectKey()
+    JqFilter ParseObjectKey()
     {
         SkipWhitespace();
 
@@ -963,7 +963,7 @@ public sealed class JqParser
         return ParseSubExpression(keyExpression);
     }
 
-    private JqFilter ParseObjectValue()
+    JqFilter ParseObjectValue()
     {
         var valueExpression = ReadUntilTopLevel(',', '}');
         if (string.IsNullOrWhiteSpace(valueExpression))
@@ -972,7 +972,7 @@ public sealed class JqParser
         return ParseSubExpression(valueExpression);
     }
 
-    private JqFilter ParseSubExpression(string expression)
+    JqFilter ParseSubExpression(string expression)
     {
         var parser = new JqParser(expression);
         foreach (var variable in _definedVariables)
@@ -985,7 +985,7 @@ public sealed class JqParser
         return parser.Parse();
     }
 
-    private string ReadUntilTopLevel(params char[] terminators)
+    string ReadUntilTopLevel(params char[] terminators)
     {
         var start = position;
         var parenDepth = 0;
@@ -1096,7 +1096,7 @@ public sealed class JqParser
         return text[start..position].Trim();
     }
 
-    private bool TryParseLiteral(out JqFilter literal)
+    bool TryParseLiteral(out JqFilter literal)
     {
         literal = null!;
 
@@ -1134,13 +1134,13 @@ public sealed class JqParser
         return false;
     }
 
-    private static JsonElement CreateStringLiteral(string value)
+    static JsonElement CreateStringLiteral(string value)
     {
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(value));
         return document.RootElement.Clone();
     }
 
-    private bool TryParseInteger(out int value)
+    bool TryParseInteger(out int value)
     {
         value = default;
         var start = position;
@@ -1171,7 +1171,7 @@ public sealed class JqParser
         return true;
     }
 
-    private bool TryParseNumberToken(out string token)
+    bool TryParseNumberToken(out string token)
     {
         token = string.Empty;
         var start = position;
@@ -1219,7 +1219,7 @@ public sealed class JqParser
         return true;
     }
 
-    private string ParseIdentifier()
+    string ParseIdentifier()
     {
         if (!IsIdentifierStart(Peek()))
             throw Error("Expected identifier.");
@@ -1232,7 +1232,7 @@ public sealed class JqParser
         return text[start..position];
     }
 
-    private string ParseStringContent()
+    string ParseStringContent()
     {
         var builder = new StringBuilder();
         while (!IsAtEnd)
@@ -1269,7 +1269,7 @@ public sealed class JqParser
         throw Error("Unterminated string literal.");
     }
 
-    private JqFilter ParseString()
+    JqFilter ParseString()
     {
         var (plainValue, hasInterpolation, parts) = ParseStringParts();
         if (!hasInterpolation)
@@ -1277,7 +1277,7 @@ public sealed class JqParser
         return new StringInterpolationFilter(parts);
     }
 
-    private (string PlainValue, bool HasInterpolation, (string? Literal, JqFilter? Expression)[] Parts) ParseStringParts()
+    (string PlainValue, bool HasInterpolation, (string? Literal, JqFilter? Expression)[] Parts) ParseStringParts()
     {
         var builder = new StringBuilder();
         var parts = new List<(string? Literal, JqFilter? Expression)>();
@@ -1344,7 +1344,7 @@ public sealed class JqParser
         throw Error("Unterminated string literal.");
     }
 
-    private char ParseUnicodeEscape()
+    char ParseUnicodeEscape()
     {
         if (position + 4 > text.Length)
             throw Error("Invalid unicode escape sequence.");
@@ -1360,7 +1360,7 @@ public sealed class JqParser
         return (char)int.Parse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
     }
 
-    private void SkipWhitespace()
+    void SkipWhitespace()
     {
         while (!IsAtEnd)
         {
@@ -1380,7 +1380,7 @@ public sealed class JqParser
         }
     }
 
-    private void SkipComment()
+    void SkipComment()
     {
         if (IsAtEnd || Current != '#')
             return;
@@ -1414,7 +1414,7 @@ public sealed class JqParser
         }
     }
 
-    private bool TryConsume(char ch)
+    bool TryConsume(char ch)
     {
         if (Peek() != ch)
             return false;
@@ -1423,7 +1423,7 @@ public sealed class JqParser
         return true;
     }
 
-    private bool TryConsumeSequence(string value)
+    bool TryConsumeSequence(string value)
     {
         if (position + value.Length > text.Length)
             return false;
@@ -1435,7 +1435,7 @@ public sealed class JqParser
         return true;
     }
 
-    private bool TryConsumeKeyword(string keyword)
+    bool TryConsumeKeyword(string keyword)
     {
         if (position + keyword.Length > text.Length)
             return false;
@@ -1451,19 +1451,19 @@ public sealed class JqParser
         return true;
     }
 
-    private void ExpectKeyword(string keyword)
+    void ExpectKeyword(string keyword)
     {
         if (!TryConsumeKeyword(keyword))
             throw Error($"Expected keyword '{keyword}'.");
     }
 
-    private void Expect(char ch)
+    void Expect(char ch)
     {
         if (!TryConsume(ch))
             throw Error($"Expected '{ch}'.");
     }
 
-    private char Consume()
+    char Consume()
     {
         if (IsAtEnd)
             throw Error("Unexpected end of filter.");
@@ -1471,9 +1471,9 @@ public sealed class JqParser
         return text[position++];
     }
 
-    private char Peek() => IsAtEnd ? '\0' : text[position];
+    char Peek() => IsAtEnd ? '\0' : text[position];
 
-    private char Peek(int offset)
+    char Peek(int offset)
     {
         var index = position + offset;
         if (index < 0 || index >= text.Length)
@@ -1482,15 +1482,15 @@ public sealed class JqParser
         return text[index];
     }
 
-    private char Current => IsAtEnd ? '\0' : text[position];
+    char Current => IsAtEnd ? '\0' : text[position];
 
-    private bool IsAtEnd => position >= text.Length;
+    bool IsAtEnd => position >= text.Length;
 
-    private static bool IsIdentifierStart(char ch) => ch == '_' || char.IsLetter(ch);
+    static bool IsIdentifierStart(char ch) => ch == '_' || char.IsLetter(ch);
 
-    private static bool IsIdentifierPart(char ch) => IsIdentifierStart(ch) || char.IsDigit(ch);
+    static bool IsIdentifierPart(char ch) => IsIdentifierStart(ch) || char.IsDigit(ch);
 
-    private JqException Error(string message)
+    JqException Error(string message)
     {
         return new JqException($"Parse error at position {position}: {message}");
     }

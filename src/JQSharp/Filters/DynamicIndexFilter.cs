@@ -4,8 +4,8 @@ namespace Devlooped;
 
 public sealed class DynamicIndexFilter : JqFilter
 {
-    private readonly JqFilter? source;
-    private readonly JqFilter indexExpression;
+    readonly JqFilter? source;
+    readonly JqFilter indexExpression;
 
     public DynamicIndexFilter(JqFilter indexExpr)
     {

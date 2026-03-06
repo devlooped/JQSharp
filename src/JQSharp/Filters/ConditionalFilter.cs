@@ -4,9 +4,9 @@ namespace Devlooped;
 
 public sealed class ConditionalFilter : JqFilter
 {
-    private readonly JqFilter condition;
-    private readonly JqFilter thenBranch;
-    private readonly JqFilter elseBranch;
+    readonly JqFilter condition;
+    readonly JqFilter thenBranch;
+    readonly JqFilter elseBranch;
 
     public ConditionalFilter(JqFilter condition, JqFilter thenBranch, JqFilter elseBranch)
     {

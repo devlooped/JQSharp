@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-internal sealed class PlainAssignmentFilter(JqFilter pathExpr, JqFilter valueExpr) : JqFilter
+sealed class PlainAssignmentFilter(JqFilter pathExpr, JqFilter valueExpr) : JqFilter
 {
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {

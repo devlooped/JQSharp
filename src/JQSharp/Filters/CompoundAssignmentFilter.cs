@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-internal enum CompoundAssignOp
+enum CompoundAssignOp
 {
     Add,
     Subtract,
@@ -13,7 +13,7 @@ internal enum CompoundAssignOp
     Alternative,
 }
 
-internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssignOp op, JqFilter rhsExpr) : JqFilter
+sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssignOp op, JqFilter rhsExpr) : JqFilter
 {
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
@@ -39,7 +39,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         yield return result;
     }
 
-    private static JsonElement ApplyBinaryOp(CompoundAssignOp op, JsonElement left, JsonElement right)
+    static JsonElement ApplyBinaryOp(CompoundAssignOp op, JsonElement left, JsonElement right)
     {
         return op switch
         {
@@ -52,7 +52,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         };
     }
 
-    private static JsonElement EvaluateAdd(JsonElement leftValue, JsonElement rightValue)
+    static JsonElement EvaluateAdd(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Null)
             return rightValue;
@@ -84,7 +84,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         throw CreateTypeError(leftValue, rightValue, "added");
     }
 
-    private static JsonElement EvaluateSubtract(JsonElement leftValue, JsonElement rightValue)
+    static JsonElement EvaluateSubtract(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Number && rightValue.ValueKind == JsonValueKind.Number)
             return CreateNumberElementStatic(leftValue.GetDouble() - rightValue.GetDouble());
@@ -109,7 +109,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         throw CreateTypeError(leftValue, rightValue, "subtracted");
     }
 
-    private static JsonElement EvaluateMultiply(JsonElement leftValue, JsonElement rightValue)
+    static JsonElement EvaluateMultiply(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Number && rightValue.ValueKind == JsonValueKind.Number)
             return CreateNumberElementStatic(leftValue.GetDouble() * rightValue.GetDouble());
@@ -135,7 +135,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         throw CreateTypeError(leftValue, rightValue, "multiplied");
     }
 
-    private static JsonElement EvaluateDivide(JsonElement leftValue, JsonElement rightValue)
+    static JsonElement EvaluateDivide(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Number && rightValue.ValueKind == JsonValueKind.Number)
         {
@@ -166,7 +166,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         throw CreateTypeError(leftValue, rightValue, "divided");
     }
 
-    private static JsonElement EvaluateModulo(JsonElement leftValue, JsonElement rightValue)
+    static JsonElement EvaluateModulo(JsonElement leftValue, JsonElement rightValue)
     {
         if (leftValue.ValueKind == JsonValueKind.Number && rightValue.ValueKind == JsonValueKind.Number)
         {
@@ -183,7 +183,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         throw CreateTypeError(leftValue, rightValue, "divided (remainder)");
     }
 
-    private static JsonElement RepeatString(string text, double count, JsonElement leftValue, JsonElement rightValue)
+    static JsonElement RepeatString(string text, double count, JsonElement leftValue, JsonElement rightValue)
     {
         var repeats = Math.Floor(count);
         if (double.IsNaN(repeats) || repeats <= 0d)
@@ -199,7 +199,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         return CreateStringElementStatic(builder.ToString());
     }
 
-    private static JsonElement MergeObjects(JsonElement leftValue, JsonElement rightValue, bool recursive)
+    static JsonElement MergeObjects(JsonElement leftValue, JsonElement rightValue, bool recursive)
     {
         var merged = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 
@@ -232,13 +232,13 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         });
     }
 
-    private static JqException CreateTypeError(JsonElement leftValue, JsonElement rightValue, string verbForOp)
+    static JqException CreateTypeError(JsonElement leftValue, JsonElement rightValue, string verbForOp)
     {
         return new JqException(
             $"{GetTypeName(leftValue)} ({GetValueText(leftValue)}) and {GetTypeName(rightValue)} ({GetValueText(rightValue)}) cannot be {verbForOp}");
     }
 
-    private static JsonElement CreateElementStatic(Action<Utf8JsonWriter> write)
+    static JsonElement CreateElementStatic(Action<Utf8JsonWriter> write)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -251,7 +251,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         return document.RootElement.Clone();
     }
 
-    private static JsonElement CreateNumberElementStatic(double value)
+    static JsonElement CreateNumberElementStatic(double value)
     {
         if (value >= long.MinValue &&
             value <= long.MaxValue &&
@@ -264,7 +264,7 @@ internal sealed class CompoundAssignmentFilter(JqFilter pathExpr, CompoundAssign
         return CreateElementStatic(writer => writer.WriteNumberValue(value));
     }
 
-    private static JsonElement CreateStringElementStatic(string value) =>
+    static JsonElement CreateStringElementStatic(string value) =>
         CreateElementStatic(writer => writer.WriteStringValue(value));
 }
 

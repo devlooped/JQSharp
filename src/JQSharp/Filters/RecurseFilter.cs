@@ -10,7 +10,7 @@ public sealed class RecurseFilter : JqFilter
             yield return item;
     }
 
-    private static IEnumerable<JsonElement> Traverse(JsonElement current)
+    static IEnumerable<JsonElement> Traverse(JsonElement current)
     {
         yield return current;
 

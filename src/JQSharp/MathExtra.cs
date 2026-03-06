@@ -1,6 +1,6 @@
 namespace Devlooped;
 
-internal static class MathExtra
+static class MathExtra
 {
     // Abramowitz & Stegun approximation 7.1.26 (max error ~1.5e-7)
     // Use a higher-precision rational approximation for better accuracy

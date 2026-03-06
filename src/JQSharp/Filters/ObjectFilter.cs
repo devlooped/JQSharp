@@ -4,7 +4,7 @@ namespace Devlooped;
 
 public sealed class ObjectFilter : JqFilter
 {
-    private readonly (JqFilter Key, JqFilter Value)[] pairs;
+    readonly (JqFilter Key, JqFilter Value)[] pairs;
 
     public ObjectFilter((JqFilter Key, JqFilter Value)[] pairs)
     {

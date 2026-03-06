@@ -7,8 +7,8 @@ namespace Devlooped;
 // Literal parts are NOT formatted; only interpolated expression values are.
 public sealed class FormattedStringFilter : JqFilter
 {
-    private readonly string formatName;
-    private readonly (string? Literal, JqFilter? Expression)[] parts;
+    readonly string formatName;
+    readonly (string? Literal, JqFilter? Expression)[] parts;
 
     public FormattedStringFilter(string formatName, (string? Literal, JqFilter? Expression)[] parts)
     {

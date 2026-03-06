@@ -5,7 +5,7 @@ namespace Devlooped;
 
 public sealed class StringInterpolationFilter : JqFilter
 {
-    private readonly (string? Literal, JqFilter? Expression)[] parts;
+    readonly (string? Literal, JqFilter? Expression)[] parts;
 
     public StringInterpolationFilter((string? Literal, JqFilter? Expression)[] parts)
     {

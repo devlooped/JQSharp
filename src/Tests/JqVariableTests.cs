@@ -5,7 +5,7 @@ namespace Devlooped.Tests;
 
 public class JqVariableTests
 {
-    private static string[] EvaluateToStrings(string expression, string inputJson)
+    static string[] EvaluateToStrings(string expression, string inputJson)
     {
         using var document = JsonDocument.Parse(inputJson);
         return Jq.Evaluate(expression, document.RootElement).Select(static e => JsonSerializer.Serialize(e)).ToArray();

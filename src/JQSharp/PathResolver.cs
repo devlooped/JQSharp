@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-internal static class PathResolver
+static class PathResolver
 {
     public static IEnumerable<JsonElement[]> GetPaths(JqFilter filter, JsonElement input, JqEnvironment env)
     {
@@ -147,7 +147,7 @@ internal static class PathResolver
         return SetPathValueCore(source, path, value, 0);
     }
 
-    private static JsonElement SetPathValueCore(JsonElement source, JsonElement[] path, JsonElement value, int depth)
+    static JsonElement SetPathValueCore(JsonElement source, JsonElement[] path, JsonElement value, int depth)
     {
         if (depth == path.Length)
             return value;
@@ -220,7 +220,7 @@ internal static class PathResolver
         return DeletePathValueCore(source, path, 0);
     }
 
-    private static JsonElement DeletePathValueCore(JsonElement source, JsonElement[] path, int depth)
+    static JsonElement DeletePathValueCore(JsonElement source, JsonElement[] path, int depth)
     {
         var part = path[depth];
         var leaf = depth == path.Length - 1;
@@ -284,7 +284,7 @@ internal static class PathResolver
         return source;
     }
 
-    private static bool TryReadIndex(JsonElement value, int length, out int index)
+    static bool TryReadIndex(JsonElement value, int length, out int index)
     {
         index = 0;
         if (value.ValueKind != JsonValueKind.Number)
@@ -301,12 +301,12 @@ internal static class PathResolver
         return true;
     }
 
-    private static bool IsInteger(double number) =>
+    static bool IsInteger(double number) =>
         !double.IsNaN(number) &&
         !double.IsInfinity(number) &&
         Math.Floor(number) == number;
 
-    private static JsonElement CreateElement(Action<Utf8JsonWriter> write)
+    static JsonElement CreateElement(Action<Utf8JsonWriter> write)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -319,11 +319,11 @@ internal static class PathResolver
         return document.RootElement.Clone();
     }
 
-    private static JsonElement CreateNullElement() => CreateElement(static writer => writer.WriteNullValue());
+    static JsonElement CreateNullElement() => CreateElement(static writer => writer.WriteNullValue());
 
-    private static JsonElement CreateStringElement(string value) => CreateElement(writer => writer.WriteStringValue(value));
+    static JsonElement CreateStringElement(string value) => CreateElement(writer => writer.WriteStringValue(value));
 
-    private static JsonElement CreateNumberElement(double value)
+    static JsonElement CreateNumberElement(double value)
     {
         if (value >= long.MinValue &&
             value <= long.MaxValue &&
@@ -336,7 +336,7 @@ internal static class PathResolver
         return CreateElement(writer => writer.WriteNumberValue(value));
     }
 
-    private static bool IsTruthy(JsonElement value) =>
+    static bool IsTruthy(JsonElement value) =>
         value.ValueKind != JsonValueKind.Null &&
         value.ValueKind != JsonValueKind.False;
 }
