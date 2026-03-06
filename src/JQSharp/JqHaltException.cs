@@ -1,6 +1,6 @@
 namespace Devlooped;
 
-public sealed class JqHaltException : Exception
+sealed class JqHaltException : Exception
 {
     public int ExitCode { get; }
 

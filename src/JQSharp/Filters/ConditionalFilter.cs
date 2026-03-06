@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class ConditionalFilter : JqFilter
+sealed class ConditionalFilter : JqFilter
 {
     readonly JqFilter condition;
     readonly JqFilter thenBranch;

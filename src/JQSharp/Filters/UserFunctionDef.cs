@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class UserFunctionDef
+sealed class UserFunctionDef
 {
     public string Name { get; }
     public string[] ParamNames { get; }

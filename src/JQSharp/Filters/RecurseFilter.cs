@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class RecurseFilter : JqFilter
+sealed class RecurseFilter : JqFilter
 {
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {

@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class FilterArgRefFilter(string paramName) : JqFilter
+sealed class FilterArgRefFilter(string paramName) : JqFilter
 {
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {

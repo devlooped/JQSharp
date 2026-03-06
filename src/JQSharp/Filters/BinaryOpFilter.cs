@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class BinaryOpFilter : JqFilter
+sealed class BinaryOpFilter : JqFilter
 {
     readonly JqFilter left;
     readonly BinaryOp op;

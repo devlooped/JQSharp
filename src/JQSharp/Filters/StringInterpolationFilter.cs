@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class StringInterpolationFilter : JqFilter
+sealed class StringInterpolationFilter : JqFilter
 {
     readonly (string? Literal, JqFilter? Expression)[] parts;
 

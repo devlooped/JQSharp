@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class SliceFilter : JqFilter
+sealed class SliceFilter : JqFilter
 {
     readonly int? start;
     readonly int? end;

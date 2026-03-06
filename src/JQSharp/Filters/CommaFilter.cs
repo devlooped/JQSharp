@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class CommaFilter : JqFilter
+sealed class CommaFilter : JqFilter
 {
     readonly JqFilter left;
     readonly JqFilter right;

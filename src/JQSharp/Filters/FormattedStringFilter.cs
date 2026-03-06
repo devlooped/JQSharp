@@ -5,7 +5,7 @@ namespace Devlooped;
 
 // Handles @format "string\(expr)" syntax.
 // Literal parts are NOT formatted; only interpolated expression values are.
-public sealed class FormattedStringFilter : JqFilter
+sealed class FormattedStringFilter : JqFilter
 {
     readonly string formatName;
     readonly (string? Literal, JqFilter? Expression)[] parts;

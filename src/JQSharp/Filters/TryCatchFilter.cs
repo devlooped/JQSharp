@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class TryCatchFilter : JqFilter
+sealed class TryCatchFilter : JqFilter
 {
     readonly JqFilter body;
     readonly JqFilter catchFilter;

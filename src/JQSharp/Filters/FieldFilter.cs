@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class FieldFilter : JqFilter
+sealed class FieldFilter : JqFilter
 {
     readonly string field;
 

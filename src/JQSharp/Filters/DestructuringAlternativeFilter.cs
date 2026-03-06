@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class DestructuringAlternativeFilter(JqFilter expression, JqPattern[] patterns, JqFilter body) : JqFilter
+sealed class DestructuringAlternativeFilter(JqFilter expression, JqPattern[] patterns, JqFilter body) : JqFilter
 {
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {

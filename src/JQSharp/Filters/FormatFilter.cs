@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class FormatFilter : JqFilter
+sealed class FormatFilter : JqFilter
 {
     public static readonly HashSet<string> FormatNames = new(StringComparer.Ordinal)
     {

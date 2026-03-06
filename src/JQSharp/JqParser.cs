@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class JqParser
+sealed class JqParser
 {
     readonly string text;
     readonly HashSet<string> _definedVariables = new(StringComparer.Ordinal);

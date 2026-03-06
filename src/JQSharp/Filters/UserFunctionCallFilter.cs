@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class UserFunctionCallFilter(UserFunctionDef funcDef, JqFilter[] args) : JqFilter
+sealed class UserFunctionCallFilter(UserFunctionDef funcDef, JqFilter[] args) : JqFilter
 {
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {

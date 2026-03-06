@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class IndexFilter : JqFilter
+sealed class IndexFilter : JqFilter
 {
     readonly int index;
 

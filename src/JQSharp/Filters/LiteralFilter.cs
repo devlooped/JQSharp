@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class LiteralFilter : JqFilter
+sealed class LiteralFilter : JqFilter
 {
     readonly JsonElement value;
 

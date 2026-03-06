@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-public sealed class LabelFilter(string labelName, JqFilter body) : JqFilter
+sealed class LabelFilter(string labelName, JqFilter body) : JqFilter
 {
     public override IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env)
     {
