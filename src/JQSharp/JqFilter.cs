@@ -6,6 +6,9 @@ namespace Devlooped;
 
 public abstract class JqFilter
 {
+    // Relative tolerance used to snap math results within floating-point rounding error of an integer.
+    const double MathIntegerTolerance = 1e-14;
+
     public abstract IEnumerable<JsonElement> Evaluate(JsonElement input, JqEnvironment env);
 
     public IEnumerable<JsonElement> Evaluate(JsonElement input) => Evaluate(input, JqEnvironment.Empty);
@@ -55,6 +58,13 @@ public abstract class JqFilter
             return CreateNumberElement(double.MaxValue);
         if (double.IsNegativeInfinity(value))
             return CreateNumberElement(-double.MaxValue);
+
+        // Snap values within floating-point rounding error of an integer to that integer.
+        // This handles platform-specific imprecision in math functions (e.g. cbrt(27) on Linux).
+        var rounded = Math.Round(value);
+        if (value != rounded && Math.Abs(value - rounded) < Math.Abs(value) * MathIntegerTolerance)
+            return CreateNumberElement(rounded);
+
         return CreateNumberElement(value);
     }
 
