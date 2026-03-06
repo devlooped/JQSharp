@@ -61,11 +61,11 @@ static class PathResolver
                 IEnumerable<JsonElement[]> tryPaths;
                 try
                 {
-                    tryPaths = GetPaths(tryCatch.Body, input, env).ToArray();
+                    tryPaths = [.. GetPaths(tryCatch.Body, input, env)];
                 }
                 catch (JqException)
                 {
-                    tryPaths = GetPaths(tryCatch.CatchFilter, input, env).ToArray();
+                    tryPaths = [.. GetPaths(tryCatch.CatchFilter, input, env)];
                 }
 
                 foreach (var path in tryPaths)
@@ -190,7 +190,7 @@ static class PathResolver
 
             List<JsonElement> arrayValue;
             if (source.ValueKind == JsonValueKind.Array)
-                arrayValue = source.EnumerateArray().ToList();
+                arrayValue = [.. source.EnumerateArray()];
             else if (source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
                 arrayValue = [];
             else

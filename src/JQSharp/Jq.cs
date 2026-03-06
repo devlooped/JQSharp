@@ -10,7 +10,7 @@ public static class Jq
         IEnumerable<JsonElement> results;
         try
         {
-            results = filter.Evaluate(input).ToList();
+            results = [.. filter.Evaluate(input)];
         }
         catch (JqHaltException)
         {

@@ -22,12 +22,12 @@ public sealed class TryCatchFilter : JqFilter
         JsonElement[] values;
         try
         {
-            values = body.Evaluate(input, env).ToArray();
+            values = [.. body.Evaluate(input, env)];
         }
         catch (JqException ex)
         {
             var errorValue = ex.Value ?? CreateStringElement(ex.Message);
-            values = catchFilter.Evaluate(errorValue, env).ToArray();
+            values = [.. catchFilter.Evaluate(errorValue, env)];
         }
 
         foreach (var value in values)

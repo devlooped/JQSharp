@@ -287,7 +287,7 @@ public sealed class ParameterizedFilter : JqFilter
 
             var token = separator.GetString() ?? "";
             var pieces = token == ""
-                ? source.EnumerateRunes().Select(static rune => rune.ToString()).ToArray()
+                ? [.. source.EnumerateRunes().Select(static rune => rune.ToString())]
                 : source.Split(token, StringSplitOptions.None);
 
             yield return CreateElement(writer =>
@@ -719,7 +719,7 @@ public sealed class ParameterizedFilter : JqFilter
 
             if (input.ValueKind == JsonValueKind.Array)
             {
-                var index = FindIndex(input.EnumerateArray().ToArray(), needle, reverse);
+                var index = FindIndex([.. input.EnumerateArray()], needle, reverse);
                 if (index >= 0)
                     yield return CreateNumberElement(index);
                 continue;
@@ -1372,7 +1372,7 @@ public sealed class ParameterizedFilter : JqFilter
         JsonElement[] outputs;
         try
         {
-            outputs = next.Evaluate(value, _env).ToArray();
+            outputs = [.. next.Evaluate(value, _env)];
         }
         catch (JqException)
         {
@@ -1670,7 +1670,7 @@ public sealed class ParameterizedFilter : JqFilter
         JsonElement[] outputs;
         try
         {
-            outputs = next.Evaluate(input, _env).ToArray();
+            outputs = [.. next.Evaluate(input, _env)];
         }
         catch (JqException)
         {
@@ -1801,7 +1801,7 @@ public sealed class ParameterizedFilter : JqFilter
         JsonElement[] outputs;
         try
         {
-            outputs = update.Evaluate(input, _env).ToArray();
+            outputs = [.. update.Evaluate(input, _env)];
         }
         catch (JqException)
         {

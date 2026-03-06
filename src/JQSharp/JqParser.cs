@@ -82,7 +82,7 @@ public sealed class JqParser
             if (patterns.Count == 1)
                 return new BindingFilter(left, patterns[0], body);
 
-            return new DestructuringAlternativeFilter(left, patterns.ToArray(), body);
+            return new DestructuringAlternativeFilter(left, [.. patterns], body);
         }
 
         if (Peek() != '|' || Peek(1) == '=')
@@ -447,9 +447,9 @@ public sealed class JqParser
                 }
 
                 if (_definedFunctions.TryGetValue((name, args.Count), out var funcDef))
-                    return new UserFunctionCallFilter(funcDef, args.ToArray());
+                    return new UserFunctionCallFilter(funcDef, [.. args]);
 
-                return new ParameterizedFilter(name, args.ToArray());
+                return new ParameterizedFilter(name, [.. args]);
             }
 
             if (_definedFunctions.TryGetValue((name, 0), out var zeroArgFuncDef))
@@ -794,7 +794,7 @@ public sealed class JqParser
             SkipWhitespace();
         }
 
-        return new ArrayPattern(items.ToArray());
+        return new ArrayPattern([.. items]);
     }
 
     JqPattern ParseObjectPattern()
@@ -916,7 +916,7 @@ public sealed class JqParser
 
         var pairs = new List<(JqFilter Key, JqFilter Value)>();
         if (TryConsume('}'))
-            return new ObjectFilter(pairs.ToArray());
+            return new ObjectFilter([.. pairs]);
 
         while (true)
         {
@@ -937,7 +937,7 @@ public sealed class JqParser
             Expect(',');
         }
 
-        return new ObjectFilter(pairs.ToArray());
+        return new ObjectFilter([.. pairs]);
     }
 
     JqFilter ParseObjectKey()

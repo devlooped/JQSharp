@@ -773,7 +773,7 @@ public sealed class BuiltinFilter : JqFilter
         {
             if (item.ValueKind != JsonValueKind.Array)
                 throw new JqException($"Cannot iterate over {GetTypeName(item)} ({GetValueText(item)})");
-            arrays.Add(item.EnumerateArray().ToArray());
+            arrays.Add([.. item.EnumerateArray()]);
         }
 
         if (arrays.Count == 0)
