@@ -3,10 +3,29 @@ using System.Text.Json;
 namespace Devlooped;
 
 /// <summary>
-/// Provides methods for evaluating jq filter expressions against JSON data.
+/// Provides methods for parsing and evaluating jq filter expressions against JSON data.
 /// </summary>
 public static class Jq
 {
+    /// <summary>
+    /// Parses a jq filter expression and returns a reusable <see cref="JqExpression"/>
+    /// that can be evaluated against multiple JSON inputs without re-parsing.
+    /// </summary>
+    /// <param name="expression">The jq filter expression to parse.</param>
+    /// <returns>A parsed <see cref="JqExpression"/> ready for evaluation.</returns>
+    /// <exception cref="JqException">Thrown when the expression is empty or invalid.</exception>
+    /// <remarks>
+    /// The returned <see cref="JqExpression"/> is thread-safe and can be cached and
+    /// evaluated concurrently from multiple threads.
+    /// </remarks>
+    public static JqExpression Parse(string expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+            throw new JqException("Filter expression cannot be empty.");
+
+        return new JqExpression(JqParser.Parse(expression));
+    }
+
     /// <summary>
     /// Evaluates a jq filter expression against the given JSON input and returns the matching results.
     /// </summary>
@@ -15,31 +34,5 @@ public static class Jq
     /// <returns>An enumerable of <see cref="JsonElement"/> values produced by the filter.</returns>
     /// <exception cref="JqException">Thrown when the expression is empty, invalid, or causes an error during evaluation.</exception>
     public static IEnumerable<JsonElement> Evaluate(string expression, JsonElement input)
-    {
-        var filter = Parse(expression);
-        IEnumerable<JsonElement> results;
-        try
-        {
-            results = [.. filter.Evaluate(input)];
-        }
-        catch (JqHaltException)
-        {
-            yield break;
-        }
-        catch (JqBreakException ex)
-        {
-            throw new JqException($"break: label {ex.Label} not found");
-        }
-
-        foreach (var result in results)
-            yield return result.Clone();
-    }
-
-    internal static JqFilter Parse(string expression)
-    {
-        if (string.IsNullOrWhiteSpace(expression))
-            throw new JqException("Filter expression cannot be empty.");
-
-        return JqParser.Parse(expression);
-    }
+        => Parse(expression).Evaluate(input);
 }

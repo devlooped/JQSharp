@@ -8,14 +8,22 @@ A pure C# implementation of the [jq](https://jqlang.github.io/jq/) JSON query la
 
 ```mermaid
 flowchart TD
-    A["Client Code"] -->|"Jq.Evaluate(expr, json)"| B["Jq (façade)"]
+    A["Client Code"] -->|"Jq.Parse(expr)"| B["Jq (façade)"]
+    A -->|"Jq.Evaluate(expr, json)"| B
     B -->|"Parse(expr)"| C["JqParser"]
     C -->|"AST"| D["JqFilter tree"]
-    B -->|"filter.Evaluate(input)"| D
-    D -->|"IEnumerable&lt;JsonElement&gt;"| A
+    B -->|"new JqExpression(filter)"| G["JqExpression"]
+    G -->|"filter.Evaluate(input)"| D
+    D -->|"IEnumerable&lt;JsonElement&gt;"| G
+    G -->|"cloned results"| A
 
     subgraph "Parse Phase"
         C
+    end
+
+    subgraph "Public API"
+        B
+        G
     end
 
     subgraph "Evaluation Phase"
@@ -31,10 +39,10 @@ The system is organized as a **two-phase pipeline**:
 
 | Phase | Entry Point | Responsibility |
 |-------|-------------|----------------|
-| **Parse** | `JqParser.Parse(string)` | Tokenize + parse jq expression → `JqFilter` AST |
-| **Evaluate** | `JqFilter.Evaluate(JsonElement, JqEnvironment)` | Walk the AST, producing `IEnumerable<JsonElement>` |
+| **Parse** | `Jq.Parse(string)` → `JqExpression` | Tokenize + parse jq expression → reusable `JqExpression` wrapping a `JqFilter` AST |
+| **Evaluate** | `JqExpression.Evaluate(JsonElement)` | Walk the AST, producing `IEnumerable<JsonElement>` |
 
-The public façade `Jq` composes both phases and clones output elements to decouple them from the input `JsonDocument`.
+The public façade `Jq` exposes `Parse()` to obtain a cacheable `JqExpression`, and `Evaluate()` as a convenience that combines both phases. `JqExpression` handles error translation and clones output elements to decouple them from the input `JsonDocument`. Both `JqExpression` and the underlying AST are immutable and thread-safe.
 
 ---
 
@@ -46,7 +54,8 @@ jqsharp/
 ├── src/
 │   ├── JQSharp/
 │   │   ├── JQSharp.csproj           # Library — net10.0, System.Text.Json only
-│   │   ├── Jq.cs                    # Public façade: Evaluate() (with internal Parse())
+│   │   ├── Jq.cs                    # Public façade: Parse() and Evaluate()
+│   │   ├── JqExpression.cs           # Parsed expression — cacheable, thread-safe
 │   │   ├── JqParser.cs              # Recursive-descent parser
 │   │   ├── JqFilter.cs              # Abstract base class for all filter nodes
 │   │   ├── JqEnvironment.cs         # Immutable variable/filter-binding environment
@@ -564,6 +573,9 @@ record JqTestCase(
 ---
 
 ## 13. Design Decisions & Trade-offs
+
+### Parse-Once, Evaluate-Many
+`Jq.Parse()` returns a `JqExpression` that wraps the internal `JqFilter` AST without exposing it. Consumers can cache a `JqExpression` and call `Evaluate()` repeatedly against different inputs, avoiding the cost of re-parsing. The `JqExpression` type is sealed with an internal constructor, so it cannot be subclassed or instantiated outside the library. `Jq.Evaluate(string, JsonElement)` remains as a convenience one-liner that calls `Parse` then `Evaluate`.
 
 ### No External Dependencies
 The library uses only `System.Text.Json` from the BCL. There are no third-party parser generators, JSON libraries, or utility packages.
