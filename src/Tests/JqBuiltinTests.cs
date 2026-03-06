@@ -408,7 +408,11 @@ public class JqBuiltinTests
 
     [Fact]
     public void Cbrt_of_27()
-        => Assert.Equal(["3"], EvaluateToStrings("cbrt", "27"));
+    {
+        var results = Evaluate("cbrt", "27");
+        Assert.Single(results);
+        Assert.Equal(3.0, results[0].GetDouble(), 10);
+    }
 
     [Fact]
     public void Fabs_of_negative()
