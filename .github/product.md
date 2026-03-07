@@ -210,7 +210,7 @@ Remaining parameterized builtins:
 
 Implement support for JSONL/NDJSON async streaming
 
-### - [ ] Phase 16.1 — Include Modules 
+### - [x] Phase 16.1 — Include Modules 
 
 - `include RelativePathString [<metadata>];`
 
@@ -222,7 +222,7 @@ Module content is cached by path to avoid redundant parsing.
 - `import RelativePathString as NAME [<metadata>];`
 - `import RelativePathString as $NAME [<metadata>];`
 
-### - [ ] Phase 16.3 — Include Modules 
+### - [ ] Phase 16.3 — Modules Metadata 
 
 - `module <metadata>;`
 - `modulemeta`

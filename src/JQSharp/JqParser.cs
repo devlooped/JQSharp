@@ -10,16 +10,22 @@ sealed class JqParser
     readonly HashSet<string> _definedVariables = new(StringComparer.Ordinal);
     readonly Dictionary<(string Name, int Arity), UserFunctionDef> _definedFunctions = new();
     readonly HashSet<string> _definedFilterParams = new(StringComparer.Ordinal);
+    readonly JqResolver? _resolver;
+    readonly Dictionary<string, string> _moduleCache;
+    readonly string? _currentModulePath;
     int position;
 
-    public JqParser(string text)
+    public JqParser(string text, JqResolver? resolver = null, Dictionary<string, string>? moduleCache = null, string? currentModulePath = null)
     {
         this.text = text ?? throw new ArgumentNullException(nameof(text));
+        _resolver = resolver;
+        _moduleCache = moduleCache ?? new();
+        _currentModulePath = currentModulePath;
     }
 
-    public static JqFilter Parse(string expression)
+    public static JqFilter Parse(string expression, JqResolver? resolver = null)
     {
-        return new JqParser(expression).Parse();
+        return new JqParser(expression, resolver).Parse();
     }
 
     public JqFilter Parse()
@@ -382,6 +388,9 @@ sealed class JqParser
         if (TryConsumeKeyword("break"))
             return ParseBreakExpression();
 
+        if (TryConsumeKeyword("include"))
+            return ParseIncludeExpression();
+
         if (TryConsumeSequence(".."))
             return new RecurseFilter();
 
@@ -709,6 +718,61 @@ sealed class JqParser
         return new BreakFilter(name);
     }
 
+    JqFilter ParseIncludeExpression()
+    {
+        if (_resolver is null)
+            throw new JqException("'include' requires a JqResolver; pass one to Jq.Parse().");
+
+        SkipWhitespace();
+
+        // Parse the module path string (must be a plain string, no interpolation).
+        if (!TryConsume('"'))
+            throw Error("Expected a string path after 'include'.");
+
+        var modulePath = ParseStringContent();
+
+        // Skip optional metadata object, e.g.  {"search": "."}
+        SkipWhitespace();
+        if (Peek() == '{')
+            SkipBalanced('{', '}');
+
+        SkipWhitespace();
+        Expect(';');
+
+        // Resolve the module, using the cache to avoid repeated reads.
+        var canonicalPath = _resolver.GetCanonicalPath(modulePath, _currentModulePath);
+        if (!_moduleCache.TryGetValue(canonicalPath, out var moduleContent))
+        {
+            using var reader = _resolver.Resolve(modulePath, _currentModulePath);
+            moduleContent = reader.ReadToEnd();
+            _moduleCache[canonicalPath] = moduleContent;
+        }
+
+        // Splice: module definitions followed by whatever remains of the current program.
+        var remainingText = text[position..];
+        var combinedText = moduleContent + "\n" + remainingText;
+
+        // The child parser will consume all of remainingText; mark our position at end
+        // so the parent parser (Parse()) doesn't see leftover text.
+        position = text.Length;
+
+        return ParseSubExpression(combinedText, canonicalPath);
+    }
+
+    // Skips a balanced pair of open/close characters (e.g. '{'/'}'), ignoring
+    // their contents.  Used to skip metadata objects in include statements.
+    void SkipBalanced(char open, char close)
+    {
+        Expect(open);
+        var depth = 1;
+        while (!IsAtEnd && depth > 0)
+        {
+            var ch = Consume();
+            if (ch == open) depth++;
+            else if (ch == close) depth--;
+        }
+    }
+
     JqFilter ParseIfElseBranch()
     {
         SkipWhitespace();
@@ -980,9 +1044,9 @@ sealed class JqParser
         return ParseSubExpression(valueExpression);
     }
 
-    JqFilter ParseSubExpression(string expression)
+    JqFilter ParseSubExpression(string expression, string? modulePath = null)
     {
-        var parser = new JqParser(expression);
+        var parser = new JqParser(expression, _resolver, _moduleCache, modulePath ?? _currentModulePath);
         foreach (var variable in _definedVariables)
             parser._definedVariables.Add(variable);
         foreach (var kvp in _definedFunctions)

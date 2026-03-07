@@ -13,18 +13,23 @@ public static class Jq
     /// that can be evaluated against multiple JSON inputs without re-parsing.
     /// </summary>
     /// <param name="expression">The jq filter expression to parse.</param>
+    /// <param name="resolver">
+    /// An optional <see cref="JqResolver"/> used to resolve <c>include</c> statements in
+    /// the expression. When <see langword="null"/>, any <c>include</c> statement encountered
+    /// during parsing will throw a <see cref="JqException"/>.
+    /// </param>
     /// <returns>A parsed <see cref="JqExpression"/> ready for evaluation.</returns>
     /// <exception cref="JqException">Thrown when the expression is empty or invalid.</exception>
     /// <remarks>
     /// The returned <see cref="JqExpression"/> is thread-safe and can be cached and
     /// evaluated concurrently from multiple threads.
     /// </remarks>
-    public static JqExpression Parse(string expression)
+    public static JqExpression Parse(string expression, JqResolver? resolver = null)
     {
         if (string.IsNullOrWhiteSpace(expression))
             throw new JqException("Filter expression cannot be empty.");
 
-        return new JqExpression(JqParser.Parse(expression));
+        return new JqExpression(JqParser.Parse(expression, resolver));
     }
 
     /// <summary>

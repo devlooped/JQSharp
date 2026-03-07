@@ -55,7 +55,7 @@ jqsharp/
 │   ├── JQSharp/
 │   │   ├── JQSharp.csproj           # Library — net10.0, System.Text.Json only
 │   │   ├── Jq.cs                    # Public façade: Parse() and Evaluate()
-│   │   ├── JqExpression.cs           # Parsed expression — cacheable, thread-safe
+│   │   ├── JqExpression.cs          # Parsed expression — cacheable, thread-safe
 │   │   ├── JqParser.cs              # Recursive-descent parser
 │   │   ├── JqFilter.cs              # Abstract base class for all filter nodes
 │   │   ├── JqEnvironment.cs         # Immutable variable/filter-binding environment
@@ -63,6 +63,9 @@ jqsharp/
 │   │   ├── JqException.cs           # Runtime error (carries optional JsonElement)
 │   │   ├── JqBreakException.cs      # break control flow (label/break)
 │   │   ├── JqHaltException.cs       # halt / halt_error control flow
+│   │   ├── JqResolver.cs            # Abstract module resolver (include/import)
+│   │   ├── JqFileResolver.cs        # File-system module resolver
+│   │   ├── JqResourceResolver.cs    # Embedded-resource module resolver
 │   │   ├── FilterClosure.cs         # Pairs a JqFilter with its captured environment
 │   │   ├── PathResolver.cs          # Path algebra for assignment operators
 │   │   ├── MathExtra.cs             # Custom math functions (erf, tgamma, Bessel, etc.)
@@ -79,7 +82,7 @@ jqsharp/
 │   └── Tests/
 │       ├── Tests.csproj             # xUnit test project
 │       ├── JqTestParser.cs          # Parses the jq test-suite format
-│       ├── Jq*Tests.cs              # Category-based test classes (12 files)
+│       ├── Jq*Tests.cs              # Category-based test classes (13 files)
 │       └── suite/
 │           └── jq.test              # jq test suite (~1 990 test cases)
 └── docs/
@@ -591,3 +594,74 @@ Combining lexing and parsing in a single pass simplifies the implementation but 
 
 ### Generator-Based Evaluation
 Using `IEnumerable<JsonElement>` with `yield return` matches jq's semantics naturally. However, some operations (like `TryCatchFilter`) must eagerly materialize results with `.ToArray()` to properly handle exceptions, since C# iterators cannot yield inside try-catch blocks.
+
+---
+
+## 14. Module System (`include`)
+
+### 14.1 Overview
+
+`include "relative/path" [<metadata>];` inlines the content of a jq module file at parse time, making its function definitions available in the rest of the program.
+
+### 14.2 JqResolver
+
+`JqResolver` is an abstract base class (inspired by `XmlUrlResolver`) that decouples path resolution from the parser:
+
+```csharp
+public abstract class JqResolver
+{
+    // Resolve a path to a TextReader over its content.
+    public abstract TextReader Resolve(string path, string? fromPath);
+
+    // Returns a stable cache key for the resolved module (default: returns path unchanged).
+    public virtual string GetCanonicalPath(string path, string? fromPath) => path;
+}
+```
+
+Two built-in implementations are provided:
+
+| Class | Description |
+|-------|-------------|
+| `JqFileResolver` | Resolves paths on the file system. Appends `.jq` when no extension is present. Relative paths are resolved from the including module's directory (or `BaseDirectory` for top-level includes). |
+| `JqResourceResolver` | Resolves paths to embedded assembly resources. Slashes are converted to dots; a configurable `Prefix` (e.g., the assembly's default namespace) is prepended. Supports nested relative includes. |
+
+### 14.3 Parse-Time Content Splicing
+
+`include` is handled entirely at parse time using a **content-splice** strategy:
+
+```
+include "foo"; rest_of_program
+```
+
+becomes (conceptually):
+
+```
+<content of foo.jq>
+rest_of_program
+```
+
+When `ParseIncludeExpression()` is invoked:
+
+1. The module path string is parsed (no interpolation allowed).
+2. An optional metadata object `{...}` is skipped (parsed but currently ignored).
+3. The terminating `;` is consumed.
+4. The resolver's `GetCanonicalPath()` is called to obtain a cache key.  If the cache already holds the content, the file read is skipped.
+5. The remaining text of the current expression (`text[position..]`) is extracted.
+6. Combined text = `moduleContent + "\n" + remainingText`.
+7. `ParseSubExpression(combinedText, canonicalPath)` creates a child parser (inheriting the current scope and resolver) and parses the combined text.
+8. The parent parser's `position` is advanced to `text.Length`, signalling that the rest of the program has been consumed by the child.
+
+This approach works because jq module files consist entirely of `def` statements ending with `;`, which concatenate naturally with the rest of the calling program.
+
+### 14.4 Caching
+
+The `JqParser` holds a `Dictionary<string, string> _moduleCache` (keyed by canonical path) that persists across nested includes within a single `Jq.Parse()` call. Repeated `include "foo"` statements within the same parse incur only one file read.
+
+### 14.5 Public API
+
+```csharp
+// Pass a resolver to enable include support.
+JqExpression expr = Jq.Parse("include \"utils\"; utils_fn", new JqFileResolver("/my/modules"));
+```
+
+When no resolver is provided (default `null`), any `include` statement encountered throws a `JqException`.
