@@ -210,14 +210,22 @@ Remaining parameterized builtins:
 
 Implement support for JSONL/NDJSON async streaming
 
-### - [ ] Phase 16 — Modules
+### - [ ] Phase 16.1 — Include Modules 
+
+- `include RelativePathString [<metadata>];`
+
+Uses a JqResolver (inspired by XmlUrlResolver) to resolve RelativePathString > TextReader.
+Module content is cached by path to avoid redundant parsing.
+
+### - [ ] Phase 16.2 — Import Modules 
 
 - `import RelativePathString as NAME [<metadata>];`
-- `include RelativePathString [<metadata>];`
 - `import RelativePathString as $NAME [<metadata>];`
+
+### - [ ] Phase 16.3 — Include Modules 
+
 - `module <metadata>;`
 - `modulemeta`
-- Module search paths
 
 ## Out of Scope
 
@@ -232,4 +240,3 @@ Features from the jq manual we will not implement.
 ### Streaming
 
 - `tostream`, `fromstream(stream_expression)`, `truncate_stream(stream_expression)`
-
