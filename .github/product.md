@@ -206,17 +206,11 @@ Remaining parameterized builtins:
 - Destructuring alternative operator `?//`
 - SQL-style operators: `INDEX`, `IN`, `JOIN`
 
-### - [ ] Phase 16 — I/O
+### - [x] Phase 16 - Streaming
 
-- `input`, `inputs`
-- `debug`, `debug(msgs)`, `stderr`
-- `input_filename`, `input_line_number`
+Implement support for JSONL/NDJSON async streaming
 
-### - [ ] Phase 17 — Streaming
-
-- `tostream`, `fromstream(stream_expression)`, `truncate_stream(stream_expression)`
-
-### - [ ] Phase 18 — Modules
+### - [ ] Phase 16 — Modules
 
 - `import RelativePathString as NAME [<metadata>];`
 - `include RelativePathString [<metadata>];`
@@ -224,3 +218,18 @@ Remaining parameterized builtins:
 - `module <metadata>;`
 - `modulemeta`
 - Module search paths
+
+## Out of Scope
+
+Features from the jq manual we will not implement.
+
+### I/O
+
+- `input`, `inputs`
+- `debug`, `debug(msgs)`, `stderr`
+- `input_filename`, `input_line_number`
+
+### Streaming
+
+- `tostream`, `fromstream(stream_expression)`, `truncate_stream(stream_expression)`
+
