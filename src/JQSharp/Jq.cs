@@ -14,8 +14,8 @@ public static class Jq
     /// </summary>
     /// <param name="expression">The jq filter expression to parse.</param>
     /// <param name="resolver">
-    /// An optional <see cref="JqResolver"/> used to resolve <c>include</c> statements in
-    /// the expression. When <see langword="null"/>, any <c>include</c> statement encountered
+    /// An optional <see cref="JqResolver"/> used to resolve <c>include</c> and <c>import</c> statements in
+    /// the expression. When <see langword="null"/>, any <c>include</c> or <c>import</c> statement encountered
     /// during parsing will throw a <see cref="JqException"/>.
     /// </param>
     /// <returns>A parsed <see cref="JqExpression"/> ready for evaluation.</returns>

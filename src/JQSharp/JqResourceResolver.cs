@@ -55,6 +55,10 @@ public class JqResourceResolver(Assembly assembly, string? prefix = default) : J
     /// </summary>
     public override string GetCanonicalPath(string path, string? fromPath)
     {
+        var hasKnownExtension =
+            path.EndsWith(".jq", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+
         // Resolve relative paths against the parent module's "directory" (prefix segment).
         string basePart;
         if (fromPath is not null)
@@ -75,7 +79,7 @@ public class JqResourceResolver(Assembly assembly, string? prefix = default) : J
             ? normalized
             : basePart + "." + normalized;
 
-        if (!resourceName.EndsWith(".jq", StringComparison.OrdinalIgnoreCase))
+        if (!hasKnownExtension && !resourceName.EndsWith(".jq", StringComparison.OrdinalIgnoreCase))
             resourceName += ".jq";
 
         return resourceName;

@@ -217,7 +217,7 @@ Implement support for JSONL/NDJSON async streaming
 Uses a JqResolver (inspired by XmlUrlResolver) to resolve RelativePathString > TextReader.
 Module content is cached by path to avoid redundant parsing.
 
-### - [ ] Phase 16.2 — Import Modules 
+### - [x] Phase 16.2 — Import Modules
 
 - `import RelativePathString as NAME [<metadata>];`
 - `import RelativePathString as $NAME [<metadata>];`

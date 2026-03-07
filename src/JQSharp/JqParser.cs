@@ -9,6 +9,7 @@ sealed class JqParser
     readonly string text;
     readonly HashSet<string> _definedVariables = new(StringComparer.Ordinal);
     readonly Dictionary<(string Name, int Arity), UserFunctionDef> _definedFunctions = new();
+    Dictionary<(string Name, int Arity), UserFunctionDef>? _exportedDefs;
     readonly HashSet<string> _definedFilterParams = new(StringComparer.Ordinal);
     readonly JqResolver? _resolver;
     readonly Dictionary<string, string> _moduleCache;
@@ -357,6 +358,9 @@ sealed class JqParser
         if (TryConsume('$'))
         {
             var name = ParseIdentifier();
+            if (TryConsumeSequence("::"))
+                name += "::" + ParseIdentifier();
+
             if (string.Equals(name, "ENV", StringComparison.Ordinal) ||
                 string.Equals(name, "__loc__", StringComparison.Ordinal) ||
                 _definedVariables.Contains(name))
@@ -390,6 +394,9 @@ sealed class JqParser
 
         if (TryConsumeKeyword("include"))
             return ParseIncludeExpression();
+
+        if (TryConsumeKeyword("import"))
+            return ParseImportExpression();
 
         if (TryConsumeSequence(".."))
             return new RecurseFilter();
@@ -440,9 +447,16 @@ sealed class JqParser
         {
             var saved = position;
             var name = ParseIdentifier();
+            var isQualified = false;
+            if (TryConsumeSequence("::"))
+            {
+                name += "::" + ParseIdentifier();
+                isQualified = true;
+            }
+
             SkipWhitespace();
 
-            if (_definedFilterParams.Contains(name) && Peek() != '(')
+            if (!isQualified && _definedFilterParams.Contains(name) && Peek() != '(')
                 return new FilterArgRefFilter(name);
 
             if (TryConsume('('))
@@ -466,14 +480,20 @@ sealed class JqParser
                 if (_definedFunctions.TryGetValue((name, args.Count), out var funcDef))
                     return new UserFunctionCallFilter(funcDef, [.. args]);
 
+                if (isQualified)
+                    throw new JqException($"Undefined module function '{name}/{args.Count}'.");
+
                 return new ParameterizedFilter(name, [.. args]);
             }
 
             if (_definedFunctions.TryGetValue((name, 0), out var zeroArgFuncDef))
                 return new UserFunctionCallFilter(zeroArgFuncDef, Array.Empty<JqFilter>());
 
-            if (BuiltinFilter.IsBuiltin(name))
+            if (!isQualified && BuiltinFilter.IsBuiltin(name))
                 return new BuiltinFilter(name);
+
+            if (isQualified)
+                throw new JqException($"Undefined module function '{name}'.");
 
             position = saved;
         }
@@ -591,6 +611,7 @@ sealed class JqParser
             }
 
             funcDef.Body = body;
+            _exportedDefs?[key] = funcDef;
 
             SkipWhitespace();
             Expect(';');
@@ -757,6 +778,126 @@ sealed class JqParser
         position = text.Length;
 
         return ParseSubExpression(combinedText, canonicalPath);
+    }
+
+    JqFilter ParseImportExpression()
+    {
+        if (_resolver is null)
+            throw new JqException("'import' requires a JqResolver; pass one to Jq.Parse().");
+
+        SkipWhitespace();
+        if (!TryConsume('"'))
+            throw Error("Expected a string path after 'import'.");
+
+        var modulePath = ParseStringContent();
+
+        SkipWhitespace();
+        ExpectKeyword("as");
+        SkipWhitespace();
+
+        if (TryConsume('$'))
+            return ParseDataImport(modulePath);
+
+        return ParseFunctionImport(modulePath);
+    }
+
+    JqFilter ParseFunctionImport(string modulePath)
+    {
+        var alias = ParseIdentifier();
+
+        SkipWhitespace();
+        if (Peek() == '{')
+            SkipBalanced('{', '}');
+
+        SkipWhitespace();
+        Expect(';');
+
+        var canonicalPath = _resolver!.GetCanonicalPath(modulePath, _currentModulePath);
+        if (!_moduleCache.TryGetValue(canonicalPath, out var moduleContent))
+        {
+            using var reader = _resolver.Resolve(modulePath, _currentModulePath);
+            moduleContent = reader.ReadToEnd();
+            _moduleCache[canonicalPath] = moduleContent;
+        }
+
+        var parser = new JqParser(moduleContent + "\n.", _resolver, _moduleCache, canonicalPath)
+        {
+            _exportedDefs = new()
+        };
+        foreach (var variable in _definedVariables)
+            parser._definedVariables.Add(variable);
+        foreach (var kvp in _definedFunctions)
+            parser._definedFunctions[kvp.Key] = kvp.Value;
+        foreach (var param in _definedFilterParams)
+            parser._definedFilterParams.Add(param);
+
+        parser.Parse();
+
+        var importedKeys = new List<(string Name, int Arity)>();
+        foreach (var kvp in parser._exportedDefs)
+        {
+            var importedKey = ($"{alias}::{kvp.Key.Name}", kvp.Key.Arity);
+            _definedFunctions[importedKey] = kvp.Value;
+            importedKeys.Add(importedKey);
+        }
+
+        try
+        {
+            return ParsePipe();
+        }
+        finally
+        {
+            foreach (var importedKey in importedKeys)
+                _definedFunctions.Remove(importedKey);
+        }
+    }
+
+    JqFilter ParseDataImport(string modulePath)
+    {
+        var alias = ParseIdentifier();
+
+        SkipWhitespace();
+        if (Peek() == '{')
+            SkipBalanced('{', '}');
+
+        SkipWhitespace();
+        Expect(';');
+
+        var dataPath = modulePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+            ? modulePath
+            : modulePath + ".json";
+
+        var canonicalPath = _resolver!.GetCanonicalPath(dataPath, _currentModulePath);
+        if (!_moduleCache.TryGetValue(canonicalPath, out var moduleContent))
+        {
+            using var reader = _resolver.Resolve(dataPath, _currentModulePath);
+            moduleContent = reader.ReadToEnd();
+            _moduleCache[canonicalPath] = moduleContent;
+        }
+
+        JsonElement jsonElement;
+        try
+        {
+            using var document = JsonDocument.Parse(moduleContent);
+            jsonElement = document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            throw new JqException($"Failed to parse JSON data from '{modulePath}': {ex.Message}");
+        }
+
+        var variableName = $"{alias}::{alias}";
+        var added = _definedVariables.Add(variableName);
+        try
+        {
+            var body = ParsePipe();
+            return new BindingFilter(new LiteralFilter(jsonElement), new VariablePattern(variableName), body);
+        }
+        finally
+        {
+            if (added)
+                _definedVariables.Remove(variableName);
+        }
     }
 
     // Skips a balanced pair of open/close characters (e.g. '{'/'}'), ignoring
@@ -1053,6 +1194,8 @@ sealed class JqParser
             parser._definedFunctions[kvp.Key] = kvp.Value;
         foreach (var param in _definedFilterParams)
             parser._definedFilterParams.Add(param);
+        if (_exportedDefs is not null)
+            parser._exportedDefs = _exportedDefs;
 
         return parser.Parse();
     }

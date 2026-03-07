@@ -597,15 +597,23 @@ Using `IEnumerable<JsonElement>` with `yield return` matches jq's semantics natu
 
 ---
 
-## 14. Module System (`include`)
+## 14. Module System (`include`, `import`)
 
 ### 14.1 Overview
 
-`include "relative/path" [<metadata>];` inlines the content of a jq module file at parse time, making its function definitions available in the rest of the program.
+JQSharp supports three module/data-loading forms:
+
+| Form | Purpose | Scope behavior |
+|------|---------|----------------|
+| `include "relative/path" [<metadata>];` | Inline a jq module at parse time | Definitions become directly visible (unqualified names). |
+| `import "relative/path" as alias [<metadata>];` | Import jq `def` declarations under a namespace alias | Definitions are exposed as `alias::name`. |
+| `import "relative/path" as $alias [<metadata>];` | Import JSON data as a variable binding | Data is bound as `$alias::alias`. |
+
+`include` performs content splicing into the current parse stream. `import` does not splice caller text: it either registers alias-prefixed function definitions (module import) or introduces a scoped variable binding (data import).
 
 ### 14.2 JqResolver
 
-`JqResolver` is an abstract base class (inspired by `XmlUrlResolver`) that decouples path resolution from the parser:
+`JqResolver` is an abstract base class (inspired by `XmlUrlResolver`) that decouples path resolution for both `include` and `import`:
 
 ```csharp
 public abstract class JqResolver
@@ -613,7 +621,7 @@ public abstract class JqResolver
     // Resolve a path to a TextReader over its content.
     public abstract TextReader Resolve(string path, string? fromPath);
 
-    // Returns a stable cache key for the resolved module (default: returns path unchanged).
+    // Returns a stable cache key for the resolved module/data (default: returns path unchanged).
     public virtual string GetCanonicalPath(string path, string? fromPath) => path;
 }
 ```
@@ -622,10 +630,10 @@ Two built-in implementations are provided:
 
 | Class | Description |
 |-------|-------------|
-| `JqFileResolver` | Resolves paths on the file system. Appends `.jq` when no extension is present. Relative paths are resolved from the including module's directory (or `BaseDirectory` for top-level includes). |
-| `JqResourceResolver` | Resolves paths to embedded assembly resources. Slashes are converted to dots; a configurable `Prefix` (e.g., the assembly's default namespace) is prepended. Supports nested relative includes. |
+| `JqFileResolver` | Resolves paths on the file system. Appends `.jq` when no extension is present. Relative paths are resolved from the including/importing module's directory (or `BaseDirectory` for top-level calls). |
+| `JqResourceResolver` | Resolves paths to embedded assembly resources. Slashes are converted to dots; a configurable `Prefix` is prepended; supports nested relative include/import chains. `GetCanonicalPath` checks the **original input path** for `.jq`/`.json` before dot-normalization, and appends `.jq` only when neither extension exists. |
 
-### 14.3 Parse-Time Content Splicing
+### 14.3 Include Parse-Time Content Splicing
 
 `include` is handled entirely at parse time using a **content-splice** strategy:
 
@@ -645,23 +653,108 @@ When `ParseIncludeExpression()` is invoked:
 1. The module path string is parsed (no interpolation allowed).
 2. An optional metadata object `{...}` is skipped (parsed but currently ignored).
 3. The terminating `;` is consumed.
-4. The resolver's `GetCanonicalPath()` is called to obtain a cache key.  If the cache already holds the content, the file read is skipped.
-5. The remaining text of the current expression (`text[position..]`) is extracted.
-6. Combined text = `moduleContent + "\n" + remainingText`.
-7. `ParseSubExpression(combinedText, canonicalPath)` creates a child parser (inheriting the current scope and resolver) and parses the combined text.
-8. The parent parser's `position` is advanced to `text.Length`, signalling that the rest of the program has been consumed by the child.
+4. `GetCanonicalPath()` produces the cache key; if cached, file/resource IO is skipped.
+5. The parser captures the remaining caller text (`text[position..]`).
+6. Combined text is built as `moduleContent + "\n" + remainingText`.
+7. `ParseSubExpression(combinedText, canonicalPath)` parses the combined stream in a child parser.
+8. The parent advances `position` to `text.Length` because continuation is consumed by the child.
 
-This approach works because jq module files consist entirely of `def` statements ending with `;`, which concatenate naturally with the rest of the calling program.
+### 14.4 Import Parse Pipeline (Phase 16.2)
 
-### 14.4 Caching
-
-The `JqParser` holds a `Dictionary<string, string> _moduleCache` (keyed by canonical path) that persists across nested includes within a single `Jq.Parse()` call. Repeated `include "foo"` statements within the same parse incur only one file read.
-
-### 14.5 Public API
+`import` first parses the shared prefix, then dispatches:
 
 ```csharp
-// Pass a resolver to enable include support.
-JqExpression expr = Jq.Parse("include \"utils\"; utils_fn", new JqFileResolver("/my/modules"));
+import "path" as alias;
+import "path" as $alias;
 ```
 
-When no resolver is provided (default `null`), any `include` statement encountered throws a `JqException`.
+- `as alias` → `ParseFunctionImport(modulePath)`
+- `as $alias` → `ParseDataImport(modulePath)`
+
+```mermaid
+flowchart TD
+    A[ParseImportExpression] --> B{Alias form}
+    B -->|as name| C[ParseFunctionImport]
+    B -->|as $name| D[ParseDataImport]
+    C --> E[Register alias::defs for continuation]
+    D --> F[Bind $alias::alias for continuation]
+    E --> G[Parse continuation]
+    F --> G
+```
+
+### 14.5 Function Import: Parse-Time Definition Extraction
+
+Function import extracts only exported `def` declarations from the child parse and re-registers them in the parent under `alias::` names.
+
+1. `ParseFunctionImport` resolves and caches the module source (same cache and resolver path flow as `include`).
+2. A child parser is created with `moduleContent + "\n."` and `_exportedDefs = new()`. The trailing `.` makes the child parse a complete jq expression after module definitions.
+3. During child parse, each `def` goes through `ParseDefExpression()`. After `funcDef.Body` is finalized, `_exportedDefs?[key] = funcDef` records the definition.
+4. Parent parser iterates the child `_exportedDefs` and registers:
+   - `(foo, 1)` → `(NAME::foo, 1)` when alias is `NAME`
+5. Parent parses continuation (`ParsePipe()`), with imported names available.
+6. In `finally`, imported keys are removed, so alias-prefixed defs are scoped to continuation parsing.
+
+Snippet of the registration lifecycle:
+
+```csharp
+var parser = new JqParser(moduleContent + "\n.", _resolver, _moduleCache, canonicalPath)
+{
+    _exportedDefs = new()
+};
+
+parser.Parse();
+
+foreach (var kvp in parser._exportedDefs)
+    _definedFunctions[($"{alias}::{kvp.Key.Name}", kvp.Key.Arity)] = kvp.Value;
+
+try
+{
+    return ParsePipe();
+}
+finally
+{
+    // remove imported defs
+}
+```
+
+### 14.6 Data Import: Variable Binding
+
+Data import (`import "data" as $cfg;`) loads JSON and binds it as a scoped variable named `$cfg::cfg`.
+
+1. Path resolution uses `.json` by default:
+   - If module path already ends with `.json` (case-insensitive), keep it.
+   - Otherwise append `.json`.
+2. Content is loaded through resolver/cache and parsed using `JsonDocument.Parse`.
+3. Parsed value is cloned to `JsonElement` and wrapped in `LiteralFilter`.
+4. Continuation is wrapped in:
+   - `BindingFilter(new LiteralFilter(json), new VariablePattern("cfg::cfg"), body)`
+5. If JSON parsing fails, `JsonException` is wrapped as:
+   - `JqException("Failed to parse JSON data from '...': ...")`
+
+### 14.7 Qualified Name Resolution (`::`)
+
+`ParsePrimary()` supports `::` for both variable and identifier/function references.
+
+| Target | Parse shape | Resolution behavior |
+|--------|-------------|---------------------|
+| Variable | `$name::member` | Looked up only in `_definedVariables` (plus special `$ENV`, `$__loc__`). Undefined raises `"$name::member is not defined"`. |
+| Identifier/function | `name::member` or `name::member(...)` | Marked as qualified. Qualified names skip filter-parameter and builtin fallback checks. Resolution is only against `_definedFunctions`; undefined raises explicit module errors (`Undefined module function 'name::member'` or `'name::member/arity'`). |
+
+This ensures module-qualified symbols are explicit and never accidentally treated as builtins or filter parameters.
+
+### 14.8 Caching
+
+The parser holds `Dictionary<string, string> _moduleCache` (keyed by canonical path), shared across nested include/import operations in a single `Jq.Parse()` call. Repeated loads of the same canonical path perform only one resolver read.
+
+### 14.9 Public API
+
+```csharp
+// Pass a resolver to enable include/import support.
+var resolver = new JqFileResolver("/my/modules");
+
+JqExpression includeExpr = Jq.Parse("include \"utils\"; utils_fn", resolver);
+JqExpression importExpr = Jq.Parse("import \"math\" as M; M::sum(.; 10)", resolver);
+JqExpression dataExpr = Jq.Parse("import \"config\" as $cfg; $cfg::cfg.threshold", resolver);
+```
+
+When no resolver is provided (default `null`), any `include` or `import` statement throws a `JqException`.

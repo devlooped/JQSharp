@@ -18,6 +18,9 @@ public class JqModuleTests : IDisposable
     void WriteModule(string name, string content)
         => File.WriteAllText(Path.Combine(_tempDir, name + ".jq"), content);
 
+    void WriteJsonModule(string name, string jsonContent)
+        => File.WriteAllText(Path.Combine(_tempDir, name + ".json"), jsonContent);
+
     static string[] EvaluateToStrings(string expression, string inputJson, JqResolver? resolver = null)
     {
         using var document = JsonDocument.Parse(inputJson);
@@ -117,6 +120,179 @@ public class JqModuleTests : IDisposable
         var resolver = new JqFileResolver(_tempDir);
         // Explicitly specifying .jq extension should also work
         Assert.Equal(["105"], EvaluateToStrings("""include "ext.jq"; ext""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_exposes_prefixed_function()
+    {
+        WriteModule("double", "def double: . * 2;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["10"], EvaluateToStrings("""import "double" as m; m::double""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_exposes_multiple_prefixed_functions()
+    {
+        WriteModule("math", "def double: . * 2; def triple: . * 3;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["[10,15]"], EvaluateToStrings("""import "math" as m; [m::double, m::triple]""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_function_not_in_caller_namespace()
+    {
+        WriteModule("double", "def double: . * 2;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Throws<JqException>(() =>
+            EvaluateToStrings("""import "double" as m; double""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_with_metadata_object()
+    {
+        WriteModule("helpers", "def negate: -. ;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["-5"], EvaluateToStrings("""import "helpers" as h {"origin": "."}; h::negate""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_module_functions_can_call_each_other()
+    {
+        WriteModule("funcs", "def addtwo: . + 2; def addtwo_twice: addtwo | addtwo;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["9"], EvaluateToStrings("""import "funcs" as m; m::addtwo_twice""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_with_parameterized_function()
+    {
+        WriteModule("pf", "def add($n): . + $n;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["8"], EvaluateToStrings("""import "pf" as m; m::add(3)""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_cached_on_repeated_import()
+    {
+        var readCount = 0;
+        WriteModule("counted", "def counted: . + 1;");
+        var resolver = new CountingResolver(new JqFileResolver(_tempDir), () => readCount++);
+        EvaluateToStrings("""import "counted" as c1; import "counted" as c2; c1::counted""", "5", resolver);
+        Assert.Equal(1, readCount);
+    }
+
+    [Fact]
+    public void Import_missing_module_throws()
+    {
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Throws<JqException>(() =>
+            EvaluateToStrings("""import "nonexistent" as m; .""", "null", resolver));
+    }
+
+    [Fact]
+    public void Import_without_resolver_throws()
+    {
+        Assert.Throws<JqException>(() =>
+            EvaluateToStrings("""import "something" as m; .""", "null", resolver: null));
+    }
+
+    [Fact]
+    public void Import_two_modules_different_aliases()
+    {
+        WriteModule("math", "def double: . * 2;");
+        WriteModule("str", "def upper: ascii_upcase;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["10"], EvaluateToStrings("""import "math" as m; import "str" as s; m::double""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_and_include_together()
+    {
+        WriteModule("bare", "def bare_fn: . + 1;");
+        WriteModule("ns", "def ns_fn: . * 10;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["[6,50]"], EvaluateToStrings("""include "bare"; import "ns" as n; [bare_fn, n::ns_fn]""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_nested_module_with_include()
+    {
+        WriteModule("inner", "def inner_fn: . + 10;");
+        WriteModule("outer", """include "inner"; def outer_fn: inner_fn | . * 2;""");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["30"], EvaluateToStrings("""import "outer" as o; o::outer_fn""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_jq_extension_added_automatically()
+    {
+        WriteModule("utils", "def inc: . + 1;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["6"], EvaluateToStrings("""import "utils" as u; u::inc""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_with_explicit_jq_extension()
+    {
+        WriteModule("ext", "def ext: . + 100;");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["105"], EvaluateToStrings("""import "ext.jq" as e; e::ext""", "5", resolver));
+    }
+
+    [Fact]
+    public void Import_json_data_as_variable()
+    {
+        WriteJsonModule("config", """{"key":"value"}""");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["""{"key":"value"}"""], EvaluateToStrings("""import "config" as $cfg; $cfg::cfg""", "null", resolver));
+    }
+
+    [Fact]
+    public void Import_json_data_nested_access()
+    {
+        WriteJsonModule("config", """{"key":"value"}""");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["\"value\""], EvaluateToStrings("""import "config" as $cfg; $cfg::cfg.key""", "null", resolver));
+    }
+
+    [Fact]
+    public void Import_json_data_array()
+    {
+        WriteJsonModule("data", "[1,2,3]");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["3"], EvaluateToStrings("""import "data" as $d; $d::d | length""", "null", resolver));
+    }
+
+    [Fact]
+    public void Import_json_data_scalar()
+    {
+        WriteJsonModule("num", "42");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["42"], EvaluateToStrings("""import "num" as $n; $n::n""", "null", resolver));
+    }
+
+    [Fact]
+    public void Import_json_data_missing_file_throws()
+    {
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Throws<JqException>(() =>
+            EvaluateToStrings("""import "missing" as $m; $m::m""", "null", resolver));
+    }
+
+    [Fact]
+    public void Import_json_data_invalid_json_throws()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "bad.json"), "not valid json {{{");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Throws<JqException>(() =>
+            EvaluateToStrings("""import "bad" as $b; $b::b""", "null", resolver));
+    }
+
+    [Fact]
+    public void Import_json_data_without_resolver_throws()
+    {
+        Assert.Throws<JqException>(() =>
+            EvaluateToStrings("""import "data" as $d; $d::d""", "null", resolver: null));
     }
 
     [Fact]
