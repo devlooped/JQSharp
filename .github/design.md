@@ -286,7 +286,7 @@ classDiagram
     }
     JqPattern <|-- VariablePattern : "$name"
     JqPattern <|-- ArrayPattern : "[$a, $b]"
-    JqPattern <|-- ObjectPattern : "&#123;key: $v&#125;"
+    JqPattern <|-- ObjectPattern : "key: $v"
 ```
 
 `Match()` takes a value and an existing environment, and returns a **new** environment with the matched variables bound. The patterns are recursive — an `ArrayPattern` can contain `ObjectPattern` elements and vice versa.
