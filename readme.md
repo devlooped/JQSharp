@@ -3,7 +3,7 @@
 [![Version](https://img.shields.io/nuget/vpre/Devlooped.JQSharp.svg?color=royalblue)](https://www.nuget.org/packages/Devlooped.JQSharp)
 [![Downloads](https://img.shields.io/nuget/dt/Devlooped.JQSharp.svg?color=darkmagenta)](https://www.nuget.org/packages/Devlooped.JQSharp)
 [![EULA](https://img.shields.io/badge/EULA-OSMF-blue?labelColor=black&color=C9FF30)](https://github.com/devlooped/JQSharp/blob/main/osmfeula.txt)
-[![License](https://img.shields.io/badge/license-OSMF-blue.svg)](https://github.com/devlooped/JQSharp/blob/main/osmfeula.txt)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/devlooped/JQSharp/blob/main/license.txt)
 
 
 <!-- #description -->
