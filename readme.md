@@ -88,6 +88,72 @@ var results = Jq.Evaluate(
 Console.WriteLine(results.Single()); // 142.4
 ```
 
+### Reshaping objects
+
+Use object construction to project, rename, or combine fields from the input:
+
+```csharp
+using var doc = JsonDocument.Parse("""
+    {
+        "user": { "id": 1, "name": "Alice", "email": "alice@example.com" },
+        "role": "admin"
+    }
+    """);
+
+// Pick and flatten specific fields into a new object
+var results = Jq.Evaluate("{id: .user.id, name: .user.name, role: .role}", doc.RootElement);
+
+Console.WriteLine(results.Single()); // {"id":1,"name":"Alice","role":"admin"}
+```
+
+### Optional fields and defaults
+
+Use the alternative operator `//` to supply a fallback when a field is missing or `null`,
+and the optional operator `?` to silence errors on mismatched types:
+
+```csharp
+using var doc = JsonDocument.Parse("""
+    [
+        { "name": "Alice", "email": "alice@example.com" },
+        { "name": "Bob" },
+        { "name": "Charlie", "email": "charlie@example.com" }
+    ]
+    """);
+
+// .email // "n/a" returns the fallback when the field is absent
+var results = Jq.Evaluate(".[] | {name: .name, email: (.email // \"n/a\")}", doc.RootElement);
+
+foreach (var result in results)
+    Console.WriteLine(result);
+// {"name":"Alice","email":"alice@example.com"}
+// {"name":"Bob","email":"n/a"}
+// {"name":"Charlie","email":"charlie@example.com"}
+```
+
+### Array operations
+
+Built-in functions like `map`, `select`, `sort_by`, and `group_by` make it easy to 
+slice and reshape collections:
+
+```csharp
+using var doc = JsonDocument.Parse("""
+    [
+        { "name": "Alice", "dept": "Engineering", "salary": 95000 },
+        { "name": "Bob",   "dept": "Marketing",   "salary": 72000 },
+        { "name": "Carol", "dept": "Engineering", "salary": 105000 },
+        { "name": "Dave",  "dept": "Marketing",   "salary": 68000 }
+    ]
+    """);
+
+// Group by department and compute average salary per group
+var results = Jq.Evaluate(
+    "group_by(.dept) | map({dept: .[0].dept, avg_salary: (map(.salary) | add / length)})",
+    doc.RootElement);
+
+Console.WriteLine(results.Single());
+// [{"dept":"Engineering","avg_salary":100000},{"dept":"Marketing","avg_salary":70000}]
+```
+
 ### Error handling
 
 Both `Jq.Parse` and `JqExpression.Evaluate` throw `JqException` on invalid expressions 
@@ -102,6 +168,70 @@ catch (JqException ex)
 {
     Console.WriteLine($"jq error: {ex.Message}");
 }
+```
+
+## Streaming JSONL
+
+`Jq.EvaluateAsync` accepts an `IAsyncEnumerable<JsonElement>` input and evaluates the 
+filter against each element as it arrives, making it well-suited for processing 
+[JSONL](https://jsonlines.org) (newline-delimited JSON) files or any other streaming 
+JSON source without buffering the entire dataset in memory.
+
+### Reading a JSONL file
+
+Use `JsonSerializer.DeserializeAsyncEnumerable<JsonElement>` to turn a stream of 
+newline-delimited JSON objects into an `IAsyncEnumerable<JsonElement>`:
+
+```csharp
+using System.Text.Json;
+using Devlooped;
+
+// users.jsonl — one JSON object per line:
+// {"id":1,"name":"Alice","dept":"Engineering"}
+// {"id":2,"name":"Bob","dept":"Marketing"}
+// {"id":3,"name":"Charlie","dept":"Engineering"}
+
+using var stream = File.OpenRead("users.jsonl");
+var elements = JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(
+    stream, topLevelValues: true);
+
+await foreach (var result in Jq.EvaluateAsync("select(.dept == \"Engineering\") | .name", elements))
+    Console.WriteLine(result);
+// "Alice"
+// "Charlie"
+```
+
+### Reusing a parsed expression across multiple streams
+
+Parse the expression once and pass it to `EvaluateAsync` to avoid re-parsing on every call:
+
+```csharp
+JqExpression filter = Jq.Parse("select(.level == \"error\") | .message");
+
+foreach (var logFile in Directory.GetFiles("logs", "*.jsonl"))
+{
+    using var stream = File.OpenRead(logFile);
+    var elements = JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(
+        stream, topLevelValues: true);
+
+    await foreach (var result in Jq.EvaluateAsync(filter, elements))
+        Console.WriteLine(result);
+}
+```
+
+### Cancellation
+
+Both `EvaluateAsync` overloads accept an optional `CancellationToken`:
+
+```csharp
+using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+using var stream = File.OpenRead("large.jsonl");
+var elements = JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(
+    stream, topLevelValues: true);
+
+await foreach (var result in Jq.EvaluateAsync(".name", elements, cts.Token))
+    Console.WriteLine(result);
 ```
 
 ## jq Compatibility
