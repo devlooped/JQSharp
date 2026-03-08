@@ -237,8 +237,7 @@ await foreach (var result in Jq.EvaluateAsync(".name", elements, cts.Token))
 ## jq Compatibility
 
 JQSharp targets the [jq 1.8](https://jqlang.org/manual/v1.8/) specification and passes 
-the official jq test suite for the supported feature set. The full jq manual is available 
-at [docs/manual.md](./docs/manual.md).
+the official jq test suite for the supported feature set. 
 
 Supported features include:
 
