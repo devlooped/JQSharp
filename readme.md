@@ -33,7 +33,10 @@ JQSharp exposes a minimal API surface via the `Jq` static class in the `Devloope
 using System.Text.Json;
 using Devlooped;
 
-using var doc = JsonDocument.Parse("""{"name":"Alice","age":30}""");
+using var doc = JsonDocument.Parse(
+    """
+    {"name":"Alice","age":30}
+    """);
 
 // Returns an IEnumerable<JsonElement> with the matching results
 var results = Jq.Evaluate(".name", doc.RootElement);
