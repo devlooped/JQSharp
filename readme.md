@@ -73,7 +73,8 @@ jq's full filter language is available, including pipes, array/object constructi
 built-in functions, conditionals, and reductions:
 
 ```csharp
-using var doc = JsonDocument.Parse("""
+using var doc = JsonDocument.Parse(
+    """
     {
         "orders": [
             { "id": 1, "total": 42.5, "status": "paid" },
@@ -98,7 +99,8 @@ Console.WriteLine(results.Single()); // 142.4
 Use object construction to project, rename, or combine fields from the input:
 
 ```csharp
-using var doc = JsonDocument.Parse("""
+using var doc = JsonDocument.Parse(
+    """
     {
         "user": { "id": 1, "name": "Alice", "email": "alice@example.com" },
         "role": "admin"
@@ -117,7 +119,8 @@ Use the alternative operator `//` to supply a fallback when a field is missing o
 and the optional operator `?` to silence errors on mismatched types:
 
 ```csharp
-using var doc = JsonDocument.Parse("""
+using var doc = JsonDocument.Parse(
+    """
     [
         { "name": "Alice", "email": "alice@example.com" },
         { "name": "Bob" },
@@ -145,7 +148,8 @@ Built-in functions like `map`, `select`, `sort_by`, and `group_by` make it easy 
 slice and reshape collections:
 
 ```csharp
-using var doc = JsonDocument.Parse("""
+using var doc = JsonDocument.Parse(
+    """
     [
         { "name": "Alice", "dept": "Engineering", "salary": 95000 },
         { "name": "Bob",   "dept": "Marketing",   "salary": 72000 },
