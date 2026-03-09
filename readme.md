@@ -239,21 +239,6 @@ foreach (var logFile in Directory.GetFiles("logs", "*.jsonl"))
 }
 ```
 
-### Cancellation
-
-Both `EvaluateAsync` overloads accept an optional `CancellationToken`:
-
-```csharp
-using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-using var stream = File.OpenRead("large.jsonl");
-var elements = JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(
-    stream, topLevelValues: true);
-
-await foreach (var result in Jq.EvaluateAsync(".name", elements, cts.Token))
-    Console.WriteLine(result);
-```
-
 ## jq Compatibility
 
 JQSharp targets the [jq 1.8](https://jqlang.org/manual/v1.8/) specification and passes 
