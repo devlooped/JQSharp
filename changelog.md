@@ -1,5 +1,9 @@
 # Changelog
 
+## [v1.0.0](https://github.com/devlooped/JQSharp/tree/v1.0.0) (2026-03-09)
+
+[Full Changelog](https://github.com/devlooped/JQSharp/compare/v1.0.0-beta...v1.0.0)
+
 ## [v1.0.0-beta](https://github.com/devlooped/JQSharp/tree/v1.0.0-beta) (2026-03-09)
 
 [Full Changelog](https://github.com/devlooped/JQSharp/compare/64a79c8b6525933c9df7a4a2c9827a28f17331ea...v1.0.0-beta)
