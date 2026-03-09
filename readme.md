@@ -82,7 +82,9 @@ using var doc = JsonDocument.Parse("""
 
 // Sum paid order totals
 var results = Jq.Evaluate(
-    "[.orders[] | select(.status == \"paid\") | .total] | add",
+    """
+    [.orders[] | select(.status == "paid") | .total] | add
+    """,
     doc.RootElement);
 
 Console.WriteLine(results.Single()); // 142.4
@@ -121,7 +123,11 @@ using var doc = JsonDocument.Parse("""
     """);
 
 // .email // "n/a" returns the fallback when the field is absent
-var results = Jq.Evaluate(".[] | {name: .name, email: (.email // \"n/a\")}", doc.RootElement);
+var results = Jq.Evaluate(
+    """
+    .[] | {name: .name, email: (.email // "n/a")}
+    """,
+    doc.RootElement);
 
 foreach (var result in results)
     Console.WriteLine(result);
@@ -195,7 +201,11 @@ using var stream = File.OpenRead("users.jsonl");
 var elements = JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(
     stream, topLevelValues: true);
 
-await foreach (var result in Jq.EvaluateAsync("select(.dept == \"Engineering\") | .name", elements))
+await foreach (var result in Jq.EvaluateAsync(
+    """
+    select(.dept == "Engineering") | .name
+    """,
+    elements))
     Console.WriteLine(result);
 // "Alice"
 // "Charlie"
@@ -206,7 +216,10 @@ await foreach (var result in Jq.EvaluateAsync("select(.dept == \"Engineering\") 
 Parse the expression once and pass it to `EvaluateAsync` to avoid re-parsing on every call:
 
 ```csharp
-JqExpression filter = Jq.Parse("select(.level == \"error\") | .message");
+JqExpression filter = Jq.Parse(
+    """
+    select(.level == "error") | .message
+    """);
 
 foreach (var logFile in Directory.GetFiles("logs", "*.jsonl"))
 {
