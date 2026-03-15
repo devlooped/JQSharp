@@ -67,6 +67,22 @@ foreach (var json in GetJsonStream())
 }
 ```
 
+### Performance vs jq.exe
+
+```
+BenchmarkDotNet v0.15.8, Windows 11 (10.0.26200.8037/25H2/2025Update/HudsonValley2)
+AMD Ryzen AI 9 HX 370 w/ Radeon 890M 2.00GHz, 1 CPU, 24 logical and 12 physical cores
+.NET SDK 10.0.104
+  [Host]     : .NET 8.0.25 (8.0.25, 8.0.2526.11203), X64 RyuJIT x86-64-v4
+  DefaultJob : .NET 8.0.25 (8.0.25, 8.0.2526.11203), X64 RyuJIT x86-64-v4
+```
+
+| Method                  | Mean         | Error      | StdDev     | Ratio | RatioSD | Gen0    | Gen1   | Allocated | Alloc Ratio |
+|-------------------------|-------------:|-----------:|-----------:|------:|--------:|--------:|-------:|----------:|------------:|
+| jq executable           | 20,774.05 us | 415.148 us | 838.619 us | 1.002 |    0.06 |       - |      - | 122.23 KB |        1.00 |
+| JQSharp no caching      |    149.67 us |   2.370 us |   2.911 us | 0.007 |    0.00 | 41.0156 | 8.3008 | 336.23 KB |        2.75 |
+| JQSharp w/query caching |     15.52 us |   0.061 us |   0.057 us | 0.001 |    0.00 |  6.7444 | 0.3357 |  55.34 KB |        0.45 |
+
 ### Transforming JSON
 
 jq's full filter language is available, including pipes, array/object construction, 
