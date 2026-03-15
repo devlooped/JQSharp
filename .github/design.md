@@ -52,6 +52,12 @@ The public façade `Jq` exposes `Parse()` to obtain a cacheable `JqExpression`, 
 jqsharp/
 ├── JQSharp.slnx                # Solution (src + tests)
 ├── src/
+│   ├── Benchmarks/
+│   │   ├── Benchmarks.csproj        # BenchmarkDotNet harness for jq.exe vs jqsharp comparisons
+│   │   ├── Program.cs               # 1M-message WhatsApp benchmark entry point
+│   │   └── WhatsApp/
+│   │       ├── Message.jq           # Benchmark query copied from Devlooped.WhatsApp
+│   │       └── Text.json            # Benchmark sample payload copied from Devlooped.WhatsApp tests
 │   ├── JQSharp/
 │   │   ├── JQSharp.csproj           # Library — net10.0, System.Text.Json only
 │   │   ├── Jq.cs                    # Public façade: Parse() and Evaluate()
@@ -88,6 +94,18 @@ jqsharp/
 └── docs/
     └── manual.md                # jq manual reference
 ```
+
+---
+
+## 2.1 Benchmark Project
+
+The repository also includes a small BenchmarkDotNet console project under `src/Benchmarks/` for throughput comparisons against the `Devlooped.JQ` NuGet package. The current benchmark uses the WhatsApp `Message.jq` filter and sample webhook payload from `Devlooped.WhatsApp`, then processes a 1,000,000-message workload in three modes:
+
+- `Devlooped.JQ`: batched execution through the bundled `jq.exe` process wrapper
+- `Devlooped.JQSharp` without expression caching: `Jq.Evaluate(query, input)`
+- `Devlooped.JQSharp` with expression caching: `Jq.Parse(query)` once, then `JqExpression.Evaluate(input)`
+
+To keep the benchmark self-contained and repeatable, the WhatsApp query and sample payload are copied into the benchmark project and shipped as content files.
 
 ---
 
