@@ -615,19 +615,20 @@ Using `IEnumerable<JsonElement>` with `yield return` matches jq's semantics natu
 
 ---
 
-## 14. Module System (`include`, `import`)
+## 14. Module System (`include`, `import`, `module`, `modulemeta`)
 
 ### 14.1 Overview
 
-JQSharp supports three module/data-loading forms:
+JQSharp supports four module/data-loading forms:
 
 | Form | Purpose | Scope behavior |
 |------|---------|----------------|
 | `include "relative/path" [<metadata>];` | Inline a jq module at parse time | Definitions become directly visible (unqualified names). |
 | `import "relative/path" as alias [<metadata>];` | Import jq `def` declarations under a namespace alias | Definitions are exposed as `alias::name`. |
 | `import "relative/path" as $alias [<metadata>];` | Import JSON data as a variable binding | Data is bound as `$alias::alias`. |
+| `module <metadata>;` | Attach declarative metadata to module file | No direct evaluation effect; consumed by `modulemeta`. |
 
-`include` performs content splicing into the current parse stream. `import` does not splice caller text: it either registers alias-prefixed function definitions (module import) or introduces a scoped variable binding (data import).
+`include` performs content splicing into the current parse stream. `import` does not splice caller text: it either registers alias-prefixed function definitions (module import) or introduces a scoped variable binding (data import). `module` is a top-of-module declarative statement.
 
 ### 14.2 JqResolver
 
@@ -651,7 +652,30 @@ Two built-in implementations are provided:
 | `JqFileResolver` | Resolves paths on the file system. Appends `.jq` when no extension is present. Relative paths are resolved from the including/importing module's directory (or `BaseDirectory` for top-level calls). |
 | `JqResourceResolver` | Resolves paths to embedded assembly resources. Slashes are converted to dots; a configurable `Prefix` is prepended; supports nested relative include/import chains. `GetCanonicalPath` checks the **original input path** for `.jq`/`.json` before dot-normalization, and appends `.jq` only when neither extension exists. |
 
-### 14.3 Include Parse-Time Content Splicing
+### 14.3 Module Metadata Registry and Statement
+
+The parser now maintains a shared metadata registry across nested parser instances:
+
+- `Dictionary<string, JsonElement> _moduleMetadataRegistry`
+
+Keying:
+
+- Key is the relative path token used by jq source (`"foo"` in `import "foo" as m;`), not canonical resolver path.
+
+Every module can optionally begin with:
+
+```jq
+module {"version": "1.0", "homepage": "https://example.com"};
+```
+
+Implementation details:
+
+1. `ParsePrimary()` recognizes `module` keyword and dispatches `ParseModuleStatement()`.
+2. The metadata expression is parsed as normal jq expression and immediately evaluated against `null` input with `JqEnvironment.Empty`.
+3. Result must be a single object value; it is stored as `_moduleStatementMetadata`.
+4. Statement consumes `;` and parsing continues with `ParsePipe()`.
+
+### 14.4 Include Parse-Time Content Splicing
 
 `include` is handled entirely at parse time using a **content-splice** strategy:
 
@@ -669,15 +693,16 @@ rest_of_program
 When `ParseIncludeExpression()` is invoked:
 
 1. The module path string is parsed (no interpolation allowed).
-2. An optional metadata object `{...}` is skipped (parsed but currently ignored).
+2. An optional metadata object `{...}` is parsed and preserved for dependency metadata.
 3. The terminating `;` is consumed.
 4. `GetCanonicalPath()` produces the cache key; if cached, file/resource IO is skipped.
-5. The parser captures the remaining caller text (`text[position..]`).
-6. Combined text is built as `moduleContent + "\n" + remainingText`.
-7. `ParseSubExpression(combinedText, canonicalPath)` parses the combined stream in a child parser.
-8. The parent advances `position` to `text.Length` because continuation is consumed by the child.
+5. The module is parsed in isolation first to populate metadata registry (`module` keys, `deps`, `defs`).
+6. The parser captures the remaining caller text (`text[position..]`).
+7. Combined text is built as `moduleContent + "\n" + remainingText`.
+8. `ParseSubExpression(combinedText, canonicalPath)` parses the combined stream in a child parser.
+9. The parent advances `position` to `text.Length` because continuation is consumed by the child.
 
-### 14.4 Import Parse Pipeline (Phase 16.2)
+### 14.5 Import Parse Pipeline (Phase 16.3)
 
 `import` first parses the shared prefix, then dispatches:
 
@@ -700,7 +725,7 @@ flowchart TD
     F --> G
 ```
 
-### 14.5 Function Import: Parse-Time Definition Extraction
+### 14.6 Function Import: Parse-Time Definition Extraction
 
 Function import extracts only exported `def` declarations from the child parse and re-registers them in the parent under `alias::` names.
 
@@ -735,7 +760,7 @@ finally
 }
 ```
 
-### 14.6 Data Import: Variable Binding
+### 14.7 Data Import: Variable Binding
 
 Data import (`import "data" as $cfg;`) loads JSON and binds it as a scoped variable named `$cfg::cfg`.
 
@@ -749,7 +774,7 @@ Data import (`import "data" as $cfg;`) loads JSON and binds it as a scoped varia
 5. If JSON parsing fails, `JsonException` is wrapped as:
    - `JqException("Failed to parse JSON data from '...': ...")`
 
-### 14.7 Qualified Name Resolution (`::`)
+### 14.8 Qualified Name Resolution (`::`)
 
 `ParsePrimary()` supports `::` for both variable and identifier/function references.
 
@@ -760,11 +785,58 @@ Data import (`import "data" as $cfg;`) loads JSON and binds it as a scoped varia
 
 This ensures module-qualified symbols are explicit and never accidentally treated as builtins or filter parameters.
 
-### 14.8 Caching
+### 14.9 Metadata Object Shape (`modulemeta`)
 
-The parser holds `Dictionary<string, string> _moduleCache` (keyed by canonical path), shared across nested include/import operations in a single `Jq.Parse()` call. Repeated loads of the same canonical path perform only one resolver read.
+For each imported/included module, registry stores a metadata object:
 
-### 14.9 Public API
+```json
+{
+  "...custom-module-keys": "...",
+  "deps": [
+    {
+      "relpath": "path",
+      "as": "alias-or-null",
+      "is_data": false,
+      "...import/include-metadata-keys": "..."
+    }
+  ],
+  "defs": ["name/arity"]
+}
+```
+
+Notes:
+
+- `deps` entries are recorded for `include`, function `import`, and data `import`.
+- `as` is `null` for `include`.
+- `is_data` is `true` only for `import ... as $alias`.
+- `defs` is collected from exported defs discovered when parsing module in import/metadata-collection mode.
+
+### 14.10 Runtime Environment Injection
+
+`JqEnvironment` now carries immutable module metadata map. At parse entrypoint, when metadata registry is non-empty, parsed filter is wrapped in `ModuleMetadataFilter` which injects metadata into the evaluation environment.
+
+### 14.11 `modulemeta` builtin
+
+`modulemeta` is a zero-arg builtin that consumes input as module name:
+
+```jq
+"foo" | modulemeta
+```
+
+Behavior:
+
+- Input must be string, else error: `modulemeta input must be a string`
+- Unknown module name errors: `Unknown module: 'foo'`
+- Returns metadata object with custom keys plus `deps` and `defs`
+
+### 14.12 Caching
+
+The parser now uses two shared dictionaries across nested parse operations in one `Jq.Parse()` call:
+
+- `_moduleCache` (canonical path -> module text)
+- `_moduleMetadataRegistry` (relative module path -> metadata object)
+
+### 14.13 Public API
 
 ```csharp
 // Pass a resolver to enable include/import support.

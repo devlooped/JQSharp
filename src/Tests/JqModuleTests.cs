@@ -55,7 +55,7 @@ public class JqModuleTests : IDisposable
     }
 
     [Fact]
-    public void Include_with_metadata_object_is_skipped_and_works()
+    public void Include_with_metadata_object_parses_and_works()
     {
         WriteModule("helpers", "def negate: -. ;");
         var resolver = new JqFileResolver(_tempDir);
@@ -305,6 +305,128 @@ public class JqModuleTests : IDisposable
             ["myns.greet.jq"] = """def greet: "hello " + .;""",
         });
         Assert.Equal(["\"hello world\""], EvaluateToStrings("""include "greet"; greet""", "\"world\"", resolver));
+    }
+
+    [Fact]
+    public void Module_statement_is_transparent()
+    {
+        WriteModule("meta", """module {"version": "1.0"}; def double: . * 2;""");
+        var resolver = new JqFileResolver(_tempDir);
+        Assert.Equal(["10"], EvaluateToStrings("""import "meta" as m; m::double""", "5", resolver));
+    }
+
+    [Fact]
+    public void Modulemeta_returns_custom_metadata()
+    {
+        WriteModule("meta", """module {"version": "1.0", "homepage": "https://example.com"}; def double: . * 2;""");
+        var resolver = new JqFileResolver(_tempDir);
+        var result = EvaluateToStrings("""import "meta" as m; "meta" | modulemeta | .version""", "null", resolver);
+        Assert.Equal(["\"1.0\""], result);
+    }
+
+    [Fact]
+    public void Modulemeta_includes_defs()
+    {
+        WriteModule("funcs", "def double: . * 2; def triple: . * 3;");
+        var resolver = new JqFileResolver(_tempDir);
+        var result = EvaluateToStrings("""import "funcs" as f; "funcs" | modulemeta | .defs""", "null", resolver);
+        Assert.Equal(["""["double/0","triple/0"]"""], result);
+    }
+
+    [Fact]
+    public void Modulemeta_includes_deps()
+    {
+        WriteModule("base", "def base_fn: . + 1;");
+        WriteModule("derived", """import "base" as b; def derived_fn: b::base_fn | . * 2;""");
+        var resolver = new JqFileResolver(_tempDir);
+        var result = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps | length""", "null", resolver);
+        Assert.Equal(["1"], result);
+    }
+
+    [Fact]
+    public void Modulemeta_deps_include_relpath_and_as()
+    {
+        WriteModule("base", "def base_fn: . + 1;");
+        WriteModule("derived", """import "base" as b; def derived_fn: b::base_fn;""");
+        var resolver = new JqFileResolver(_tempDir);
+        var result = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[0].relpath""", "null", resolver);
+        Assert.Equal(["\"base\""], result);
+        result = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[0].as""", "null", resolver);
+        Assert.Equal(["\"b\""], result);
+    }
+
+    [Fact]
+    public void Modulemeta_without_module_statement()
+    {
+        WriteModule("plain", "def inc: . + 1;");
+        var resolver = new JqFileResolver(_tempDir);
+        var result = EvaluateToStrings("""import "plain" as p; "plain" | modulemeta | .defs""", "null", resolver);
+        Assert.Equal(["""["inc/0"]"""], result);
+    }
+
+    [Fact]
+    public void Modulemeta_with_include()
+    {
+        WriteModule("incmod", """module {"type": "include-test"}; def half: . / 2;""");
+        var resolver = new JqFileResolver(_tempDir);
+        var result = EvaluateToStrings("""include "incmod"; "incmod" | modulemeta | .type""", "null", resolver);
+        Assert.Equal(["\"include-test\""], result);
+    }
+
+    [Fact]
+    public void Modulemeta_data_import_dep()
+    {
+        WriteJsonModule("data", """{"key": "val"}""");
+        WriteModule("uses_data", """import "data" as $d; def get_data: $d::d;""");
+        var resolver = new JqFileResolver(_tempDir);
+        var result = EvaluateToStrings("""import "uses_data" as m; "uses_data" | modulemeta | .deps[0].is_data""", "null", resolver);
+        Assert.Equal(["true"], result);
+    }
+
+    [Fact]
+    public void Include_metadata_captured_in_deps()
+    {
+        WriteModule("base", "def base_fn: . + 1;");
+        WriteModule("uses_include", """include "base" {"search": "."}; def wrapper: base_fn;""");
+        var resolver = new JqFileResolver(_tempDir);
+        var result = EvaluateToStrings("""import "uses_include" as m; "uses_include" | modulemeta | .deps[0].relpath""", "null", resolver);
+        Assert.Equal(["\"base\""], result);
+        result = EvaluateToStrings("""import "uses_include" as m; "uses_include" | modulemeta | .deps[0].search""", "null", resolver);
+        Assert.Equal(["\".\""], result);
+    }
+
+    [Fact]
+    public void Import_metadata_captured_in_deps()
+    {
+        WriteModule("base", "def base_fn: . + 1;");
+        WriteModule("uses_import", """import "base" as b {"search": "."}; def wrapper: b::base_fn;""");
+        var resolver = new JqFileResolver(_tempDir);
+        var result = EvaluateToStrings("""import "uses_import" as m; "uses_import" | modulemeta | .deps[0].search""", "null", resolver);
+        Assert.Equal(["\".\""], result);
+    }
+
+    [Fact]
+    public void Modulemeta_deps_include_relpath_as_and_is_data_flags()
+    {
+        WriteModule("base", "def base_fn: . + 1;");
+        WriteModule("helpers", "def helper: . * 2;");
+        WriteModule("derived", """include "base"; import "helpers" as h; def run: h::helper | base_fn;""");
+        var resolver = new JqFileResolver(_tempDir);
+
+        var includeAs = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[0].as""", "null", resolver);
+        Assert.Equal(["null"], includeAs);
+
+        var includeIsData = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[0].is_data""", "null", resolver);
+        Assert.Equal(["false"], includeIsData);
+
+        var importRelpath = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[] | select(.as == "h") | .relpath""", "null", resolver);
+        Assert.Equal(["\"helpers\""], importRelpath);
+
+        var importAs = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[] | select(.as == "h") | .as""", "null", resolver);
+        Assert.Equal(["\"h\""], importAs);
+
+        var importIsData = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[] | select(.as == "h") | .is_data""", "null", resolver);
+        Assert.Equal(["false"], importIsData);
     }
 
     // Helper resolver that wraps another and counts Resolve() calls.

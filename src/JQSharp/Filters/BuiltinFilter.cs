@@ -26,6 +26,7 @@ sealed class BuiltinFilter : JqFilter
         "tgamma", "lgamma", "j0", "j1",
         "modf", "frexp",
         "recurse", "halt", "error", "env", "builtins",
+        "modulemeta",
         "first", "last",
         "not",
         "now", "todate", "todateiso8601", "fromdate", "fromdateiso8601", "gmtime", "localtime", "mktime",
@@ -131,6 +132,7 @@ sealed class BuiltinFilter : JqFilter
             "error" => throw new JqException(input),
             "env" => EvaluateEnv(),
             "builtins" => EvaluateBuiltins(),
+            "modulemeta" => EvaluateModuleMeta(input, env),
             "first" => EvaluateFirst(input),
             "last" => EvaluateLast(input),
             "now" => EvaluateNow(),
@@ -1095,6 +1097,18 @@ sealed class BuiltinFilter : JqFilter
                 writer.WriteStringValue(name);
             writer.WriteEndArray();
         });
+    }
+
+    static IEnumerable<JsonElement> EvaluateModuleMeta(JsonElement input, JqEnvironment env)
+    {
+        if (input.ValueKind != JsonValueKind.String)
+            throw new JqException("modulemeta input must be a string");
+
+        var moduleName = input.GetString()!;
+        if (!env.TryGetModuleMetadata(moduleName, out var metadata))
+            throw new JqException($"Unknown module: '{moduleName}'");
+
+        yield return metadata;
     }
 
     static IEnumerable<JsonElement> EvaluateFirst(JsonElement input)
