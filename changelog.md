@@ -1,5 +1,17 @@
 # Changelog
 
+## [v1.0.1](https://github.com/devlooped/JQSharp/tree/v1.0.1) (2026-03-27)
+
+[Full Changelog](https://github.com/devlooped/JQSharp/compare/v1.0.0...v1.0.1)
+
+:sparkles: Implemented enhancements:
+
+- Add support for module metadata [\#18](https://github.com/devlooped/JQSharp/pull/18) (@kzu)
+
+:twisted_rightwards_arrows: Merged:
+
+- Add benchmarks against jq executable [\#14](https://github.com/devlooped/JQSharp/pull/14) (@kzu)
+
 ## [v1.0.0](https://github.com/devlooped/JQSharp/tree/v1.0.0) (2026-03-09)
 
 [Full Changelog](https://github.com/devlooped/JQSharp/compare/v1.0.0-beta...v1.0.0)
