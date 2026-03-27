@@ -222,7 +222,7 @@ Module content is cached by path to avoid redundant parsing.
 - `import RelativePathString as NAME [<metadata>];`
 - `import RelativePathString as $NAME [<metadata>];`
 
-### - [ ] Phase 16.3 — Modules Metadata 
+### - [x] Phase 16.3 — Modules Metadata 
 
 - `module <metadata>;`
 - `modulemeta`

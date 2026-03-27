@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -13,20 +14,41 @@ sealed class JqParser
     readonly HashSet<string> _definedFilterParams = new(StringComparer.Ordinal);
     readonly JqResolver? _resolver;
     readonly Dictionary<string, string> _moduleCache;
+    readonly Dictionary<string, JsonElement> _moduleMetadataRegistry;
     readonly string? _currentModulePath;
+    readonly string? _currentModuleRelPath;
+    JsonElement? _moduleStatementMetadata;
+    List<JsonElement>? _moduleDeps;
     int position;
 
-    public JqParser(string text, JqResolver? resolver = null, Dictionary<string, string>? moduleCache = null, string? currentModulePath = null)
+    public JqParser(
+        string text,
+        JqResolver? resolver = null,
+        Dictionary<string, string>? moduleCache = null,
+        Dictionary<string, JsonElement>? moduleMetadataRegistry = null,
+        string? currentModulePath = null,
+        string? currentModuleRelPath = null)
     {
         this.text = text ?? throw new ArgumentNullException(nameof(text));
         _resolver = resolver;
         _moduleCache = moduleCache ?? new();
+        _moduleMetadataRegistry = moduleMetadataRegistry ?? new(StringComparer.Ordinal);
         _currentModulePath = currentModulePath;
+        _currentModuleRelPath = currentModuleRelPath;
     }
 
     public static JqFilter Parse(string expression, JqResolver? resolver = null)
     {
-        return new JqParser(expression, resolver).Parse();
+        var parser = new JqParser(expression, resolver);
+        var filter = parser.Parse();
+        if (parser._moduleMetadataRegistry.Count > 0)
+        {
+            filter = new ModuleMetadataFilter(
+                filter,
+                parser._moduleMetadataRegistry.ToImmutableDictionary(StringComparer.Ordinal));
+        }
+
+        return filter;
     }
 
     public JqFilter Parse()
@@ -398,6 +420,9 @@ sealed class JqParser
         if (TryConsumeKeyword("import"))
             return ParseImportExpression();
 
+        if (TryConsumeKeyword("module"))
+            return ParseModuleStatement();
+
         if (TryConsumeSequence(".."))
             return new RecurseFilter();
 
@@ -739,6 +764,21 @@ sealed class JqParser
         return new BreakFilter(name);
     }
 
+    JqFilter ParseModuleStatement()
+    {
+        SkipWhitespace();
+        var metadataExpression = ParsePipe();
+        var metadata = EvaluateConstantExpression(metadataExpression);
+        if (metadata.ValueKind != JsonValueKind.Object)
+            throw new JqException("module metadata must be an object");
+
+        _moduleStatementMetadata = metadata.Clone();
+
+        SkipWhitespace();
+        Expect(';');
+        return ParsePipe();
+    }
+
     JqFilter ParseIncludeExpression()
     {
         if (_resolver is null)
@@ -752,10 +792,13 @@ sealed class JqParser
 
         var modulePath = ParseStringContent();
 
-        // Skip optional metadata object, e.g.  {"search": "."}
+        // Parse optional metadata object, e.g. {"search": "."}
         SkipWhitespace();
+        JsonElement? includeMetadata = null;
         if (Peek() == '{')
-            SkipBalanced('{', '}');
+            includeMetadata = ParseMetadataObject();
+
+        AddModuleDependency(modulePath, alias: null, isData: false, includeMetadata);
 
         SkipWhitespace();
         Expect(';');
@@ -769,6 +812,9 @@ sealed class JqParser
             _moduleCache[canonicalPath] = moduleContent;
         }
 
+        // Parse in isolation first so metadata/defs for the included module are captured.
+        ParseModuleForMetadata(modulePath, canonicalPath, moduleContent);
+
         // Splice: module definitions followed by whatever remains of the current program.
         var remainingText = text[position..];
         var combinedText = moduleContent + "\n" + remainingText;
@@ -777,7 +823,7 @@ sealed class JqParser
         // so the parent parser (Parse()) doesn't see leftover text.
         position = text.Length;
 
-        return ParseSubExpression(combinedText, canonicalPath);
+        return ParseSubExpression(combinedText, canonicalPath, _currentModuleRelPath);
     }
 
     JqFilter ParseImportExpression()
@@ -806,8 +852,11 @@ sealed class JqParser
         var alias = ParseIdentifier();
 
         SkipWhitespace();
+        JsonElement? importMetadata = null;
         if (Peek() == '{')
-            SkipBalanced('{', '}');
+            importMetadata = ParseMetadataObject();
+
+        AddModuleDependency(modulePath, alias, isData: false, importMetadata);
 
         SkipWhitespace();
         Expect(';');
@@ -820,7 +869,7 @@ sealed class JqParser
             _moduleCache[canonicalPath] = moduleContent;
         }
 
-        var parser = new JqParser(moduleContent + "\n.", _resolver, _moduleCache, canonicalPath)
+        var parser = new JqParser(moduleContent + "\n.", _resolver, _moduleCache, _moduleMetadataRegistry, canonicalPath, modulePath)
         {
             _exportedDefs = new()
         };
@@ -832,6 +881,7 @@ sealed class JqParser
             parser._definedFilterParams.Add(param);
 
         parser.Parse();
+        RegisterModuleMetadata(modulePath, parser);
 
         var importedKeys = new List<(string Name, int Arity)>();
         foreach (var kvp in parser._exportedDefs)
@@ -857,8 +907,11 @@ sealed class JqParser
         var alias = ParseIdentifier();
 
         SkipWhitespace();
+        JsonElement? importMetadata = null;
         if (Peek() == '{')
-            SkipBalanced('{', '}');
+            importMetadata = ParseMetadataObject();
+
+        AddModuleDependency(modulePath, alias, isData: true, importMetadata);
 
         SkipWhitespace();
         Expect(';');
@@ -897,20 +950,6 @@ sealed class JqParser
         {
             if (added)
                 _definedVariables.Remove(variableName);
-        }
-    }
-
-    // Skips a balanced pair of open/close characters (e.g. '{'/'}'), ignoring
-    // their contents.  Used to skip metadata objects in include statements.
-    void SkipBalanced(char open, char close)
-    {
-        Expect(open);
-        var depth = 1;
-        while (!IsAtEnd && depth > 0)
-        {
-            var ch = Consume();
-            if (ch == open) depth++;
-            else if (ch == close) depth--;
         }
     }
 
@@ -1185,9 +1224,17 @@ sealed class JqParser
         return ParseSubExpression(valueExpression);
     }
 
-    JqFilter ParseSubExpression(string expression, string? modulePath = null)
+    JqFilter ParseSubExpression(string expression, string? modulePath = null, string? moduleRelPath = null)
     {
-        var parser = new JqParser(expression, _resolver, _moduleCache, modulePath ?? _currentModulePath);
+        var parser = new JqParser(
+            expression,
+            _resolver,
+            _moduleCache,
+            _moduleMetadataRegistry,
+            modulePath ?? _currentModulePath,
+            moduleRelPath ?? _currentModuleRelPath);
+        parser._moduleStatementMetadata = _moduleStatementMetadata;
+        parser._moduleDeps = _moduleDeps;
         foreach (var variable in _definedVariables)
             parser._definedVariables.Add(variable);
         foreach (var kvp in _definedFunctions)
@@ -1197,7 +1244,145 @@ sealed class JqParser
         if (_exportedDefs is not null)
             parser._exportedDefs = _exportedDefs;
 
-        return parser.Parse();
+        var parsed = parser.Parse();
+        _moduleStatementMetadata = parser._moduleStatementMetadata;
+        _moduleDeps = parser._moduleDeps;
+        return parsed;
+    }
+
+    JsonElement ParseMetadataObject()
+    {
+        var metadataExpression = ParseObjectConstructor();
+        var metadata = EvaluateConstantExpression(metadataExpression);
+        if (metadata.ValueKind != JsonValueKind.Object)
+            throw new JqException("module metadata must be an object");
+        return metadata.Clone();
+    }
+
+    static JsonElement EvaluateConstantExpression(JqFilter filter)
+    {
+        var results = filter.Evaluate(CreateNullElement(), JqEnvironment.Empty).ToArray();
+        if (results.Length != 1)
+            throw new JqException("module metadata expression must produce exactly one value");
+        return results[0].Clone();
+    }
+
+    static JsonElement CreateDependencyEntry(string relpath, string? alias, bool isData, JsonElement? metadata)
+    {
+        return CreateJsonElement(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("relpath", relpath);
+            writer.WritePropertyName("as");
+            if (alias is null)
+                writer.WriteNullValue();
+            else
+                writer.WriteStringValue(alias);
+
+            writer.WriteBoolean("is_data", isData);
+
+            if (metadata is JsonElement metadataObject && metadataObject.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in metadataObject.EnumerateObject())
+                {
+                    writer.WritePropertyName(property.Name);
+                    property.Value.WriteTo(writer);
+                }
+            }
+
+            writer.WriteEndObject();
+        });
+    }
+
+    void AddModuleDependency(string relpath, string? alias, bool isData, JsonElement? metadata)
+    {
+        _moduleDeps ??= new();
+        _moduleDeps.Add(CreateDependencyEntry(relpath, alias, isData, metadata));
+    }
+
+    static JsonElement CreateMetadataObject(
+        JsonElement? moduleStatementMetadata,
+        List<JsonElement>? deps,
+        IEnumerable<string> defs)
+    {
+        return CreateJsonElement(writer =>
+        {
+            writer.WriteStartObject();
+
+            if (moduleStatementMetadata is JsonElement moduleMetadata && moduleMetadata.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in moduleMetadata.EnumerateObject())
+                {
+                    writer.WritePropertyName(property.Name);
+                    property.Value.WriteTo(writer);
+                }
+            }
+
+            writer.WritePropertyName("deps");
+            writer.WriteStartArray();
+            if (deps is not null)
+            {
+                foreach (var dep in deps)
+                    dep.WriteTo(writer);
+            }
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("defs");
+            writer.WriteStartArray();
+            foreach (var def in defs)
+                writer.WriteStringValue(def);
+            writer.WriteEndArray();
+
+            writer.WriteEndObject();
+        });
+    }
+
+    void RegisterModuleMetadata(string modulePath, JqParser moduleParser)
+    {
+        if (string.IsNullOrEmpty(modulePath))
+            return;
+
+        var defs = moduleParser._exportedDefs is null
+            ? Enumerable.Empty<string>()
+            : moduleParser._exportedDefs.Keys
+                .Select(static key => $"{key.Name}/{key.Arity}")
+                .OrderBy(static value => value, StringComparer.Ordinal);
+
+        var metadata = CreateMetadataObject(moduleParser._moduleStatementMetadata, moduleParser._moduleDeps, defs);
+        _moduleMetadataRegistry[modulePath] = metadata.Clone();
+    }
+
+    void ParseModuleForMetadata(string modulePath, string canonicalPath, string moduleContent)
+    {
+        if (_moduleMetadataRegistry.ContainsKey(modulePath))
+            return;
+
+        var parser = new JqParser(moduleContent + "\n.", _resolver, _moduleCache, _moduleMetadataRegistry, canonicalPath, modulePath)
+        {
+            _exportedDefs = new()
+        };
+        parser.Parse();
+        RegisterModuleMetadata(modulePath, parser);
+    }
+
+    static JsonElement CreateNullElement()
+    {
+        using var document = JsonDocument.Parse("null");
+        return document.RootElement.Clone();
+    }
+
+    static JsonElement CreateJsonElement(Action<Utf8JsonWriter> write)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            write(writer);
+            writer.Flush();
+        }
+
+        stream.Position = 0;
+        using var document = JsonDocument.Parse(stream);
+        return document.RootElement.Clone();
     }
 
     string ReadUntilTopLevel(params char[] terminators)
