@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.0.2](https://github.com/devlooped/JQSharp/tree/v1.0.2) (2026-08-11)
+
+[Full Changelog](https://github.com/devlooped/JQSharp/compare/v1.0.1...v1.0.2)
+
+:twisted_rightwards_arrows: Merged:
+
+- Add external variable bindings for JqExpression evaluation [\#36](https://github.com/devlooped/JQSharp/pull/36) (@Copilot)
+
 ## [v1.0.1](https://github.com/devlooped/JQSharp/tree/v1.0.1) (2026-03-27)
 
 [Full Changelog](https://github.com/devlooped/JQSharp/compare/v1.0.0...v1.0.1)
