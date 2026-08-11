@@ -296,7 +296,7 @@ Supported features include:
 - String interpolation (`"\(.foo)"`) and format strings (`@base64`, `@uri`, `@csv`, `@tsv`, `@html`, `@json`, `@text`, `@sh`)
 - Variables (`as $x`), destructuring, external variable bindings at evaluation time, and user-defined functions (`def f(x): …`)
 - `reduce`, `foreach`, `label-break`, `try-catch`, `?//` alternative operator
-- Optional operator (`?`), path expressions, update (|=`) and assignment operators
+- Optional operator (`?`), path expressions, update (`|=`) and assignment operators
 
 <!-- #content -->
 
