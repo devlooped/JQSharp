@@ -381,16 +381,18 @@ sealed class JqParser
         {
             var name = ParseIdentifier();
             if (TryConsumeSequence("::"))
-                name += "::" + ParseIdentifier();
-
-            if (string.Equals(name, "ENV", StringComparison.Ordinal) ||
-                string.Equals(name, "__loc__", StringComparison.Ordinal) ||
-                _definedVariables.Contains(name))
             {
+                // Module-qualified variables must be imported/defined at parse time.
+                name += "::" + ParseIdentifier();
+                if (!_definedVariables.Contains(name))
+                    throw new JqException($"${name} is not defined");
+
                 return new VariableFilter(name);
             }
 
-            throw new JqException($"${name} is not defined");
+            // Simple names may be bound later via as-bindings, builtins ($ENV),
+            // or external variables supplied at evaluation time.
+            return new VariableFilter(name);
         }
 
         if (TryConsumeKeyword("try"))

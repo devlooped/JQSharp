@@ -25,6 +25,60 @@ sealed class JqEnvironment
         this.moduleMetadata = moduleMetadata;
     }
 
+    /// <summary>
+    /// Creates an environment pre-bound with the given external variables.
+    /// Keys must be valid jq identifiers and must not include a leading <c>$</c>.
+    /// </summary>
+    public static JqEnvironment FromVariables(IReadOnlyDictionary<string, JsonElement>? variables)
+    {
+        if (variables is null || variables.Count == 0)
+            return Empty;
+
+        var env = Empty;
+        foreach (var pair in variables)
+        {
+            ValidateVariableName(pair.Key);
+            env = env.Bind(pair.Key, pair.Value.Clone());
+        }
+
+        return env;
+    }
+
+    internal static void ValidateVariableName(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+
+        if (name.Length == 0)
+            throw new ArgumentException("Variable name cannot be empty.");
+
+        if (name[0] == '$')
+            throw new ArgumentException($"Variable name '{name}' must not start with '$'.");
+
+        if (!IsValidVariableName(name))
+            throw new ArgumentException($"Variable name '{name}' is not a valid jq identifier.");
+    }
+
+    internal static bool IsValidVariableName(string name)
+    {
+        if (name.Length == 0)
+            return false;
+
+        if (!IsIdentifierStart(name[0]))
+            return false;
+
+        for (var i = 1; i < name.Length; i++)
+        {
+            if (!IsIdentifierPart(name[i]))
+                return false;
+        }
+
+        return true;
+    }
+
+    static bool IsIdentifierStart(char ch) => ch == '_' || char.IsLetter(ch);
+
+    static bool IsIdentifierPart(char ch) => IsIdentifierStart(ch) || char.IsDigit(ch);
+
     public JqEnvironment Bind(string name, JsonElement value) => new(bindings.SetItem(name, value), filterBindings, moduleMetadata);
 
     public JqEnvironment BindFilter(string name, FilterClosure closure) => new(bindings, filterBindings.SetItem(name, closure), moduleMetadata);
