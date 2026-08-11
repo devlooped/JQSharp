@@ -40,9 +40,14 @@ The system is organized as a **two-phase pipeline**:
 | Phase | Entry Point | Responsibility |
 |-------|-------------|----------------|
 | **Parse** | `Jq.Parse(string)` → `JqExpression` | Tokenize + parse jq expression → reusable `JqExpression` wrapping a `JqFilter` AST |
-| **Evaluate** | `JqExpression.Evaluate(JsonElement)` | Walk the AST, producing `IEnumerable<JsonElement>` |
+| **Evaluate** | `JqExpression.Evaluate(JsonElement[, variables])` | Walk the AST, producing `IEnumerable<JsonElement>` |
 
 The public façade `Jq` exposes `Parse()` to obtain a cacheable `JqExpression`, and `Evaluate()` as a convenience that combines both phases. `JqExpression` handles error translation and clones output elements to decouple them from the input `JsonDocument`. Both `JqExpression` and the underlying AST are immutable and thread-safe.
+
+Optional external variables may be supplied at evaluation time via
+`IReadOnlyDictionary<string, JsonElement>` (keys without `$`, valid jq identifiers).
+They are loaded into `JqEnvironment` through `JqEnvironment.FromVariables` before the
+AST walk, similar to jq `--arg`/`--argjson` and dynamic like `$ENV`.
 
 ---
 

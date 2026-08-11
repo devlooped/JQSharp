@@ -43,6 +43,26 @@ public static class Jq
         => Parse(expression).Evaluate(input);
 
     /// <summary>
+    /// Evaluates a jq filter expression against the given JSON input and returns the matching results,
+    /// with optional external variable bindings.
+    /// </summary>
+    /// <param name="expression">The jq filter expression to evaluate.</param>
+    /// <param name="input">The JSON element to use as input for the filter.</param>
+    /// <param name="variables">
+    /// Optional external variables to bind before evaluation, analogous to jq's
+    /// <c>--arg</c>/<c>--argjson</c>. Dictionary keys are variable names without a
+    /// leading <c>$</c> and must be valid jq identifiers (for example, <c>"root"</c>
+    /// binds <c>$root</c>).
+    /// </param>
+    /// <returns>An enumerable of <see cref="JsonElement"/> values produced by the filter.</returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when a variable name is empty, starts with <c>$</c>, or is not a valid jq identifier.
+    /// </exception>
+    /// <exception cref="JqException">Thrown when the expression is empty, invalid, or causes an error during evaluation.</exception>
+    public static IEnumerable<JsonElement> Evaluate(string expression, JsonElement input, IReadOnlyDictionary<string, JsonElement>? variables)
+        => Parse(expression).Evaluate(input, variables);
+
+    /// <summary>
     /// Evaluates a jq filter expression against each element in an asynchronous sequence and yields the matching results.
     /// </summary>
     /// <param name="expression">The jq filter expression to evaluate.</param>
@@ -53,10 +73,37 @@ public static class Jq
     /// to each element in <paramref name="input"/>.
     /// </returns>
     /// <exception cref="JqException">Thrown when the expression is empty, invalid, or causes an error during evaluation.</exception>
-    public static async IAsyncEnumerable<JsonElement> EvaluateAsync(string expression, IAsyncEnumerable<JsonElement> input, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public static IAsyncEnumerable<JsonElement> EvaluateAsync(string expression, IAsyncEnumerable<JsonElement> input, CancellationToken cancellationToken = default)
+        => EvaluateAsync(expression, input, variables: null, cancellationToken);
+
+    /// <summary>
+    /// Evaluates a jq filter expression against each element in an asynchronous sequence and yields the matching results,
+    /// with optional external variable bindings.
+    /// </summary>
+    /// <param name="expression">The jq filter expression to evaluate.</param>
+    /// <param name="input">The asynchronous sequence of <see cref="JsonElement"/> values to evaluate the filter against.</param>
+    /// <param name="variables">
+    /// Optional external variables to bind before evaluation, analogous to jq's
+    /// <c>--arg</c>/<c>--argjson</c>. Dictionary keys are variable names without a
+    /// leading <c>$</c> and must be valid jq identifiers.
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the asynchronous iteration.</param>
+    /// <returns>
+    /// An asynchronous sequence of <see cref="JsonElement"/> values produced by applying the filter
+    /// to each element in <paramref name="input"/>.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when a variable name is empty, starts with <c>$</c>, or is not a valid jq identifier.
+    /// </exception>
+    /// <exception cref="JqException">Thrown when the expression is empty, invalid, or causes an error during evaluation.</exception>
+    public static async IAsyncEnumerable<JsonElement> EvaluateAsync(
+        string expression,
+        IAsyncEnumerable<JsonElement> input,
+        IReadOnlyDictionary<string, JsonElement>? variables,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var parsed = Parse(expression);
-        await foreach (var element in EvaluateAsync(parsed, input, cancellationToken))
+        await foreach (var element in EvaluateAsync(parsed, input, variables, cancellationToken))
             yield return element;
     }
 
@@ -74,11 +121,41 @@ public static class Jq
     /// Prefer this overload when evaluating the same expression against multiple streams, as it avoids
     /// re-parsing the filter on every call.
     /// </remarks>
-    public static async IAsyncEnumerable<JsonElement> EvaluateAsync(JqExpression expression, IAsyncEnumerable<JsonElement> input, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public static IAsyncEnumerable<JsonElement> EvaluateAsync(JqExpression expression, IAsyncEnumerable<JsonElement> input, CancellationToken cancellationToken = default)
+        => EvaluateAsync(expression, input, variables: null, cancellationToken);
+
+    /// <summary>
+    /// Evaluates a parsed <see cref="JqExpression"/> against each element in an asynchronous sequence and yields the matching results,
+    /// with optional external variable bindings.
+    /// </summary>
+    /// <param name="expression">The pre-parsed <see cref="JqExpression"/> to evaluate.</param>
+    /// <param name="input">The asynchronous sequence of <see cref="JsonElement"/> values to evaluate the expression against.</param>
+    /// <param name="variables">
+    /// Optional external variables to bind before evaluation, analogous to jq's
+    /// <c>--arg</c>/<c>--argjson</c>. Dictionary keys are variable names without a
+    /// leading <c>$</c> and must be valid jq identifiers.
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the asynchronous iteration.</param>
+    /// <returns>
+    /// An asynchronous sequence of <see cref="JsonElement"/> values produced by applying the expression
+    /// to each element in <paramref name="input"/>.
+    /// </returns>
+    /// <remarks>
+    /// Prefer this overload when evaluating the same expression against multiple streams, as it avoids
+    /// re-parsing the filter on every call.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Thrown when a variable name is empty, starts with <c>$</c>, or is not a valid jq identifier.
+    /// </exception>
+    public static async IAsyncEnumerable<JsonElement> EvaluateAsync(
+        JqExpression expression,
+        IAsyncEnumerable<JsonElement> input,
+        IReadOnlyDictionary<string, JsonElement>? variables,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         await foreach (var element in input.WithCancellation(cancellationToken))
         {
-            foreach (var result in expression.Evaluate(element))
+            foreach (var result in expression.Evaluate(element, variables))
                 yield return result;
         }
     }

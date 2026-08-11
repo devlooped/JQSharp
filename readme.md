@@ -255,6 +255,33 @@ foreach (var logFile in Directory.GetFiles("logs", "*.jsonl"))
 }
 ```
 
+### External variables
+
+Pass a dictionary of variables when evaluating to inject values available as `$name`
+in the filter—similar to jq's `--arg` / `--argjson`, and resolved dynamically like `$ENV`.
+Dictionary keys must be valid jq identifiers and must **not** include a leading `$`:
+
+```csharp
+using var doc = JsonDocument.Parse("""{"name":"Alice"}""");
+using var root = JsonDocument.Parse("""{"id":42,"role":"admin"}""");
+
+var variables = new Dictionary<string, JsonElement>
+{
+    ["root"] = root.RootElement, // binds $root
+};
+
+// $root is available as if it had been bound with `as`, but supplied from host code
+var results = Jq.Evaluate(
+    "{name, id: $root.id, role: $root.role}",
+    doc.RootElement,
+    variables);
+
+Console.WriteLine(results.Single()); // {"name":"Alice","id":42,"role":"admin"}
+```
+
+The same dictionary can be passed to `JqExpression.Evaluate` and the `EvaluateAsync`
+overloads. Missing variables throw at evaluation time (`$name is not defined`).
+
 ## jq Compatibility
 
 JQSharp targets the [jq 1.8](https://jqlang.org/manual/v1.8/) specification and passes 
@@ -267,7 +294,7 @@ Supported features include:
 - Array and object constructors (`[]`, `{}`)
 - All built-in functions (`map`, `select`, `group_by`, `to_entries`, `from_entries`, `env`, `limit`, `until`, `recurse`, `paths`, `walk`, `ascii`, `format`, `strftime`, `debug`, …)
 - String interpolation (`"\(.foo)"`) and format strings (`@base64`, `@uri`, `@csv`, `@tsv`, `@html`, `@json`, `@text`, `@sh`)
-- Variables (`as $x`), destructuring, and user-defined functions (`def f(x): …`)
+- Variables (`as $x`), destructuring, external variable bindings at evaluation time, and user-defined functions (`def f(x): …`)
 - `reduce`, `foreach`, `label-break`, `try-catch`, `?//` alternative operator
 - Optional operator (`?`), path expressions, update (|=`) and assignment operators
 
