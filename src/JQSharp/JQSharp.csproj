@@ -14,4 +14,9 @@
     <InternalsVisibleTo Include="Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Linked, not copied: spec/prelude.jq is shared by every port. -->
+    <EmbeddedResource Include="..\..\spec\prelude.jq" LogicalName="jqlite.prelude.jq" Link="Core\Builtins\prelude.jq" />
+  </ItemGroup>
+
 </Project>
