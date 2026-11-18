@@ -16,6 +16,11 @@ static class ValueText
 {
     const string MaxDouble = "1.7976931348623157e+308";
 
+    /// <summary>The deepest level the writer writes (§5.1, §11).</summary>
+    public const int MaxWriteDepth = 10001;
+
+    const string TooDeep = "<skipped: too deep>";
+
     public static string ToJson(JqValue value)
     {
         var builder = new StringBuilder();
@@ -25,7 +30,9 @@ static class ValueText
 
     /// <summary>
     /// Writes the canonical text of <paramref name="value"/>. No recursion: the containers being
-    /// written are on an explicit stack, so nesting depth is not limited by the host stack.
+    /// written are on an explicit stack, so nesting depth is not limited by the host stack. A value
+    /// nested deeper than <see cref="MaxWriteDepth"/> levels (the outermost value is level 1) is
+    /// written as <c>&lt;skipped: too deep&gt;</c>, as jq 1.8.2 does for scalars and containers alike.
     /// </summary>
     public static void Write(StringBuilder builder, JqValue value)
     {
@@ -33,7 +40,10 @@ static class ValueText
         var current = value;
         while (true)
         {
-            if (WriteOpening(builder, current))
+            // stack.Count is the number of containers around current: its level minus one.
+            if (stack.Count >= MaxWriteDepth)
+                builder.Append(TooDeep);
+            else if (WriteOpening(builder, current))
             {
                 // A container with elements: write its first one next.
                 stack.Add((current, 0));
@@ -158,8 +168,12 @@ static class ValueText
         builder.Append(text, run, text.Length - run).Append('"');
     }
 
-    /// <summary>The JSON text of <paramref name="value"/>; when longer than <paramref name="maxBytes"/> UTF-8 bytes, its first <c>maxBytes - 3</c> bytes (whole code points) and "...".</summary>
-    public static string ToJsonTruncated(JqValue value, int maxBytes)
+    /// <summary>
+    /// The JSON text of <paramref name="value"/>; when longer than <paramref name="maxBytes"/> UTF-8
+    /// bytes, its longest prefix of at most <paramref name="keepBytes"/> bytes that ends on a code
+    /// point boundary, then "...".
+    /// </summary>
+    public static string ToJsonTruncated(JqValue value, int maxBytes, int keepBytes)
     {
         var text = ToJson(value);
         if (text.Length * 3 <= maxBytes || Encoding.UTF8.GetByteCount(text) <= maxBytes)
@@ -170,7 +184,7 @@ static class ValueText
         while (end < text.Length)
         {
             var size = CodePoints.Utf8Length(text, end, out var units);
-            if (bytes + size > maxBytes - 3)
+            if (bytes + size > keepBytes)
                 break;
             bytes += size;
             end += units;
@@ -242,9 +256,9 @@ static class ValueText
     }
 
     /// <summary>
-    /// Reads a number the way jq 1.8 reads a numeric literal (<c>tonumber</c>, and the numbers of
-    /// JSON text): an optional sign, then digits with an optional fraction (<c>1.</c> and <c>.5</c>
-    /// included) and exponent, or, ignoring case, <c>nan</c>, <c>inf</c> or <c>infinity</c>. No white space.
+    /// Reads the numeric text of §5.3 (<c>tonumber</c>, and the numbers of JSON text): an optional
+    /// sign, then digits with an optional fraction (<c>1.</c> and <c>.5</c> included) and exponent,
+    /// or, in any ASCII case, <c>nan</c> or <c>snan</c> (NaN), <c>inf</c> or <c>infinity</c>. No white space.
     /// </summary>
     public static bool TryParseNumber(string text, out double number)
     {
@@ -258,7 +272,7 @@ static class ValueText
         }
 
         var word = text.AsSpan(i);
-        if (word.Equals("nan", StringComparison.OrdinalIgnoreCase))
+        if (word.Equals("nan", StringComparison.OrdinalIgnoreCase) || word.Equals("snan", StringComparison.OrdinalIgnoreCase))
         {
             number = double.NaN;
             return true;
@@ -299,8 +313,10 @@ static class ValueText
     }
 
     /// <summary>
-    /// Reads one JSON value from <paramref name="text"/> (jq's <c>fromjson</c>). On failure
-    /// <paramref name="error"/> is the message, with the line and column where reading stopped.
+    /// Reads exactly one JSON value from <paramref name="text"/> (§5.3; jq's <c>fromjson</c>). On
+    /// failure <paramref name="error"/> is the whole message, <c>&lt;reason&gt; (while parsing
+    /// '&lt;text&gt;')</c>, the reason with the line and column where reading stopped (except for
+    /// <c>Expected JSON value</c> and <c>Unexpected extra JSON values</c>, as in jq).
     /// </summary>
     public static bool TryParse(string text, out JqValue value, out JqValue error)
         => new JsonReader(text).Read(out value, out error);
@@ -308,8 +324,8 @@ static class ValueText
     /// <summary>
     /// A JSON reader without recursion (an explicit stack), so deep input cannot exhaust the host
     /// stack. Like jq, a literal is any run of characters up to white space, a quote or one of
-    /// <c>[]{},:</c>; raw control characters are accepted inside strings, and every lone surrogate
-    /// (escaped or raw) becomes U+FFFD.
+    /// <c>[]{},:</c>; a raw control character inside a string is an error, and every lone
+    /// surrogate (escaped or raw) becomes U+FFFD.
     /// </summary>
     sealed class JsonReader(string text)
     {
@@ -353,7 +369,7 @@ static class ValueText
                 pos = 1;
             SkipSpace();
             if (pos == text.Length)
-                return Fail(ValueErrors.ExpectedValue);
+                return FailWithoutPosition(ValueErrors.ExpectedValue);
 
             var stack = new List<Frame>();
             while (true)
@@ -413,7 +429,7 @@ static class ValueText
                     if (stack.Count == 0)
                     {
                         if (pos != text.Length)
-                            return Fail(ValueErrors.ExtraValues, pos + 1);
+                            return FailWithoutPosition(ValueErrors.ExtraValues);
                         result = current;
                         return true;
                     }
@@ -482,6 +498,9 @@ static class ValueText
                     value = builder.ToString();
                     return true;
                 }
+
+                if (c < 0x20)
+                    return Fail(ValueErrors.ControlCharacter, pos + 1);
 
                 if (c != '\\')
                 {
@@ -554,15 +573,10 @@ static class ValueText
                 case "false":
                     value = JqValue.False;
                     return true;
-                case "nan":
-                    value = JqValue.FromNumber(double.NaN);
-                    return true;
             }
 
-            if (token[0] is 't' or 'f' or 'n')
-                return Fail(ValueErrors.InvalidLiteral, pos);
             if (!TryParseNumber(token, out var number))
-                return Fail(ValueErrors.InvalidNumericLiteral, pos);
+                return Fail(char.IsAsciiLetter(token[0]) ? ValueErrors.InvalidLiteral : ValueErrors.InvalidNumericLiteral, pos);
             value = JqValue.FromNumber(number);
             return true;
         }
@@ -600,7 +614,12 @@ static class ValueText
                 }
             }
 
-            failure = ValueErrors.AtPosition(message, line, consumed - lineStart);
+            return FailWithoutPosition(ValueErrors.AtPosition(message, line, consumed - lineStart));
+        }
+
+        bool FailWithoutPosition(string reason)
+        {
+            failure = ValueErrors.WhileParsing(reason, text);
             return false;
         }
     }

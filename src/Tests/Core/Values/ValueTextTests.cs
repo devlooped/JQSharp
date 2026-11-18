@@ -102,38 +102,48 @@ public class ValueTextTests
     [InlineData("\"\\udc00x\"", "\"\uFFFDx\"")]
     [InlineData("\"\\ud800\\ud800\"", "\"\uFFFD\uFFFD\"")]
     [InlineData("\"\\ud800\\u0041\"", "\"\uFFFDA\"")]
-    [InlineData("\"a\nb\"", "\"a\\nb\"")]
+    [InlineData("[nAn,SNaN,-snan,+inf,-INF,iNfInItY]", "[null,null,null,1.7976931348623157e+308,-1.7976931348623157e+308,1.7976931348623157e+308]")]
+    [InlineData("[1,nan]", "[1,null]")]
+    [InlineData("{\"a\":1,\"b\":2,\"a\":3}", "{\"a\":3,\"b\":2}")]
+    [InlineData("\"a\x007Fb\"", "\"a\\u007fb\"")]
     [InlineData("{\"a\":1,\"a\":2}", "{\"a\":2}")]
     [InlineData("{\"\\ud800\":1}", "{\"\uFFFD\":1}")]
     public void Reader_values(string json, string expected)
         => Assert.Equal(expected, J(V(json)));
 
+    // The reason (implementation-defined, §5.3); every message ends with " (while parsing '<input>')".
     [Theory]
-    [InlineData("", "Expected JSON value at line 1, column 0")]
-    [InlineData("   ", "Expected JSON value at line 1, column 3")]
+    [InlineData("", "Expected JSON value")]
+    [InlineData("   ", "Expected JSON value")]
+    [InlineData("1 2", "Unexpected extra JSON values")]
     [InlineData("{", "Unfinished JSON term at EOF at line 1, column 1")]
     [InlineData("[1,2", "Unfinished JSON term at EOF at line 1, column 4")]
     [InlineData("\"abc", "Unfinished JSON term at EOF at line 1, column 4")]
     [InlineData("[1 2]", "Expected separator between values at line 1, column 4")]
     [InlineData("[1,\n2 3]", "Expected separator between values at line 2, column 3")]
-    [InlineData("1 2", "Unexpected extra JSON values at line 1, column 3")]
     [InlineData("tru", "Invalid literal at line 1, column 3")]
     [InlineData("nul", "Invalid literal at line 1, column 3")]
+    [InlineData("Null", "Invalid literal at line 1, column 4")]
+    [InlineData("NaN1", "Invalid literal at line 1, column 4")]
+    [InlineData("nanx", "Invalid literal at line 1, column 4")]
     [InlineData("[1x]", "Invalid numeric literal at line 1, column 3")]
     [InlineData("1e", "Invalid numeric literal at line 1, column 2")]
     [InlineData("'a'", "Invalid numeric literal at line 1, column 3")]
     [InlineData("\"\\q\"", "Invalid escape at line 1, column 3")]
     [InlineData("\"\\u12G4\"", "Invalid \\uXXXX escape at line 1, column 6")]
+    [InlineData("\"a\nb\"", "Invalid string: control characters from U+0000 through U+001F must be escaped at line 2, column 0")]
+    [InlineData("\"a\x01\"", "Invalid string: control characters from U+0000 through U+001F must be escaped at line 1, column 3")]
+    [InlineData("[\"\t\"]", "Invalid string: control characters from U+0000 through U+001F must be escaped at line 1, column 3")]
     [InlineData("{1:2}", "Object keys must be strings at line 1, column 2")]
     [InlineData("{\"a\" 1}", "Objects must consist of key:value pairs at line 1, column 6")]
     [InlineData("[1,]", "Expected another array element at line 1, column 4")]
     [InlineData("]", "Unmatched ']' at line 1, column 1")]
     [InlineData("[1}", "Unmatched '}' at line 1, column 3")]
     [InlineData(",", "Expected value before ',' at line 1, column 1")]
-    public void Reader_failures(string json, string message)
+    public void Reader_failures(string json, string reason)
     {
         Assert.False(ValueText.TryParse(json, out _, out var error));
-        Assert.Equal(message, error.AsString());
+        Assert.Equal($"{reason} (while parsing '{json}')", error.AsString());
     }
 
     [Fact]
@@ -145,6 +155,27 @@ public class ValueTextTests
 
         Assert.False(ValueText.TryParse(new string('[', 10001), out _, out var error));
         Assert.StartsWith("Exceeds depth limit for parsing", error.AsString());
+    }
+
+    // Arrays nested `levels` deep around `inner`.
+    static JqValue Nest(int levels, JqValue inner)
+    {
+        var value = inner;
+        for (var i = 0; i < levels; i++)
+            value = JqValue.FromArray(JqArray.Of(value));
+        return value;
+    }
+
+    [Fact]
+    public void Writer_skips_values_deeper_than_10001_levels()
+    {
+        const string skipped = "<skipped: too deep>";
+        // jq 1.8.2: `reduce range(n) as $i (x; [.]) | tojson`.
+        Assert.Equal(new string('[', 10000) + "1" + new string(']', 10000), J(Nest(10000, JqValue.FromNumber(1))));
+        Assert.Equal(new string('[', 10001) + skipped + new string(']', 10001), J(Nest(10001, JqValue.FromNumber(1))));
+        Assert.Equal(new string('[', 10001) + new string(']', 10001), J(Nest(10000, JqValue.FromArray(JqArray.Empty))));
+        Assert.Equal(new string('[', 10001) + skipped + new string(']', 10001), J(Nest(10001, JqValue.FromArray(JqArray.Empty))));
+        Assert.Equal(new string('[', 10001) + skipped + "," + skipped + new string(']', 10001), J(Nest(10000, V("[1,[2]]"))));
     }
 
     [Theory]
@@ -175,10 +206,16 @@ public class ValueTextTests
     public void Number_reading_failures(string text)
         => Assert.False(ValueText.TryParseNumber(text, out _));
 
-    [Fact]
-    public void Nan_reads_as_nan()
+    [Theory]
+    [InlineData("nan")]
+    [InlineData("NaN")]
+    [InlineData("-nan")]
+    [InlineData("+NAN")]
+    [InlineData("snan")]
+    [InlineData("-sNaN")]
+    public void Nan_words_read_as_nan(string text)
     {
-        Assert.True(ValueText.TryParseNumber("nan", out var number));
+        Assert.True(ValueText.TryParseNumber(text, out var number));
         Assert.True(double.IsNaN(number));
     }
 
@@ -199,13 +236,20 @@ public class ValueTextTests
         }
     }
 
-    [Fact]
-    public void Truncated_dump_keeps_whole_code_points()
+    [Theory]
+    [InlineData("[1,2]", "[1,2]")]
+    [InlineData("[1,2,3,4,5,6,7,8,9,10,11,12,13]", "[1,2,3,4,5,6,7,8,9,10,11,...")]
+    [InlineData("\"very-long-long-long-long-string\"", "\"very-long-long-long-long...")]
+    // 27 characters: 29 bytes with the quotes, not cut; one more is cut.
+    [InlineData("\"abcdefghijklmnopqrstuvwxyz0\"", "\"abcdefghijklmnopqrstuvwxyz0\"")]
+    [InlineData("\"abcdefghijklmnopqrstuvwxyz01\"", "\"abcdefghijklmnopqrstuvwx...")]
+    // Two-byte é: the quote and 12 of them make 25 bytes.
+    [InlineData("\"ééééééééééééééééééé\"", "\"éééééééééééé...")]
+    [InlineData("\"a😀😀😀😀😀😀😀\"", "\"a😀😀😀😀😀...")]
+    public void Error_dump(string json, string expected)
     {
-        Assert.Equal("[1,2]", ValueText.ToJsonTruncated(V("[1,2]"), 14));
-        Assert.Equal("{\"a\":\"very ...", ValueText.ToJsonTruncated(V("{\"a\":\"very long string\"}"), 14));
-        var text = ValueText.ToJsonTruncated(JqValue.FromString("ééééééééé"), 14);
-        Assert.Equal("\"ééééé...", text);
-        Assert.True(Encoding.UTF8.GetByteCount(text) <= 14);
+        var dump = ValueErrors.Dump(V(json));
+        Assert.Equal(expected, dump);
+        Assert.True(Encoding.UTF8.GetByteCount(dump) <= 29 || dump.EndsWith("...") && Encoding.UTF8.GetByteCount(dump) <= 28);
     }
 }

@@ -30,15 +30,45 @@ public class CodePointTests
     [InlineData("[1,2,3,4]", "0.2", "0.2", "[1]")]
     [InlineData("[1,2,3,4]", "5", "10", "[]")]
     [InlineData("null", "1", "2", "null")]
-    [InlineData("1", "1", "2", "error: Cannot index number with object")]
-    [InlineData("{}", "1", "2", "error: Cannot index object with object")]
-    [InlineData("[1]", "\"a\"", "2", "error: Start and end indices of an array slice must be numbers")]
+    [InlineData("[0,1,2,3,4,5,6,7,8,9]", "1.2", "3.5", "[1,2,3]")]
+    [InlineData("\"abcdefghi\"", "-2", "null", "\"hi\"")]
+    [InlineData("null", "\"a\"", "{}", "null")]
+    [InlineData("1", "1", "2", "error: Cannot index number with object ({\"start\":1,\"end\":2})")]
+    [InlineData("1", "\"a\"", "2", "error: Cannot index number with object ({\"start\":\"a\",\"end\":2})")]
+    [InlineData("{}", "1", "null", "error: Cannot index object with object ({\"start\":1,\"end\":null})")]
+    [InlineData("[1]", "\"a\"", "null", "error: Array/string slice indices must be integers")]
+    [InlineData("\"ab\"", "0", "true", "error: Array/string slice indices must be integers")]
     public void Slices(string input, string start, string end, string expected)
         => Assert.Equal(expected, Slice(input, start, end));
 
-    [Fact]
-    public void Explode_gives_code_points()
-        => Assert.Equal("[97,233,128512,98]", J(JqValue.FromArray(CodePoints.Explode("aé😀b"))));
+    static string IndexSlice(string input, string key)
+        => ValueOps.TryIndexSlice(V(input), V(key), out var result, out var error) ? J(result) : "error: " + error.AsString();
+
+    // jq 1.8.2: `.[{"start":…,"end":…}]`.
+    [Theory]
+    [InlineData("[1,2,3]", "{\"start\":1,\"end\":null}", "[2,3]")]
+    [InlineData("[1,2,3]", "{\"start\":1,\"end\":2,\"x\":0}", "[2]")]
+    [InlineData("\"abc\"", "{\"start\":null,\"end\":null}", "\"abc\"")]
+    [InlineData("\"abc\"", "{\"start\":1}", "error: Array/string slice indices must be integers")]
+    [InlineData("[1,2,3]", "{\"end\":2}", "error: Array/string slice indices must be integers")]
+    [InlineData("[1,2,3]", "{\"start\":\"a\",\"end\":2}", "error: Array/string slice indices must be integers")]
+    [InlineData("null", "{\"start\":1}", "null")]
+    [InlineData("null", "{\"a\":1}", "null")]
+    [InlineData("1", "{\"start\":1}", "error: Cannot index number with object ({\"start\":1})")]
+    [InlineData("{\"a\":1}", "{\"start\":1}", "error: Cannot index object with object ({\"start\":1})")]
+    public void Slices_by_object_key(string input, string key, string expected)
+        => Assert.Equal(expected, IndexSlice(input, key));
+
+    static string ExplodeText(string input)
+        => ValueOps.TryExplode(V(input), out var result, out var error) ? J(result) : "error: " + error.AsString();
+
+    [Theory]
+    [InlineData("\"aé😀b\"", "[97,233,128512,98]")]
+    [InlineData("\"\"", "[]")]
+    [InlineData("1", "error: explode input must be a string")]
+    [InlineData("[\"a\"]", "error: explode input must be a string")]
+    public void Explode(string input, string expected)
+        => Assert.Equal(expected, ExplodeText(input));
 
     static string ImplodeText(string input)
         => ValueOps.TryImplode(V(input), out var result, out var error) ? J(result) : "error: " + error.AsString();
@@ -48,12 +78,15 @@ public class CodePointTests
     [InlineData("[]", "\"\"")]
     [InlineData("[65.9]", "\"A\"")]
     [InlineData("[1114111]", "\"\U0010FFFF\"")]
-    [InlineData("[1114112]", "error: array ([1114112]) can't be imploded, unicode codepoint needs to be a valid code point")]
-    [InlineData("[-1]", "error: array ([-1]) can't be imploded, unicode codepoint needs to be a valid code point")]
-    [InlineData("[55296]", "error: array ([55296]) can't be imploded, unicode codepoint needs to be a valid code point")]
-    [InlineData("[\"a\"]", "error: array ([\"a\"]) can't be imploded, unicode codepoint needs to be numeric")]
-    [InlineData("[nan]", "error: array ([null]) can't be imploded, unicode codepoint needs to be numeric")]
-    [InlineData("\"a\"", "error: string (\"a\") cannot be imploded, must be an array of codepoints")]
+    // jq 1.8.2: `[-0.5, 97, 1114112, 55296, -1, 97.9] | implode | explode` is [0,97,65533,65533,65533,97].
+    [InlineData("[-0.5,97,1114112,55296,-1,97.9]", "\"\\u0000a\xFFFD\xFFFD\xFFFDa\"")]
+    [InlineData("[57343,57344,1e300,-1e300]", "\"\xFFFD\xE000\xFFFD\xFFFD\"")]
+    [InlineData("[\"a\"]", "error: string (\"a\") can't be imploded, unicode codepoint needs to be numeric")]
+    [InlineData("[1,[1]]", "error: array ([1]) can't be imploded, unicode codepoint needs to be numeric")]
+    [InlineData("[nan]", "error: number (null) can't be imploded, unicode codepoint needs to be numeric")]
+    [InlineData("[null]", "error: null (null) can't be imploded, unicode codepoint needs to be numeric")]
+    [InlineData("\"a\"", "error: implode input must be an array")]
+    [InlineData("{}", "error: implode input must be an array")]
     public void Implode(string input, string expected)
         => Assert.Equal(expected, ImplodeText(input));
 

@@ -98,18 +98,27 @@ public class ValueOrderingTests
     }
 
     [Fact]
-    public void Nan_sorts_below_numbers_and_is_never_equal()
+    public void Nan_sorts_below_numbers_compares_equal_to_nan_but_is_never_equal()
     {
         var nan = JqValue.FromNumber(double.NaN);
         Assert.Equal(-1, ValueOps.Compare(nan, JqValue.FromNumber(double.NegativeInfinity)));
         Assert.Equal(1, ValueOps.Compare(JqValue.FromNumber(-1e300), nan));
         Assert.Equal(1, ValueOps.Compare(nan, JqValue.True));
         Assert.Equal(-1, ValueOps.Compare(nan, JqValue.FromString("")));
-        // nan < nan, both ways.
-        Assert.Equal(-1, ValueOps.Compare(nan, nan));
+        // A total order (spec §4.3, §13): [nan < nan, nan <= nan, nan > nan, nan >= nan] is [false,true,false,true].
+        Assert.Equal(0, ValueOps.Compare(nan, nan));
+        Assert.Equal(0, ValueOps.Compare(V("[nan,{\"a\":nan}]"), V("[nan,{\"a\":nan}]")));
+        // == stays IEEE: nan == nan is false, also inside containers.
         Assert.False(ValueOps.AreEqual(nan, nan));
         Assert.False(ValueOps.AreEqual(V("[nan]"), V("[nan]")));
         Assert.Equal(-1, ValueOps.Compare(V("[nan]"), V("[0]")));
+    }
+
+    [Fact]
+    public void Sort_keeps_nans_together_and_stable()
+    {
+        var items = V("[1,nan,\"a\",-1,nan,null]").AsArray();
+        Assert.Equal([5, 1, 4, 3, 0, 2], ValueOps.SortOrder(items));
     }
 
     [Theory]

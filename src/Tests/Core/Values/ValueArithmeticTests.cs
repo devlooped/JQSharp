@@ -38,8 +38,8 @@ public class ValueArithmeticTests
     [InlineData("{}", "[]", "error: object ({}) and array ([]) cannot be added")]
     [InlineData("true", "true", "error: boolean (true) and boolean (true) cannot be added")]
     [InlineData("false", "1", "error: boolean (false) and number (1) cannot be added")]
-    [InlineData("{\"a\":\"very long string\"}", "1", "error: object ({\"a\":\"very ...) and number (1) cannot be added")]
-    [InlineData("\"ééééééééé\"", "1", "error: string (\"ééééé...) and number (1) cannot be added")]
+    [InlineData("{\"a\":\"very long string\"}", "1", "error: object ({\"a\":\"very long string\"}) and number (1) cannot be added")]
+    [InlineData("[1,2,3,4,5,6,7,8,9,10,11,12,13]", "1", "error: array ([1,2,3,4,5,6,7,8,9,10,11,...) and number (1) cannot be added")]
     public void Add(string a, string b, string expected) => Assert.Equal(expected, Apply("+", a, b));
 
     [Theory]
@@ -58,11 +58,17 @@ public class ValueArithmeticTests
     [InlineData("3", "\"ab\"", "\"ababab\"")]
     [InlineData("\"ab\"", "1", "\"ab\"")]
     [InlineData("\"ab\"", "1.9", "\"ab\"")]
-    [InlineData("\"ab\"", "0", "null")]
-    [InlineData("\"ab\"", "0.5", "null")]
+    [InlineData("\"ab\"", "1.5", "\"ab\"")]
+    [InlineData("\"x\"", "0", "\"\"")]
+    [InlineData("\"ab\"", "0.5", "\"\"")]
+    [InlineData("\"ab\"", "-0", "\"\"")]
+    [InlineData("0", "\"ab\"", "\"\"")]
+    [InlineData("\"ab\"", "-0.5", "null")]
     [InlineData("\"ab\"", "-1", "null")]
     [InlineData("\"ab\"", "nan", "null")]
     [InlineData("\"\"", "5", "\"\"")]
+    [InlineData("\"\"", "1e300", "\"\"")]
+    [InlineData("\"é\"", "1.5e9", "error: Repeat string result too long")]
     [InlineData("\"ab\"", "1e9", "error: Repeat string result too long")]
     [InlineData("{\"a\":{\"b\":1},\"c\":1}", "{\"a\":{\"d\":2},\"c\":{\"x\":1}}", "{\"a\":{\"b\":1,\"d\":2},\"c\":{\"x\":1}}")]
     [InlineData("{\"a\":{\"b\":{\"c\":1}}}", "{\"a\":{\"b\":{\"d\":2}},\"e\":3}", "{\"a\":{\"b\":{\"c\":1,\"d\":2}},\"e\":3}")]
@@ -97,10 +103,43 @@ public class ValueArithmeticTests
     [InlineData("1e300", "7", "0")]
     [InlineData("nan", "1", "null")]
     [InlineData("1", "nan", "null")]
-    [InlineData("1", "0", "error: number (1) and number (0) cannot be divided because the divisor is zero")]
-    [InlineData("5", "0.5", "error: number (5) and number (0.5) cannot be divided because the divisor is zero")]
-    [InlineData("\"a\"", "1", "error: string (\"a\") and number (1) cannot be divided")]
+    [InlineData("1e300", "-1e300", "9223372036854776000")]
+    [InlineData("-1e300", "1e300", "-1")]
+    [InlineData("1", "0", "error: number (1) and number (0) cannot be divided (remainder) because the divisor is zero")]
+    [InlineData("5", "0.5", "error: number (5) and number (0.5) cannot be divided (remainder) because the divisor is zero")]
+    [InlineData("\"a\"", "1", "error: string (\"a\") and number (1) cannot be divided (remainder)")]
+    [InlineData("1", "\"a\"", "error: number (1) and string (\"a\") cannot be divided (remainder)")]
     public void Modulo(string a, string b, string expected) => Assert.Equal(expected, Apply("%", a, b));
+
+    [Fact]
+    public void Remainder_of_infinities()
+    {
+        // [(infinite, -infinite) % (1, -1, infinite)] is [0,0,0,0,0,-1] (spec §4.4).
+        var results = new List<string>();
+        foreach (var a in new[] { double.PositiveInfinity, double.NegativeInfinity })
+        {
+            foreach (var b in new[] { 1, -1, double.PositiveInfinity })
+            {
+                Assert.True(ValueOps.TryModulo(JqValue.FromNumber(a), JqValue.FromNumber(b), out var result, out _));
+                results.Add(J(result));
+            }
+        }
+
+        Assert.Equal(["0", "0", "0", "0", "0", "-1"], results);
+    }
+
+    static string Negate(string a)
+        => ValueOps.TryNegate(V(a), out var result, out var error) ? J(result) : "error: " + error.AsString();
+
+    [Theory]
+    [InlineData("1", "-1")]
+    [InlineData("0", "-0")]
+    [InlineData("-0", "0")]
+    [InlineData("nan", "null")]
+    [InlineData("null", "error: null (null) cannot be negated")]
+    [InlineData("\"a\"", "error: string (\"a\") cannot be negated")]
+    [InlineData("\"very-long-long-long-long-string\"", "error: string (\"very-long-long-long-long...) cannot be negated")]
+    public void Negation(string a, string expected) => Assert.Equal(expected, Negate(a));
 
     [Fact]
     public void Operands_never_change()
