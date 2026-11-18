@@ -1,41 +1,125 @@
 # AGENTS.md
 
-## Project overview
+## Goal
 
-JQSharp is a pure C# implementation of the [jq](https://jqlang.org) filter language
-operating on `System.Text.Json.JsonElement` values. Public entry points are `Jq.Parse`,
-`Jq.Evaluate` / `Jq.EvaluateAsync`, and `JqExpression`.
+JQSharp is the reference implementation of **jqlite**, the profile of the [jq](https://jqlang.org)
+language that is to be ported 1:1 to JavaScript/TypeScript, Python, Java, Go and Rust. Two rules
+follow from that goal:
 
-## Architecture notes
+- the code must read the same in every language (no host feature in the semantics);
+- jqlite behaves as jq 1.8, except for the differences listed in `spec/jqlite.md` §13.
 
-- **Parse phase**: `JqParser` builds an immutable `JqFilter` AST wrapped by `JqExpression`.
-- **Evaluate phase**: filters thread a `JsonElement` input and a `JqEnvironment` (immutable
-  variable / filter-arg bindings) and yield zero or more `JsonElement` outputs.
-- **`$ENV`**: special-cased in `VariableFilter` and always materializes process environment
-  variables at evaluation time.
-- **External variables** (see below): host-supplied bindings injected into `JqEnvironment`
-  before evaluation, analogous to jq `--arg` / `--argjson`.
+How the engine is built, and how a port carries it over: [`docs/porting.md`](docs/porting.md).
+
+## Source of truth
+
+| Path | What |
+| --- | --- |
+| `spec/jqlite.md` | the language: grammar, values, semantics, builtin catalogue (§9), errors (§10), limits (§11), host interface (§12), differences from jq (§13) |
+| `spec/prelude.jq` | the builtins written in jqlite (the P entries of §9), embedded unchanged |
+| `spec/tests/*.test` | the conformance corpus (format in `spec/tests/README.md`), shared by every port |
+
+To change behaviour: **spec first, then a corpus case, then the code**.
+
+1. Edit `spec/jqlite.md` (and `spec/prelude.jq` if a prelude definition changes).
+2. Add or fix the case in `spec/tests/*.test`. Expected outputs are what jq 1.8.2 prints, unless
+   §13 lists the difference; then the case states jqlite's output and §13 says why.
+3. Change the code until the corpus passes.
+
+Probing jq byte-safely: write the program to a UTF-8 file and run `jq -f prog.jq input.json`, read
+stdout as UTF-8 bytes, never pass non-ASCII text on the command line or through the console code
+page. Run from an empty directory (jq also looks for modules in the current directory); for module
+cases use `-L spec/tests/modules`.
+
+## Layers
+
+`src/JQSharp/Core` is the engine; each folder is one layer and uses only the layers before it, except
+the two links of `Builtins` named in 5:
+
+1. `Values`: `JqValue`, arrays, objects, `ValueOps` (equality, ordering, arithmetic),
+   `ValueText` (JSON writer, number text, JSON reader), `Errors` (every run-time message).
+2. `Syntax`: lexer, AST, parser. Never throws: returns the program or one `SyntaxError`.
+3. `Binding`: the resolver (names to frame hops and slots, calls to function indexes), the bound
+   program, the prelude, the optional modules group (`Modules.cs`).
+4. `Runtime`: the push-based interpreter (`Eval`/`EvalOne`, `Emit`, `Signal`), environments, paths,
+   `StackGuard`, the host interface (`Evaluation.cs`).
+5. `Builtins`: the native catalogue (`Natives.cs`, plain data, used by `Binding`) and the native
+   implementations, registered in `NativeTable` and called by the interpreter.
+
+The public .NET API and the `JsonElement` adapter sit outside `Core` (see Host boundary).
+
+## Portability rules
+
+Code under `src/JQSharp/Core` must not use:
+
+- `System.Text.Json`, or any other host JSON library;
+- `yield return`, LINQ lazy operators or other iterators to produce outputs (outputs are pushed);
+- reflection;
+- exceptions as control flow: errors are values (`TryX(…, out result, out error)`), and `Error`,
+  `Break`, `Halt`, `Stop` are returned signals;
+- host regex, date or culture APIs, except in the files that exist for that purpose:
+  `Builtins/RegexEngine.cs` (the regex engine), `Values/ValueText.cs` (invariant-culture number
+  text: shortest digits and decimal parsing), `Runtime/StackGuard.cs` (the host stack),
+  `Binding/Prelude.cs` (reading the embedded prelude);
+- recursion whose depth comes from data or from long sequences: use loops and explicit stacks
+  (`docs/porting.md` §2.10). The only recursion limit a program meets is `MaxDepth` (§11).
+
+Values, the bound program and the prelude are immutable and shared between threads; one
+`Interpreter` is one evaluation. The library references no run-time package.
+
+## Tests
+
+- `dnx --yes retest` runs everything; `dotnet format whitespace` and `dotnet format style` must
+  pass (see `.github/copilot-instructions.md`).
+- `src/Tests/ConformanceTests.cs` runs every case of `spec/tests/*.test` through the core twice,
+  with and without the native overrides of prelude builtins, with a clock fixed at UTC+02:00 for
+  `localtime.test` and a module source over `spec/tests/modules/` for `modules.test`. While
+  `spec/tests/pending.txt` exists, it lists the cases the old public engine fails.
+- `src/Tests/Core/<Layer>/` holds the unit tests of each layer: what the corpus cannot show
+  (positions, limits on small host stacks, binding printed as hops and slots, value sharing).
+  `BuiltinCatalogueTests` reads the N/P lists of §9 from the spec and checks the catalogue and the
+  prelude against them.
+- `src/Benchmarks` (BenchmarkDotNet) compares JQSharp with `Devlooped.JQ` (the jq executable) on
+  the WhatsApp `Message.jq` filter, with and without a cached `JqExpression`.
+
+## Where a change goes
+
+| Change | Files |
+| --- | --- |
+| a builtin defined in jqlite | `spec/prelude.jq` and its row in §9 (marked P) |
+| a native builtin | its row in §9 (marked N); `Core/Builtins/Natives.cs` in spec order; the implementation in the family's `*Natives.cs`, registered in its `Register()` |
+| a faster native for a prelude builtin | `Natives.cs` override list (`OverridesPrelude`); same results, errors and paths; the corpus runs both ways |
+| a run-time error message | `Core/Values/Errors.cs` and §10 (or the errors column of §9) |
+| a syntax or binding error | `SyntaxMessages` (`Core/Syntax/SyntaxError.cs`) or `BindingMessages` (`Core/Binding/Resolver.cs`); a fixed text also goes in §10.2 |
+| a limit | §11 and the constant in the layer that enforces it |
+| a host-specific mechanism | only the files named in Portability rules; say in its header what a port does instead |
+
+## Host boundary
+
+Only `src/JQSharp` outside `Core` knows .NET's JSON types:
+
+- `Json/JsonElementAdapter.cs` converts `JsonElement` to `JqValue` and back; it is the only file
+  that uses `System.Text.Json` with the engine.
+- `Jq.Parse(expression, JqOptions? options)` returns a `JqExpression` (sealed, parse once, evaluate
+  many times, thread-safe). `Jq.Evaluate` / `JqExpression.Evaluate` return all outputs (buffered);
+  the overload with `Func<JsonElement, bool> onResult` streams them and stops when it returns
+  false. The JSONL `EvaluateAsync` helpers stay, one overload each.
+- `JqOptions`: `Resolver` (`JqResolver`, for `import`/`include`), `Environment` (`$ENV`; null is
+  the process environment), `TimeProvider` (`now` and the local zone), `MaxDepth` (default 1000).
+- Exceptions exist only here: `JqException` (an uncaught jqlite error, with its `Value`) and
+  `JqParseException` (`Line`, `Column`).
 
 ## External variable bindings
 
-`JqExpression.Evaluate(input, variables)` and matching `Jq.Evaluate` / `EvaluateAsync`
-overloads accept `IReadOnlyDictionary<string, JsonElement>?`.
+`Jq.Evaluate(expression, input, variables)` and `JqExpression.Evaluate(input, variables)` accept
+`IReadOnlyDictionary<string, JsonElement>?` (spec §7.5, §12):
 
-Rules:
-
-- Dictionary **keys must not** start with `$`; `"root"` binds `$root`.
-- Keys must be valid jq identifiers (`[A-Za-z_][A-Za-z0-9_]*`).
-- Invalid keys throw `ArgumentException` before evaluation.
-- Values are cloned into the environment so caller document lifetime is decoupled.
-- Simple `$name` references are allowed at parse time even if unbound; missing bindings
-  throw `JqException` (`$name is not defined`) at evaluation time.
-- Module-qualified names (`$alias::name`) still require a successful import/definition at
-  parse time.
-- In-expression `as $name` bindings shadow external variables of the same name.
-
-Implementation touchpoints:
-
-- `JqEnvironment.FromVariables` / `ValidateVariableName`
-- `JqExpression.Evaluate(..., variables)`
-- `Jq.Evaluate` / `EvaluateAsync` overloads with `variables`
-- `JqParser.ParsePrimary` — unbound simple `$ident` → `VariableFilter`
+- Keys are identifiers without `$` (`[A-Za-z_][A-Za-z0-9_]*`); `"root"` binds `$root`. `ENV` is not
+  allowed (`$ENV` is the environment). Invalid keys are rejected before evaluation.
+- Values are converted to jqlite values once per evaluation, so the caller's documents may be
+  disposed afterwards.
+- A `$name` with no lexical binding (and not `$ENV`) is a host variable, looked up when evaluated;
+  if the host did not supply it, the error is `$name is not defined` (a run-time error, catchable
+  with `try`). The same holds inside modules.
+- `$alias::name` must be bound by a data import; otherwise it is a binding error.
+- `as $name` bindings and `$name` parameters shadow host variables of the same name.
