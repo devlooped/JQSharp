@@ -5,7 +5,7 @@ namespace JQLite.Tests;
 
 /// <summary>
 /// The public resolvers (<see cref="JqFileResolver"/>, <see cref="JqResourceResolver"/>, a custom
-/// <see cref="JqResolver"/>) through <see cref="Jq.Parse"/>. What modules mean is the corpus's
+/// <see cref="JqResolver"/>) through <see cref="Jq.Parse(string, JqOptions?)"/>. What modules mean is the corpus's
 /// (spec/tests/modules.test).
 /// </summary>
 public sealed class JqModuleTests : IDisposable
@@ -35,6 +35,14 @@ public sealed class JqModuleTests : IDisposable
         Write("utils.jq", "def inc: . + 1;");
         Write("config.json", """{"key":"value"} 2""");
         Assert.Equal(["6", """[{"key":"value"},2]"""], Run("""include "utils"; import "config" as $c; inc, $c""", new JqFileResolver(directory), "5"));
+    }
+
+    [Fact]
+    public void Parse_with_a_resolver_uses_it_for_modules()
+    {
+        Write("utils.jq", "def inc: . + 1;");
+        using var document = JsonDocument.Parse("5");
+        Assert.Equal(6, Jq.Parse("""include "utils"; inc""", new JqFileResolver(directory)).Evaluate(document.RootElement)[0].GetInt32());
     }
 
     [Fact]

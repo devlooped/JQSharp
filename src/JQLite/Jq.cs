@@ -33,6 +33,18 @@ public static class Jq
         return new JqExpression(program, options);
     }
 
+    /// <summary>
+    /// Parses and binds <paramref name="expression"/>, loading its modules through
+    /// <paramref name="resolver"/>, with the default options otherwise: the same as
+    /// <see cref="Parse(string, JqOptions?)"/> with <c>new JqOptions { Resolver = resolver }</c>.
+    /// </summary>
+    /// <param name="expression">The jq expression.</param>
+    /// <param name="resolver">Finds and reads the modules of <c>import</c> and <c>include</c>; none when <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="expression"/> is <see langword="null"/>.</exception>
+    /// <exception cref="JqParseException">A syntax or binding error (an unknown function, label or module, a cycle of imports), with its line and column.</exception>
+    public static JqExpression Parse(string expression, JqResolver? resolver)
+        => Parse(expression, new JqOptions { Resolver = resolver });
+
     /// <summary>Parses <paramref name="expression"/> with the default options and evaluates it on <paramref name="input"/>, returning all its results.</summary>
     /// <param name="expression">The jq expression.</param>
     /// <param name="input">The input value.</param>

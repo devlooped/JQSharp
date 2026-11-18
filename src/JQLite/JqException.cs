@@ -24,7 +24,7 @@ public class JqException : Exception
     public JsonElement? Value { get; }
 }
 
-/// <summary>A syntax or binding error, thrown by <see cref="Jq.Parse"/> before any evaluation.</summary>
+/// <summary>A syntax or binding error, thrown by <see cref="Jq.Parse(string, JqOptions?)"/> before any evaluation.</summary>
 public sealed class JqParseException : JqException
 {
     internal JqParseException(string message, int line, int column)

@@ -12,7 +12,7 @@ namespace JQLite.Tests;
 
 /// <summary>
 /// Runs every case of the jqlite conformance corpus (spec/tests/*.test), by the rules of
-/// spec/tests/README.md: through the public API (<see cref="Jq.Parse"/>, <see cref="JqExpression"/>),
+/// spec/tests/README.md: through the public API (<see cref="Jq.Parse(string, JqOptions?)"/>, <see cref="JqExpression"/>),
 /// and through the core with every prelude builtin bound to its definition, to check that the
 /// natives that override some change nothing. Every case must pass both ways.
 /// </summary>
