@@ -1,7 +1,7 @@
-using Devlooped.Core.Binding;
-using Devlooped.Core.Values;
+using JQLite.Core.Binding;
+using JQLite.Core.Values;
 
-namespace Devlooped.Tests;
+namespace JQLite.Tests;
 
 /// <summary>
 /// A module source over a directory, with the rule of spec/tests/README.md: the path <c>p</c>

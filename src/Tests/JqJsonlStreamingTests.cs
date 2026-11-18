@@ -1,9 +1,9 @@
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
-using Devlooped;
+using JQLite;
 
-namespace Devlooped.Tests;
+namespace JQLite.Tests;
 
 public class JqJsonlStreamingTests
 {

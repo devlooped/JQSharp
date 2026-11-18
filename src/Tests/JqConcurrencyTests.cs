@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using Devlooped;
+using JQLite;
 
-namespace Devlooped.Tests;
+namespace JQLite.Tests;
 
 /// <summary>
 /// An expression, the prelude and the modules are immutable and shared; one evaluation owns all

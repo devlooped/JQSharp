@@ -1,14 +1,14 @@
 <Project>
 
   <PropertyGroup>
-    <RootNamespace>Devlooped</RootNamespace>
+    <RootNamespace>JQLite</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>true</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <RestoreSources>https://api.nuget.org/v3/index.json;https://pkg.kzu.app/index.json;$(RestoreSources)</RestoreSources>
     
-    <PackageProjectUrl>https://clarius.org/JQSharp</PackageProjectUrl>
-    <Product>Devlooped.JQSharp</Product>
+    <PackageProjectUrl>https://clarius.org/jqlite</PackageProjectUrl>
+    <Product>JQLite</Product>
 
     <PackageLicenseExpression></PackageLicenseExpression>
     <PackageLicenseFile>OSMFEULA.txt</PackageLicenseFile>

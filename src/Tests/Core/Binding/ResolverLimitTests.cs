@@ -1,12 +1,12 @@
 using System.Text;
-using Devlooped.Core.Binding;
-using Devlooped.Core.Syntax;
+using JQLite.Core.Binding;
+using JQLite.Core.Syntax;
 using Xunit.Sdk;
 
-namespace Devlooped.Tests.Core.Binding;
+namespace JQLite.Tests.Core.Binding;
 
-using Bind = Devlooped.Core.Binding.Bind;
-using Variable = Devlooped.Core.Binding.Variable;
+using Bind = JQLite.Core.Binding.Bind;
+using Variable = JQLite.Core.Binding.Variable;
 
 /// <summary>
 /// Binding does not exhaust the host stack on what the parser accepts: nesting up to the limit of

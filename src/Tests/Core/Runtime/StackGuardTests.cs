@@ -1,8 +1,8 @@
 using System.Text;
-using Devlooped.Core.Runtime;
-using static Devlooped.Tests.Core.Runtime.Evaluate;
+using JQLite.Core.Runtime;
+using static JQLite.Tests.Core.Runtime.Evaluate;
 
-namespace Devlooped.Tests.Core.Runtime;
+namespace JQLite.Tests.Core.Runtime;
 
 /// <summary>
 /// MaxDepth is the only recursion limit a program meets (spec §11): on a small host stack, deep

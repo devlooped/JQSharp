@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsAotCompatible>true</IsAotCompatible>
+    <PackageId>JQLite</PackageId>
+    <Description>A .NET implementation of the jq filter language for querying and transforming JSON.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NuGetizer" Version="1.5.1" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Linked, not copied: spec/prelude.jq is shared by every port. -->
+    <EmbeddedResource Include="..\..\spec\prelude.jq" LogicalName="jqlite.prelude.jq" Link="Core\Builtins\prelude.jq" />
+  </ItemGroup>
+
+</Project>

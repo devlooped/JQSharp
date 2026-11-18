@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Devlooped;
+using JQLite;
 
-namespace Devlooped.Tests;
+namespace JQLite.Tests;
 
 /// <summary>
 /// The public resolvers (<see cref="JqFileResolver"/>, <see cref="JqResourceResolver"/>, a custom
@@ -114,13 +114,13 @@ public sealed class JqModuleTests : IDisposable
     [Fact]
     public void Resource_resolver_finds_embedded_modules()
     {
-        var resolver = new JqResourceResolver(typeof(JqModuleTests).Assembly, "Devlooped.Tests.Modules");
+        var resolver = new JqResourceResolver(typeof(JqModuleTests).Assembly, "JQLite.Tests.Modules");
         Assert.Equal(["\"hello world!\""], Run("""include "greet"; greet""", resolver, "\"world\""));
     }
 
     [Fact]
     public void Resource_resolver_reports_missing_modules()
-        => Assert.Throws<JqParseException>(() => Run("""include "missing"; .""", new JqResourceResolver(typeof(JqModuleTests).Assembly, "Devlooped.Tests.Modules")));
+        => Assert.Throws<JqParseException>(() => Run("""include "missing"; .""", new JqResourceResolver(typeof(JqModuleTests).Assembly, "JQLite.Tests.Modules")));
 
     [Fact]
     public void A_custom_resolver_names_and_opens_modules()

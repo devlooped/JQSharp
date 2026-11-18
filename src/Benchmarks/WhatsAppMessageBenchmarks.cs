@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
 using Devlooped;
+using JQLite;
 
 [MemoryDiagnoser]
 public class WhatsAppMessageBenchmarks
@@ -64,25 +65,25 @@ public class WhatsAppMessageBenchmarks
     }
 
     [Benchmark]
-    public int JQSharpWithoutExpressionCaching()
+    public int JQLiteWithoutExpressionCaching()
     {
         using var document = JsonDocument.Parse(messageJsonUtf8);
         var totalResults = ConsumeResults(Jq.Evaluate(query, document.RootElement));
 
         if (totalResults != expectedResultsPerMessage)
-            throw new InvalidOperationException($"Expected {expectedResultsPerMessage} uncached jqsharp results but got {totalResults}.");
+            throw new InvalidOperationException($"Expected {expectedResultsPerMessage} uncached jqlite results but got {totalResults}.");
 
         return totalResults;
     }
 
     [Benchmark]
-    public int JQSharpWithExpressionCaching()
+    public int JQLiteWithExpressionCaching()
     {
         using var document = JsonDocument.Parse(messageJsonUtf8);
         var totalResults = ConsumeResults(cachedExpression.Evaluate(document.RootElement));
 
         if (totalResults != expectedResultsPerMessage)
-            throw new InvalidOperationException($"Expected {expectedResultsPerMessage} cached jqsharp results but got {totalResults}.");
+            throw new InvalidOperationException($"Expected {expectedResultsPerMessage} cached jqlite results but got {totalResults}.");
 
         return totalResults;
     }

@@ -1,7 +1,7 @@
-using Devlooped.Core.Values;
+using JQLite.Core.Values;
 using Xunit.Sdk;
 
-namespace Devlooped.Tests.Core.Values;
+namespace JQLite.Tests.Core.Values;
 
 static class ValueHelpers
 {

@@ -1,6 +1,6 @@
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
-using Devlooped;
+using JQLite;
 
 /// <summary>
 /// Programs whose cost must grow in step with their size: each runs a cached expression on the

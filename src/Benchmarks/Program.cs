@@ -16,6 +16,6 @@ static async Task RunBenchmarksUnderDebuggerAsync()
     benchmarks.Setup();
 
     Console.WriteLine($"{nameof(WhatsAppMessageBenchmarks.DevloopedJQ)}: {await benchmarks.DevloopedJQ()}");
-    Console.WriteLine($"{nameof(WhatsAppMessageBenchmarks.JQSharpWithoutExpressionCaching)}: {benchmarks.JQSharpWithoutExpressionCaching()}");
-    Console.WriteLine($"{nameof(WhatsAppMessageBenchmarks.JQSharpWithExpressionCaching)}: {benchmarks.JQSharpWithExpressionCaching()}");
+    Console.WriteLine($"{nameof(WhatsAppMessageBenchmarks.JQLiteWithoutExpressionCaching)}: {benchmarks.JQLiteWithoutExpressionCaching()}");
+    Console.WriteLine($"{nameof(WhatsAppMessageBenchmarks.JQLiteWithExpressionCaching)}: {benchmarks.JQLiteWithExpressionCaching()}");
 }

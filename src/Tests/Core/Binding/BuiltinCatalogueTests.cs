@@ -1,8 +1,8 @@
 using System.Text.RegularExpressions;
-using Devlooped.Core.Binding;
-using Devlooped.Core.Builtins;
+using JQLite.Core.Binding;
+using JQLite.Core.Builtins;
 
-namespace Devlooped.Tests.Core.Binding;
+namespace JQLite.Tests.Core.Binding;
 
 /// <summary>
 /// The native catalogue and the embedded prelude against spec §9: the prelude binds completely,
