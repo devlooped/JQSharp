@@ -743,29 +743,43 @@ def sub($re; str; $flags): . as $in
 
 ### 9.8 Math
 
-All natives. One-input functions take a number input (num req). Multi-input functions ignore the input and require number arguments (num req on the offending argument), first argument fastest. A NaN result is a NaN value (written `null`), an infinite result is ±Infinity.
+All natives. One-input functions take a number input (num req). Multi-input functions ignore the input and require number arguments (num req on the first non-number argument, in argument order), first argument fastest. A NaN result is a NaN value (written `null`), an infinite result is ±Infinity.
 
 **Exactly specified** (every port MUST give the same double):
 
 | Builtin | Definition |
 | --- | --- |
 | `floor/0`, `ceil/0`, `trunc/0` | IEEE roundings (`ceil(-1.5)` → `-1`) |
-| `round/0` | nearest integer, halves away from zero (`-2.5` → `-3`) |
-| `nearbyint/0` | nearest integer, halves to even (`2.5` → `2`) |
+| `round/0` | nearest integer, halves away from zero (`-2.5` → `-3`); a zero result keeps the sign of `x` (`-0.4` → `-0`); ±Infinity and NaN unchanged |
+| `nearbyint/0` | nearest integer, halves to even (`2.5` → `2`); zero sign, infinities and NaN as `round` |
 | `fabs/0` | absolute value |
 | `sqrt/0` | IEEE correctly rounded square root |
 | `fmod/2` | C `fmod`: exact remainder with the sign of the first argument |
 | `remainder/2` | IEEE remainder: `x − n·y` with `n` the integer nearest `x/y`, halves to even; exact |
 | `fma/3` | `x·y + z` with a single rounding |
-| `fmin/2`, `fmax/2` | if one argument is NaN, the other; else the smaller / larger; if equal, the first |
-| `ldexp/2`, `scalbln/2` | `x · 2^trunc(e)`, correctly rounded (including subnormal results) |
+| `fmin/2`, `fmax/2` | if one argument is NaN, the other; else the smaller / larger; if equal (including `0` and `-0`), the first (§13) |
+| `ldexp/2`, `scalbln/2` | `x · 2^trunc(e)`, correctly rounded (including subnormal results); a NaN `e` gives NaN; an infinite `e` is the limit (`ldexp(1; infinite)` → +Infinity, `ldexp(1; -infinite)` → `0`, `ldexp(0; infinite)` → `0`, `ldexp(infinite; -infinite)` → +Infinity); any `e` beyond ±4000 acts as ±4000, which already overflows or underflows every finite non-zero `x` (§13) |
 | `logb/0` | the unbiased binary exponent of `x` as a number (subnormals included); `0` → −Infinity; ±Infinity → +Infinity; NaN → NaN |
 | `frexp/0` | `[m, e]` with `x = m · 2^e` and `0.5 ≤ \|m\| < 1`; `0` → `[0, 0]`; ±Infinity → `[±Infinity, 0]`; NaN → `[NaN, 0]` (C leaves this exponent unspecified; jq 1.8.2 on Windows gives −1) |
 | `modf/0` | `[frac, int]`, both with the sign of `x` (`int = trunc(x)`); ±Infinity → `[±0, ±Infinity]`; NaN → `[NaN, NaN]` |
 
-**Library functions** (C99 / IEEE semantics, including the C99 Annex F special cases, e.g. `pow(1; nan)` = 1, `pow(-1; infinite)` = 1): `acos asin atan acosh asinh atanh cbrt cos cosh exp exp2 expm1 log log10 log1p log2 sin sinh tan tanh` (one input) and `atan2/2`, `pow/2`, `hypot/2` (no intermediate overflow). Results SHOULD be correctly rounded and MAY differ in the last bit between hosts; the corpus rounds them inside the programs.
+**Library functions** (C99 / IEEE semantics, including the C99 Annex F special cases, e.g. `pow(1; nan)` = 1, `pow(-1; infinite)` = 1): `acos asin atan acosh asinh atanh cbrt cos cosh exp log log10 log2 sin sinh tan tanh` (one input) and `atan2/2`, `pow/2`, `hypot/2` (no intermediate overflow). Results SHOULD be correctly rounded and MAY differ in the last bit between hosts; the corpus rounds them inside the programs.
 
-**Defined by formula** (no standard library equivalent; written so they port digit for digit; `exp`, `sin`, `cos`, `log`, `pow`, `sqrt` below are the library functions above):
+**Defined by formula** (no standard library equivalent, or one whose accuracy differs between hosts; written so they port digit for digit; `exp`, `sin`, `cos`, `log`, `pow`, `sqrt` below are the library functions above):
+
+`exp2/0`, `expm1/0`, `log1p/0` (`expm1` by Kahan's method, `log1p` by Goldberg's: the rounding error of `exp(x)` or `1 + x` cancels out):
+
+```
+exp2(x):  pow(2, x)
+expm1(x): u = exp(x)
+          if u == 1: return x
+          d = u - 1
+          if d == -1 or u is ±Infinity: return d
+          return d * x / log(u)
+log1p(x): u = 1 + x
+          if u == 1 or u == +Infinity: return x
+          return log(u) * x / (u - 1)
+```
 
 `erf/0` (Abramowitz & Stegun 7.1.26):
 
@@ -825,7 +839,7 @@ j1(x): s = 1.0; a = x; if a < 0.0: a = -a; s = -1.0
 Operations are evaluated left to right as written, each rounded to double (no fused multiply-add, no extended precision).
 
 > [!NOTE]
-> Non-normative: these formulas are approximations with known weak points, kept as specified. `erf` is accurate to about 1.5e−7 only. `tgamma` overflows to +Infinity above about x = 141 (the true value is finite up to about 171.6), gives +Infinity at the poles (C gives NaN for negative integers) and NaN for +Infinity. `lgamma` is `log|tgamma|`, so it overflows where `tgamma` does, far below the true limit of `lgamma`. `j0` and `j1` give NaN for ±Infinity (C gives 0).
+> Non-normative: these formulas are approximations with known weak points, kept as specified. `erf` is accurate to about 1.5e−7 only. `tgamma` overflows to +Infinity above about x = 141 (the true value is finite up to about 171.6), gives +Infinity at the poles (C gives NaN for negative integers) and NaN for +Infinity. `lgamma` is `log|tgamma|`, so it overflows where `tgamma` does, far below the true limit of `lgamma`. `j0` and `j1` give NaN for ±Infinity (C gives 0). `frexp` of ±Infinity and NaN gives the exponent 0, where C leaves it unspecified (jq 1.8.2 on Windows: −1).
 
 `abs/0` is prelude: `def abs: if . < 0 then -. else . end;` (as jq 1.8.2: `-0` stays `-0`, values above all numbers such as strings are returned unchanged, `null` and booleans are below 0 and fail with `cannot be negated`).
 
@@ -853,27 +867,27 @@ Operations are evaluated left to right as written, each rounded to double (no fu
 | Element | Syntax |
 | --- | --- |
 | literal | any code point except `\ . * + ? ( ) [ ] { } \| ^ $` |
-| escapes | `\\ \. \* \+ \? \( \) \[ \] \{ \} \| \^ \$ \/ \-` (the character); `\t \n \r \f \v`; `\xHH` (exactly two hex digits). Other code points: write them literally (jq string escapes `\uXXXX` produce them) |
+| escapes | `\\ \. \* \+ \? \( \) \[ \] \{ \} \| \^ \$ \/ \-` (the character); `\t \n \r \f \v` (U+0009, U+000A, U+000D, U+000C, U+000B; §13 for `\v`); `\xHH` (exactly two hex digits). Other code points: write them literally (jq string escapes `\uXXXX` produce them) |
 | any | `.`: any code point except U+000A (any code point with the `m`/`p` flags) |
-| classes | `[…]`, `[^…]` with literals, ranges `a-z` (by code point), the escapes above and `\d \w \s \D \W \S`. Inside a class, `[` and `]` must be escaped; `-` is literal only first, last or escaped |
+| classes | `[…]`, `[^…]` with at least one item: literals, ranges `a-z` (both ends single code points, literal or escaped, low ≤ high, by code point), the escapes above and `\d \w \s \D \W \S`. Inside a class, `[` and `]` must be escaped; `-` is literal only first, last or escaped. `[]` and `[^]` are errors |
 | shorthands | `\d` = `[0-9]`, `\w` = `[0-9A-Za-z_]`, `\s` = `[\t\n\v\f\r ]` (ASCII only); `\D \W \S` their complements |
 | anchors | `^` start of the input, `$` end of the input (no line mode); `\b`, `\B` ASCII word boundary (by `\w`) |
 | groups | `( … )` capturing, `(?: … )` non-capturing, `(?<name> … )` named capturing; names `[A-Za-z_][A-Za-z0-9_]*`, unique |
-| quantifiers | `* + ?`, `{n}`, `{n,}`, `{n,m}` (n ≤ m ≤ 1000), each optionally followed by `?` (lazy) |
+| quantifiers | `* + ?`, `{n}`, `{n,}`, `{n,m}` (n ≤ m ≤ 1000), each optionally followed by `?` (lazy); a quantifier follows a literal, `.`, a class, a shorthand or a group, never an anchor, another quantifier (`a**` is an error), `\|`, `(` or the start |
 | alternation | `a\|b` (empty alternatives allowed) |
 
 Everything else is the error `Regex failure: <reason>` (as jq; the reason is implementation-defined), in particular: lookahead and lookbehind, backreferences, possessive quantifiers, atomic groups, inline flags `(?i)`, `\p{…}`, POSIX classes, `\A \z \Z \G \K \Q…\E`, `\0`, octal, `\cX`, `\u…`, `\x{…}`, a `{` or `}` that is not a quantifier, a lone `]`.
 
 Matching is leftmost, with Perl priority (greedy or lazy quantifiers, left alternative first). A group inside a repetition reports its last successful participation. Offsets and lengths are in code points.
 
-Note for ports: engines with a different native meaning (`.` excluding `\r` in JS and Java, Unicode `\d` in Python and .NET, UTF-16 units in .NET and JS without `u`, `$` before a final newline in Python, Java and .NET, capture reset in JS repetitions, `(?<name>…)` spelled `(?P<name>…)` in Python, no `_` in Java group names) translate the pattern; a pattern is never handed to an engine unchecked.
+Note for ports: engines with a different native meaning (`.` excluding `\r` in JS and Java, Unicode `\d` in Python and .NET, UTF-16 units in .NET and JS without `u`, `$` before a final newline in Python, Java and .NET, capture reset in JS repetitions, `(?<name>…)` spelled `(?P<name>…)` in Python, no `_` in Java group names) translate the pattern; a pattern is never handed to an engine unchecked. `\b` and `\B` need an engine with an ASCII word boundary (Go, JavaScript, Rust `(?-u:\b)`) or lookaround to emulate one (`(?<=[0-9A-Za-z_])(?![0-9A-Za-z_])|…`); the reference runs the patterns that use them, and only those, on .NET's backtracking engine for that reason.
 
 **Flags** (a string, or `null` for none; each letter once or more, any order):
 
 | Flag | Meaning |
 | --- | --- |
 | `g` | all matches (not only the first) |
-| `i` | case-insensitive: Unicode simple case folding (`"K"` matches U+212A; `"ß"` does not match `"SS"`, §13) |
+| `i` | case-insensitive for the ASCII letters only: each ASCII letter of a literal, a range or a class also matches its other case (a class is closed under ASCII case before `^` negates it); every other code point matches only itself. `"ABC" \| test("abc"; "i")` → `true`; `"A" \| test("[^a]"; "i")` → `false`; `"É" \| test("é"; "i")` → `false` (§13). The translator does it; a port MUST NOT use its engine's ignore-case option unless it is exactly this |
 | `x` | extended: before compiling, unescaped whitespace (U+0009–U+000D, U+0020) outside classes is removed and `#` outside classes starts a comment up to the next U+000A |
 | `n` | ignore empty matches |
 | `m`, `p` | `.` also matches U+000A (Oniguruma's "multi line") |
@@ -933,9 +947,9 @@ days(y, m, d): y = y - (1 if m <= 2 else 0)
 ```
 
 - `gmtime(t)`: `D = floor(t / 86400)`, `r = t − D·86400` (0 ≤ r < 86400); the date of day `D` (inverse of `days`); `hours = floor(r / 3600)`, `minutes = floor(r / 60) mod 60`, `seconds = r mod 60` (fraction kept); `wday = (D + 4) mod 7` (non-negative mod); `yday = D − days(year, 1, 1)`.
-- `mktime(bt)`: missing elements are 0; elements must be numbers; each is truncated toward zero. With `m = month`: `Y = year + floor(m / 12)`, `M = m mod 12` (non-negative); result `(days(Y, M + 1, 1) + mday − 1) · 86400 + hours · 3600 + minutes · 60 + seconds` (out-of-range fields roll over, as C `timegm`).
-- `strftime`/`strflocaltime` on a broken-down time first normalize it like `mktime` and recompute `wday` and `yday`; the given `wday`/`yday` are ignored.
-- **Local time.** The host supplies a zone: `offset(t)` in seconds east of UTC for an instant, and optionally an abbreviation. `localtime(t)` is `gmtime(t + offset(t))` (fraction kept). `strflocaltime` of a broken-down time uses `offset` at the instant the local time denotes (ambiguous or skipped local times: the host decides).
+- `mktime(bt)`: missing elements are 0; elements must be finite numbers (else `mktime requires parsed datetime inputs`); each is truncated toward zero and clamped to ±2^53. With `m = month`: `Y = year + floor(m / 12)`, `M = m mod 12` (non-negative); result `(days(Y, M + 1, 1) + mday − 1) · 86400 + hours · 3600 + minutes · 60 + seconds` (out-of-range fields roll over, as C `timegm`).
+- `strftime`/`strflocaltime` on a broken-down time first normalize it like `mktime` (with their own error text) and recompute `wday` and `yday`; the given `wday`/`yday` are ignored. A result out of the range of `gmtime` is `error converting number of seconds since epoch to datetime`.
+- **Local time.** The host supplies a zone: `offset(t)` in seconds east of UTC for an instant, and optionally an abbreviation. `localtime(t)` is `gmtime(t + offset(t))` (fraction kept). `strflocaltime` of a broken-down time reads it as local seconds `L` (as `mktime` does) and takes the instant `L − offset(L − offset(L))`, whose offset `%z`, `%Z` and `%s` use (this settles ambiguous and skipped local times without asking the host).
 
 **strftime directives.** Numbers are decimal, zero-padded to the width given (a negative number: `-` then the padded digits). Names are English.
 
@@ -957,7 +971,7 @@ days(y, m, d): y = y - (1 if m <= 2 else 0)
 | `%S` | `floor(seconds)`, width 2 |
 | `%u` / `%w` | weekday 1–7 (Monday = 1) / 0–6 (Sunday = 0) |
 | `%V` | ISO 8601 week number, width 2 |
-| `%x` / `%X` | `%m/%d/` and `year mod 100` (width 2) / `%H:%M:%S` |
+| `%x` / `%X` | `%m/%d/` followed by `year mod 100` (non-negative, width 2) / `%H:%M:%S`; there is no `%y` directive |
 | `%Y` | year, width 4 |
 | `%z` | `+hhmm` or `-hhmm` (UTC: `+0000`) |
 | `%Z` | UTC: `UTC`; local: the host's abbreviation, else the offset as `+hh` (or `+hhmm` if the minutes are not 0) |
@@ -982,7 +996,7 @@ Another directive: `Unsupported strftime format specifier %<c>`; a final lone `%
 | `%Z` | a run of non-whitespace characters (read and ignored) |
 | `%%` | `%` |
 
-After the format, only whitespace may remain. Fields not read are `year` 1900, `month` 0, `mday` 0 and 0 for the time. `wday` and `yday` are computed from `year`, `month`, `mday` (`wday = (days(year, month + 1, mday) + 4) mod 7`, `yday = days(year, month + 1, mday) − days(year, 1, 1)`) unless `%a`/`%A` or `%j` read them. An unknown directive is a mismatch. Any mismatch: `date "<input>" does not match format "<format>"`.
+After the format, only whitespace may remain; a final lone `%` in the format is a mismatch. Fields not read are `year` 1900, `month` 0, `mday` 0 and 0 for the time. `wday` and `yday` are computed from `year`, `month`, `mday` (`wday = (days(year, month + 1, mday) + 4) mod 7`, `yday = days(year, month + 1, mday) − days(year, 1, 1)`) unless `%a`/`%A` or `%j` read them; `%j` sets `yday` only, never `month` or `mday` (`"2015-063" | strptime("%Y-%j")` → `[2015,0,0,0,0,0,3,62]`; §13). An unknown directive is a mismatch. Any mismatch: `date "<input>" does not match format "<format>"`.
 
 Example: `"2015-03-05T23:51:47Z" | strptime("%Y-%m-%dT%H:%M:%SZ")` → `[2015,2,5,23,51,47,4,63]`.
 
@@ -1079,7 +1093,7 @@ What the engine needs from its host and gives back (names are the reference's, `
 | input value | converted from the host representation (§4.1 replacement for strings) |
 | host variables | a map `name → value`; names are identifiers without `$` (`[A-Za-z_][A-Za-z0-9_]*`), `ENV` is not allowed; invalid names are rejected before evaluation |
 | `Environment` | the map for `$ENV` (string → string; object key order as the host gives it); default: the process environment |
-| clock (`TimeProvider`) | `now`, and the local zone (`offset(t)`, optional abbreviation) of `localtime`, `strflocaltime`, `%Z`, `%z` |
+| clock (`TimeProvider`) | optional: `now`, and the local zone (`offset(t)`, optional abbreviation) of `localtime`, `strflocaltime`, `%Z`, `%z`. Without one, `now` is the error `now/0 requires a host clock` and the local zone is UTC with no abbreviation (`localtime` = `gmtime`; `strflocaltime` prints `%z` `+0000` and `%Z` `+00`) |
 | `Resolver` | module resolution (§9.11), optional: *resolve* (path, kind, metadata, importer's identity → identity) and *read* (identity → text) |
 | `MaxDepth` | §11 |
 
@@ -1100,15 +1114,19 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 | Numbers | IEEE doubles only; canonical text §5.2 (`1e-7`, `0.00001`, `100000000000000000000`, `1e+21`); `0 \| -.` prints `-0` | keeps the literal text of numbers that are not computed (decNumber: `1e20` prints `1E+20`, `-0` and `0 \| -.` print `0`); computed numbers in C `%.17g` layout (`1e+20`, `1e-05`, `1e-07`) | exact in every language without a decimal library |
 | Surrogates | a lone surrogate becomes U+FFFD everywhere text enters, including `"\ud800"` in a program and in `fromjson` | rejects a lone `\uXXXX` surrogate escape (`Invalid \uXXXX\uXXXX surrogate pair escape`) | one rule for UTF-16 and UTF-8 hosts |
 | `break` and `try` | `try` does not catch `break`: `label $out \| try (0, break $out, 1) catch 99` → `0` | `break` is an error that `try` catches: `0, 99` | `break` is a signal of its own (§6.2) |
-| Regex | the dialect of §9.10: no lookaround, backreferences, inline flags, `\A \z`, Unicode or POSIX classes; ASCII `\d \w \s \b`; `$` only at the end of the input; `i` by simple case folding | Oniguruma Perl-NT: all of these; Unicode `\d`; `$` also before a final newline; full case folding (`"ß"` matches `"SS"`) | the only subset common to Go, Rust, JS, Java, Python, .NET; linear time |
+| Regex | the dialect of §9.10: no lookaround, backreferences, inline flags, `\A \z`, Unicode or POSIX classes; ASCII `\d \w \s \b`; `$` only at the end of the input | Oniguruma Perl-NT: all of these; Unicode `\d`; `$` also before a final newline | the only subset common to Go, Rust, JS, Java, Python, .NET; linear time |
+| Regex `i` flag | ASCII letters only: `"É" \| test("é"; "i")`, `"ß" \| test("SS"; "i")`, `"ſ" \| test("s"; "i")` → `false` | Unicode full case folding: all three `true` | engines disagree on Unicode folding (by engine and Unicode version; .NET's non-backtracking engine folds neither `ſ` with `s` nor any letter above U+FFFF); only ASCII is exact everywhere without a folding table |
+| Regex `\v` | U+000B | the letter `v` (`"v" \| test("\\v")` → `true`, `"\u000b" \| test("\\v")` → `false`) | the escape every other engine has |
+| Regex empty matches | the search moves one code point after an empty match: `"é😀é😀b" \| [match(""; "g")] \| length` → `6` | moves one UTF-8 byte, reporting repeated offsets: `14` (offsets `[0,1,1,2,2,2,2,…]`) | offsets are code points everywhere else |
 | Regex `l` flag | accepted, no effect | longest match | no common engine support |
 | Recursion | depth limit (§11), no tail calls | grows the heap, tail calls optimized | host stacks differ (Python 1000 frames) |
-| Special functions | `erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1` by the formulas of §9.8 | libm | JavaScript, Java, Rust have none |
+| Special functions | `erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1`, `exp2`, `expm1`, `log1p` by the formulas of §9.8 | libm | JavaScript, Java, Rust lack some; .NET's `expm1`/`log1p` are inaccurate near 0 |
+| Math edge cases | `fmin`/`fmax` of `0` and `-0` give the first argument; `ldexp`/`scalbln` with a NaN exponent give NaN, with an infinite or huge one the limit (`ldexp(1; 1e10)` → +Infinity); `frexp` of ±Infinity/NaN has exponent 0 | libm and C casts: `fmin` gives `-0` and `fmax` `0` for both orders; the exponent is cast to a C `int` (`ldexp(1; nan)`, `ldexp(1; infinite)`, `ldexp(1; 1e10)` → `0`); `frexp` exponent −1 (Windows) | exact and the same in every language |
 | NaN ordering | `compare` treats NaNs as equal and below all numbers: `[nan < nan, nan <= nan, nan > nan, nan >= nan]` → `[false,true,false,true]`; `unique`/`group_by` merge NaNs | `[true,true,false,false]` | a consistent total order sorts identically everywhere |
 | Unbound `$x` | host variable: runtime error `$x is not defined` | compile error | host variables (`--arg`) without declaring them |
 | Unbound `$x` in a module | the same host variable as in the main program | compile error located in the module (`$zz is not defined at …/freevar.jq, line 1, column 8`) | one rule for programs and modules |
 | Path tracking | structural (§8.1): variables never carry paths; `limit`, `skip`, `last/1`, `first/1` pass paths | by value identity (a variable holding the value at the current path may pass) | no identity in values |
-| Dates | own calendar and directive tables (§9.12), English names, no locale; `gmtime` floors negative fractional seconds; strptime defaults and computed `wday`/`yday`; an unknown strftime directive is `Unsupported strftime format specifier %<c>` | C library (jq on Windows: `strftime/1: unknown system failure`) | no libc |
+| Dates | own calendar and directive tables (§9.12), English names, no locale; `gmtime` floors negative fractional seconds; strptime defaults and computed `wday`/`yday`, and `%j` leaves `month` and `mday` at 0 (jq: `"2015-063" \| strptime("%Y-%j")` → `[2015,2,4,…]`); an unknown strftime directive is `Unsupported strftime format specifier %<c>` | C library (jq on Windows: `strftime/1: unknown system failure`) | no libc |
 | `%Z` | `UTC`, the host abbreviation, or `+hh` | C library zone names | portable |
 | `fromjson` error text | `<reason> (while parsing '<text>')`, reason implementation-defined | jq parser messages with line and column | parser-specific |
 | `builtins` | sorted, only this profile's names | unsorted, jq's names | deterministic |
@@ -1124,7 +1142,7 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 - I/O and debugging: `input`, `inputs`, `debug/0`, `debug/1`, `stderr`, `input_filename`, `input_line_number`, `$__loc__`, `halt_error/0`, `get_search_list`, `get_jq_origin`, `get_prog_origin`.
 - Streaming: `tostream`, `fromstream`, `truncate_stream`.
 - Values and strings: `leaf_paths`, `toarray`, `toboolean`, `trim`, `ltrim`, `rtrim`, `have_decnum`, `have_literal_numbers`, `@base32`, `@base32d`.
-- Dates: `date`, `dateadd`, `datesub`.
+- Dates: `date`, `dateadd`, `datesub`; the `strftime`/`strptime` directives outside the tables of §9.12, among them `%y %D %F %T %R %U %W %k %l %P %E… %O…` (an unknown directive is an error in `strftime` and a mismatch in `strptime`).
 - SQL-style: `JOIN/3`, `JOIN/4` (`INDEX`, `IN`, `JOIN/2` are in).
 - Math: `exp10`, `pow10`, `gamma`, `rint`, `significand`, `drem`, `scalb`, `copysign`, `fdim`, `nextafter`, `nexttoward`, `y0`, `y1`, `jn`, `yn`.
 
