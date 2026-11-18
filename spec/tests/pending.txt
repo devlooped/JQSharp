@@ -221,7 +221,7 @@ formats.test	try ("%F4%90%80%80" | @urid) catch .	null
 formats.test	try ("%80" | @urid) catch .	null
 formats.test	try ("a very long string that is long %FF" | @urid) catch .	null
 formats.test	[null, true, false, 1.5, "a", [1, "x"], {"a": "é"}] | map(@base64)	null
-formats.test	["", "Zg", "Zg=", "Zg==", "Zm8", "Zm8=", "Zm9v", "Zm9vYg", "Zm9vYmE=", "w6nwn5iA", "/w==", "gA==", "4oI=", "7aCA", "===="] | map(@base64d)	null
+formats.test	["", "Zg", "Zg=", "Zg==", "Zm8", "Zm8=", "Zm9v", "Zm9vYg", "Zm9vYmE=", "w6nwn5iA", "/w==", "gA==", "4oI=", "===="] | map(@base64d)	null
 formats.test	try ("Z" | @base64d) catch .	null
 formats.test	try ("Zg=" | @base64d) catch .	null
 formats.test	try ("Z===" | @base64d) catch .	null
@@ -260,3 +260,94 @@ formats.test	try (@foo "x\(.)") catch .	1
 formats.test	try (@foo "x") catch .	1
 formats.test	[.[] | try @urid catch .]	["%e2%82%ac", "%E2%82%AC%41", "%ED%9F%BF", "%F4%8F%BF%BF", "%00", "a+b%2B", "%C3%A9é", "%C3é"]
 types.test	[builtins[] | select(. == "map/1" or . == "contains/1" or . == "@base64/0" or . == "env/0" or . == "builtins/0" or . == "not/0")] | sort	null
+
+# Cases added with step 8 of the jqlite plan: math, dates, regular expressions
+dates.test	[.[] | gmtime]	[0,1425599507,-1,-86400.5,1.5,951782400,253402300799,-62135596800,4102444800,1078012800]
+dates.test	[.[] | mktime]	[[2015,2,5,23,51,47,4,63],[2015,14,1,0,0,0,0,0],[2015,2,5],[1969,11,31,23,59,59,0,0],[2015,-1,1,0,0,0],[2015.7,2.9,5.9,23.9,51.9,47.9],[2016,1,30,0,0,0],[2015,0,0,24,60,60],[-1,0,1],[0,0,1],[10000,0,1],[],[2015,0,1,0,0,-1],[2015,0,1,-1,0,0],[1970,0,1,0,0,0.5],[1970,0,1,0,0,-0.5]]
+dates.test	[.[] | todate]	[0,1425599507,-1,951782400,1.9,-0.5]
+dates.test	[.[] | strftime("%c|%x|%X|%n|%t|%z|%Z|%s")]	[0,1425599507,-1,-86400.5]
+dates.test	[.[] | strftime("%Y-%m-%d %j %a %C %x %s")]	[[2015,14,1,0,0,0,0,0],[2016,1,29,0,0,0,9,9],[2015,0,0],[1900,0,1,0,0,0],[2015,2,5,23,51,47.5,0,0],[-1,0,1],[2015,2,5,23,51,-0.5]]
+dates.test	[.[] | try gmtime catch .]	["a", null, 1e16, -1e16, 9007199254740992]
+dates.test	[nan, infinite, -infinite] | map(try gmtime catch .)	null
+dates.test	[.[] | try localtime catch .]	["a"]
+dates.test	[.[] | try mktime catch .]	["a", 1, null, {}, ["a"], [2015,"a"], [2015,2,5,null]]
+dates.test	[.[] | try strftime("%Y") catch .]	["a", null, {}, ["a"]]
+dates.test	try strftime(1) catch .	0
+dates.test	[nan, 1e16] | map(try strftime("%Y") catch .)	null
+dates.test	[.[] | try strptime("%Y-%m-%d") catch .]	["2015-03-05", "2015-3-5", " 2015- 3- 5", "2015-03-05 ", "2015-03-05x", "15-03-05", "2015-13-01", "2015-00-01", "2015-03-32", "2015-03-00", "20150-03-05", "x2015-03-05"]
+dates.test	[.[] | try strptime("%d %b %Y") catch .]	["05 Mar 2015", "5 march 2015", "05 MAR 2015", "05 Sept 2015", "05 Sep 2015", "05  Mar   2015", "05Mar2015"]
+dates.test	[.[] | try strptime("%A, %B %e %Y") catch .]	["Thursday, March  5 2015", "thu, mar 5 2015", "Sunday, March 5 2015", "Thurs, March 5 2015"]
+dates.test	[.[] | try strptime("%H:%M:%S") catch .]	["23:59:60", "24:00:00", "1:2:3", "00:60:00"]
+dates.test	[.[] | try strptime("%j %Y") catch .]	["064 2015", "1 2015", "366 2016", "367 2016", "0 2015"]
+dates.test	[.[] | try strptime("%Y %z") catch .]	["2015 +0200", "2015 -02:30", "2015 Z", "2015 +02", "2015 +2", "2015 0200"]
+dates.test	[.[] | try strptime("%Y %Z") catch .]	["2015 CEST", "2015 +02", "2015 "]
+dates.test	[.[] | try strptime("%m") catch .]	["03", ""]
+dates.test	[try strptime("%Q") catch ., try strptime("abc%") catch .]	"x"
+dates.test	strptime("%%%Y")	"%2015"
+dates.test	try ("a" | strptime(1)) catch .	null
+dates.test	try (1 | strptime("%Y")) catch .	null
+dates.test	[strptime(""), strptime(" ")]	""
+dates.test	[.[] | strptime("%Y-%m-%d")]	["0000-01-01", "9999-12-31", "1900-02-29", "2016-02-30"]
+dates.test	strptime("%H:%M")	"10:20"
+dates.test	strptime("%e/%d")	"5/ 6"
+dates.test	[.[] | strptime("%b %h %B") | .[1]]	["jan feb march", "Dec DEC december"]
+math.test	try ("a" | floor) catch .	null
+math.test	try (null | sqrt) catch .	null
+math.test	try ({} | sin) catch .	null
+math.test	try pow("a"; 2) catch .	null
+math.test	try pow(2; "a") catch .	null
+math.test	try pow("a"; "b") catch .	null
+math.test	try fma(1; 2; "a") catch .	null
+math.test	try fma("x"; 2; "a") catch .	null
+math.test	try ("a" | erf) catch .	null
+math.test	[pow(2, 3; 1, 2)]	null
+math.test	[nan, infinite, -infinite] | map([floor, ceil, trunc, round, nearbyint, fabs, sqrt])	null
+math.test	[.[] | sqrt]	[0, 1, 4, 2, 0.25, 1e300, -1]
+math.test	[fmod(7; 3), fmod(-7; 3), fmod(7; -3), fmod(-7; -3), fmod(5.5; 2), fmod(1; 0), fmod(infinite; 2), fmod(2; infinite), fmod(1e300; 3)]	null
+math.test	[remainder(7; 3), remainder(-7; 3), remainder(5; 2), remainder(7; 2), remainder(-5; 2), remainder(1; 0), remainder(infinite; 2), remainder(2; infinite), remainder(1e300; 3), remainder(6.5; 1), remainder(7.5; 1), remainder(3; 2)]	null
+math.test	[fmin(3; 5), fmax(3; 5), fmin(nan; 1), fmin(1; nan), fmax(nan; 1), fmax(1; nan), fmin(nan; nan), fmax(infinite; 1)]	null
+math.test	[ldexp(1; 3), ldexp(1; -1), ldexp(3; 2.7), ldexp(3; -2.7), ldexp(1; 1024), ldexp(1; -1074), ldexp(1; -1075), ldexp(1.5; -1074), ldexp(3; -1075), ldexp(1e-310; 1000), ldexp(infinite; -5), ldexp(0; 10)]	null
+math.test	[.[] | [acosh, asinh, atanh] | map(. * 1e9 | round)]	[1, 1.5, 0.5, -0.5]
+math.test	[[infinite, -infinite, nan] | .[] | [exp, log, sin, cos, tanh, atan, cbrt, sqrt, exp2, expm1, log1p, sinh, cosh, asinh, acosh, atanh]]	null
+math.test	[1, 2, 3, -1] | map([log, log2, log10, log1p, atanh, acosh] | map(. * 1e9 | round))	null
+math.test	(-0.4 | ceil) as $nz | [fmin(0; $nz), fmin($nz; 0), fmax(0; $nz), fmax($nz; 0)] | map(tostring)	null
+math.test	(-0.4 | ceil) as $nz | [atan2($nz; -1), atan2(0; -1), atan2($nz; $nz), atan2(0; $nz), pow($nz; -1), pow(0; -1)] | map(. * 1e9 | round)	null
+math.test	(-0.4 | ceil) as $nz | [$nz | sin, tan, cbrt, sqrt, expm1, log1p, asinh, atanh, atan, trunc, floor, round, nearbyint, fabs, modf[0], frexp[0]] | map(tostring)	null
+math.test	[1e-10, -1e-10, 1e-300] | map(expm1, log1p) | map(. * 1e18 | round)	null
+math.test	[infinite, -infinite] | map(frexp)	null
+math.test	[.[] | frexp]	[1, 8, 0.5, -3, 5e-324, 1e300, 0, 1e-310]
+math.test	[infinite, -infinite, nan] | map(modf)	null
+math.test	[-3 | modf | map(tostring)], [-0.5 | modf | map(tostring)]	null
+math.test	[ldexp(nan; 1), ldexp(1; 2000.5), ldexp(1; -2000.5)]	null
+math.test	[0, -2, nan, infinite, -infinite] | map([tgamma, j0, j1, erf] | map(. * 1e9 | round))	null
+regex.test	try test("(") catch .[:15]	"a"
+regex.test	try test("a{2,1}") catch .[:15]	"a"
+regex.test	try test("(?=a)") catch .[:15]	"a"
+regex.test	try test("a"; "q") catch .	"a"
+regex.test	try test("a"; "gq") catch .	"a"
+regex.test	try test(1) catch .	"a"
+regex.test	try (1 | test("a"; "q")) catch .	null
+regex.test	[match("."; "g") | [.offset, .length, .string]]	"a😀é"
+regex.test	[match("(a)|(b)"; "g") | .captures]	"ab"
+regex.test	match("(?<x>a)?(b)(?<y>c)?")	"b"
+regex.test	[.[] | test("^a$")]	["a", "a\n", "\na", "ba"]
+regex.test	[.[] | test("\\d")]	["٣", "3", "a"]
+regex.test	[.[] | test("\\w")]	["é", "_", "-"]
+regex.test	[.[] | test("\\s")]	[" ", "\u000b", " ", " "]
+regex.test	[.[] | test("^.$")]	["\n", "\r", "😀", "a"]
+regex.test	[.[] | test("^.$"; "s"), test("^.$"; "m"), test("^.$"; "p")]	["\n"]
+regex.test	[match("[😀-😂]+") | [.offset, .length, .string]]	"a😁😀b"
+regex.test	[match("[^a]"; "g") | .string]	"a😀b"
+regex.test	[.[] | try test(.) catch "ERR"]	["\\A", "\\z", "\\Z", "\\G", "\\K", "\\Qa\\E", "\\0", "\\1", "(a)\\1", "\\cA", "\\u0041", "\\x{41}", "\\p{L}", "[[:alpha:]]", "(?i)a", "(?>a)", "a++", "a*+", "(?<=a)b", "(?!a)", "a{", "a}", "]", "x{1001}", "x{2,1}", "\\e", "\\a", "\\h", "\\o", "(?P<n>a)", "(?<1n>a)", "(?<n>a)(?<n>b)", "[z-a]", "[a", "a)", "*a", "a**", "\\", "[\\d-z]", "x{1000}", "x{,3}", "x{3,}"]
+regex.test	[match("(?<a>x)(y)(?<b>z)") | .captures[] | .name]	"xyz"
+regex.test	[sub("(?<x>a)"; "<\(.x)>"; "g"), gsub("(?<x>a)|b"; "[\(.x)]"), gsub("(?<d>\\d)"; "\(.d|tonumber+1)"), gsub("^"; ">"), gsub("$"; "<"), sub("a"; "b", "c"; "g")]	"a1ba2"
+regex.test	[match("é😀"; "g") | [.offset, .length]], [match("b") | .offset], (sub("😀"; "x")), ([match(""; "g")] | length)	"é😀é😀b"
+regex.test	[match("[😀-😂]"; "g") | .string]	"😀😁😂😃"
+regex.test	[match("[^😀]"; "g") | .string]	"😀a😁"
+regex.test	[match("."; "g") | .string], [match("."; "gm") | .string]	"a\n😀"
+regex.test	[match("(?<e>😀)"; "g") | .captures[0] | [.offset, .length]]	"😀😀"
+regex.test	sub("(?<x>a)"; "\(.x)!"; "g")	"aaa"
+regex.test	[match("[a-c😀]+"; "g") | .string]	"ab😀cd😁"
+regex.test	[match("\\W"; "g") | .string]	"a😀-"
+regex.test	[match("[^\\d😀]"; "g") | .string]	"1😀a😁"
+regex.test	[test("a b"; "x"), (try test("a\\ b"; "x") catch .[:15])]	"ab"

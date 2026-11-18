@@ -240,3 +240,169 @@ cbrt * 1e9 | round
 atan2(1;0) * 1e9 | round
 null
 1570796327
+
+# Each math native on ordinary values, NaN, infinities, signed zeros and non-numbers. Library
+# functions are rounded inside the program; the exactly specified ones are compared as they are.
+
+try ("a" | floor) catch .
+null
+"string (\"a\") number required"
+
+try (null | sqrt) catch .
+null
+"null (null) number required"
+
+try ({} | sin) catch .
+null
+"object ({}) number required"
+
+try pow("a"; 2) catch .
+null
+"string (\"a\") number required"
+
+try pow(2; "a") catch .
+null
+"string (\"a\") number required"
+
+try pow("a"; "b") catch .
+null
+"string (\"a\") number required"
+
+try fma(1; 2; "a") catch .
+null
+"string (\"a\") number required"
+
+try fma("x"; 2; "a") catch .
+null
+"string (\"x\") number required"
+
+try ("a" | erf) catch .
+null
+"string (\"a\") number required"
+
+[pow(2, 3; 1, 2)]
+null
+[2,3,4,9]
+
+[nan, infinite, -infinite] | map([floor, ceil, trunc, round, nearbyint, fabs, sqrt])
+null
+[[null,null,null,null,null,null,null],[1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308],[-1.7976931348623157e+308,-1.7976931348623157e+308,-1.7976931348623157e+308,-1.7976931348623157e+308,-1.7976931348623157e+308,1.7976931348623157e+308,null]]
+
+[.[] | sqrt]
+[0, 1, 4, 2, 0.25, 1e300, -1]
+[0,1,2,1.4142135623730951,0.5,1e+150,null]
+
+[fmod(7; 3), fmod(-7; 3), fmod(7; -3), fmod(-7; -3), fmod(5.5; 2), fmod(1; 0), fmod(infinite; 2), fmod(2; infinite), fmod(1e300; 3)]
+null
+[1,-1,1,-1,1.5,null,null,2,0]
+
+[remainder(7; 3), remainder(-7; 3), remainder(5; 2), remainder(7; 2), remainder(-5; 2), remainder(1; 0), remainder(infinite; 2), remainder(2; infinite), remainder(1e300; 3), remainder(6.5; 1), remainder(7.5; 1), remainder(3; 2)]
+null
+[1,-1,1,-1,-1,null,null,2,0,0.5,-0.5,-1]
+
+[fma(2; 3; 4), fma(0.1; 10; -1), fma(1e308; 10; -1e308)]
+null
+[10,5.551115123125783e-17,1.7976931348623157e+308]
+
+[fmin(3; 5), fmax(3; 5), fmin(nan; 1), fmin(1; nan), fmax(nan; 1), fmax(1; nan), fmin(nan; nan), fmax(infinite; 1)]
+null
+[3,5,1,1,1,1,null,1.7976931348623157e+308]
+
+[ldexp(1; 3), ldexp(1; -1), ldexp(3; 2.7), ldexp(3; -2.7), ldexp(1; 1024), ldexp(1; -1074), ldexp(1; -1075), ldexp(1.5; -1074), ldexp(3; -1075), ldexp(1e-310; 1000), ldexp(infinite; -5), ldexp(0; 10)]
+null
+[8,0.5,12,0.75,1.7976931348623157e+308,5e-324,0,1e-323,1e-323,1.071508607186264e-09,1.7976931348623157e+308,0]
+
+[scalbln(1; 3), scalbln(5; -1), scalbln(1; 2000), scalbln(1; -2000)]
+null
+[8,2.5,1.7976931348623157e+308,0]
+
+[.[] | logb]
+[1, 8, 0.5, 1e300, 5e-324, 1e-310, -8, 0, 3]
+[0,3,-1,996,-1074,-1030,3,-1.7976931348623157e+308,1]
+
+[.[] | [acos, asin, atan, cos, sin, tan, cosh, sinh, tanh, exp, exp2, expm1, cbrt] | map(. * 1e9 | round)]
+[0, 0.5, -0.5, 1, -1]
+[[1570796327,0,0,1000000000,0,0,1000000000,0,0,1000000000,1000000000,0,0],[1047197551,523598776,463647609,877582562,479425539,546302490,1127625965,521095305,462117157,1648721271,1414213562,648721271,793700526],[2094395102,-523598776,-463647609,877582562,-479425539,-546302490,1127625965,-521095305,-462117157,606530660,707106781,-393469340,-793700526],[0,1570796327,785398163,540302306,841470985,1557407725,1543080635,1175201194,761594156,2718281828,2000000000,1718281828,1000000000],[3141592654,-1570796327,-785398163,540302306,-841470985,-1557407725,1543080635,-1175201194,-761594156,367879441,500000000,-632120559,-1000000000]]
+
+[.[] | [log, log10, log1p, log2, sqrt] | map(. * 1e9 | round)]
+[0.5, 1, 2, 10, 1000]
+[[-693147181,-301029996,405465108,-1000000000,707106781],[0,0,693147181,0,1000000000],[693147181,301029996,1098612289,1000000000,1414213562],[2302585093,1000000000,2397895273,3321928095,3162277660],[6907755279,3000000000,6908754779,9965784285,31622776602]]
+
+[.[] | [acosh, asinh, atanh] | map(. * 1e9 | round)]
+[1, 1.5, 0.5, -0.5]
+[[0,881373587,1.7976931348623157e+308],[962423650,1194763217,null],[null,481211825,549306144],[null,-481211825,-549306144]]
+
+[[infinite, -infinite, nan] | .[] | [exp, log, sin, cos, tanh, atan, cbrt, sqrt, exp2, expm1, log1p, sinh, cosh, asinh, acosh, atanh]]
+null
+[[1.7976931348623157e+308,1.7976931348623157e+308,null,null,1,1.5707963267948966,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,null],[0,null,null,null,-1,-1.5707963267948966,-1.7976931348623157e+308,null,0,-1,null,-1.7976931348623157e+308,1.7976931348623157e+308,-1.7976931348623157e+308,null,null],[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]]
+
+[1, 2, 3, -1] | map([log, log2, log10, log1p, atanh, acosh] | map(. * 1e9 | round))
+null
+[[0,0,0,693147181,1.7976931348623157e+308,0],[693147181,1000000000,301029996,1098612289,null,1316957897],[1098612289,1584962501,477121255,1386294361,null,1762747174],[null,null,null,-1.7976931348623157e+308,-1.7976931348623157e+308,null]]
+
+# fmin and fmax of equal arguments give the first (spec 9.8); C leaves the sign of a zero result
+# unspecified and jq 1.8.2 on Windows gives ["-0","-0","0","0"].
+(-0.4 | ceil) as $nz | [fmin(0; $nz), fmin($nz; 0), fmax(0; $nz), fmax($nz; 0)] | map(tostring)
+null
+["0","-0","0","-0"]
+
+(-0.4 | ceil) as $nz | [atan2($nz; -1), atan2(0; -1), atan2($nz; $nz), atan2(0; $nz), pow($nz; -1), pow(0; -1)] | map(. * 1e9 | round)
+null
+[-3141592654,3141592654,-3141592654,3141592654,-1.7976931348623157e+308,1.7976931348623157e+308]
+
+(-0.4 | ceil) as $nz | [$nz | sin, tan, cbrt, sqrt, expm1, log1p, asinh, atanh, atan, trunc, floor, round, nearbyint, fabs, modf[0], frexp[0]] | map(tostring)
+null
+["-0","-0","-0","-0","-0","-0","-0","-0","-0","-0","-0","-0","-0","0","-0","-0"]
+
+[.[] | logb]
+[1, 8, 0.5, 1e300, 5e-324, 1e-310, -8, 0, 3]
+[0,3,-1,996,-1074,-1030,3,-1.7976931348623157e+308,1]
+
+[1e-10, -1e-10, 1e-300] | map(expm1, log1p) | map(. * 1e18 | round)
+null
+[100000000,100000000,-100000000,-100000000,0,0]
+
+# The exponent of frexp(±Infinity) is 0 (spec 9.8); C leaves it unspecified and jq 1.8.2 on Windows gives -1.
+[infinite, -infinite] | map(frexp)
+null
+[[1.7976931348623157e+308,0],[-1.7976931348623157e+308,0]]
+
+[.[] | frexp]
+[1, 8, 0.5, -3, 5e-324, 1e300, 0, 1e-310]
+[[0.5,1],[0.5,4],[0.5,0],[-0.75,2],[0.5,-1073],[0.7466108948025751,997],[0,0],[0.5752618031559393,-1029]]
+
+[.[] | modf]
+[3.5, -3.5, 2, -2, 0.25, 1e300]
+[[0.5,3],[-0.5,-3],[0,2],[-0,-2],[0.25,0],[0,1e+300]]
+
+[infinite, -infinite, nan] | map(modf)
+null
+[[0,1.7976931348623157e+308],[-0,-1.7976931348623157e+308],[null,null]]
+
+[-3 | modf | map(tostring)], [-0.5 | modf | map(tostring)]
+null
+[["-0","-3"]]
+[["-0.5","-0"]]
+
+[ldexp(nan; 1), ldexp(1; 2000.5), ldexp(1; -2000.5)]
+null
+[null,1.7976931348623157e+308,0]
+
+# The special functions (spec 9.8 formulas, spec 13: not libm), at several points.
+
+[.[] | [erf, erfc] | map(. * 1e9 | round)]
+[0, 0.5, -1, 2, 3.5, -0.25]
+[[0,1000000000],[520500016,479499984],[-842700690,1842700690],[995322140,4677860],[999999256,744],[-276326261,1276326261]]
+
+[.[] | [tgamma, lgamma] | map(. * 1e9 | round)]
+[0.5, 1, 5, 4.5, -1.5, 0.1, 10, -0.5]
+[[1772453851,572364943],[1000000000,0],[24000000000,3178053830],[11631728397,2453736571],[2363271801,860047015],[9513507699,2252712652],[362880000000002,12801827480],[-3544907702,1265512123]]
+
+[.[] | [j0, j1] | map(. * 1e9 | round)]
+[0, 1, 5, 7.9, 8, 10, 25, -3]
+[[1000000003,0],[765197684,440050586],[-177596774,-327579139],[194361850,219179396],[171650807,234636342],[-245935764,43472746],[96266783,-125350250],[-260051958,-339058958]]
+
+# Poles, NaN and infinities: the values of the formulas (spec 9.8 note), not those of libm.
+[0, -2, nan, infinite, -infinite] | map([tgamma, j0, j1, erf] | map(. * 1e9 | round))
+null
+[[1.7976931348623157e+308,1000000003,0,0],[1.7976931348623157e+308,223890782,-576724808,-995322140],[null,null,null,null],[null,null,null,1000000000],[1.7976931348623157e+308,null,null,-1000000000]]

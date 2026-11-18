@@ -86,11 +86,11 @@ static class Utf8
 
     /// <summary>
     /// Decodes the sequence at <paramref name="index"/> and returns the index after it;
-    /// <paramref name="codePoint"/> is -1 when the sequence is ill-formed. The extent of an
-    /// ill-formed sequence is jq 1.8.2's: a byte that cannot start a sequence (80-BF, C0, C1,
-    /// F5-FF) alone; a lead byte with fewer bytes left than its length, every byte to the end;
-    /// a lead byte followed by a byte that is not a continuation, the bytes before that one; a
-    /// complete sequence that is overlong, a surrogate or above U+10FFFF, the whole sequence.
+    /// <paramref name="codePoint"/> is -1 when the sequence is ill-formed, and the index is then
+    /// the end of its maximal ill-formed subpart (Unicode §3.9, §4.1 of the spec): the bytes up to
+    /// the first one that cannot continue a well-formed sequence, at least one byte. The second
+    /// byte's range depends on the first (E0: A0-BF, ED: 80-9F, F0: 90-BF, F4: 80-8F), which rules
+    /// out overlong forms, surrogates and code points above U+10FFFF.
     /// </summary>
     static int Next(List<byte> bytes, int index, out int codePoint)
     {
@@ -105,21 +105,22 @@ static class Utf8
         var length = first is >= 0xC2 and <= 0xDF ? 2 : first is >= 0xE0 and <= 0xEF ? 3 : first is >= 0xF0 and <= 0xF4 ? 4 : 0;
         if (length == 0)
             return index + 1;
-        if (index + length > bytes.Count)
-            return bytes.Count;
 
+        var low = first == 0xE0 ? 0xA0 : first == 0xF0 ? 0x90 : 0x80;
+        var high = first == 0xED ? 0x9F : first == 0xF4 ? 0x8F : 0xBF;
         var value = first & (0x7F >> length);
         for (var i = 1; i < length; i++)
         {
+            if (index + i == bytes.Count)
+                return index + i;
             int next = bytes[index + i];
-            if ((next & 0xC0) != 0x80)
+            if (next < low || next > high)
                 return index + i;
             value = (value << 6) | (next & 0x3F);
+            (low, high) = (0x80, 0xBF);
         }
 
-        var shortest = length == 2 ? 0x80 : length == 3 ? 0x800 : 0x10000;
-        if (value >= shortest && value <= CodePoints.Max && value is < 0xD800 or > 0xDFFF)
-            codePoint = value;
+        codePoint = value;
         return index + length;
     }
 }

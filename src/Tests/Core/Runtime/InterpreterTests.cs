@@ -143,10 +143,10 @@ public class InterpreterTests
     [Fact]
     public void A_native_without_an_implementation_is_a_runtime_error()
     {
-        Assert.Equal("error: \"sqrt/0 is not implemented\"", Line("4 | sqrt"));
-        Assert.Equal("\"caught\"", Line("try sqrt catch \"caught\""));
+        Assert.Equal("error: \"modulemeta/0 is not implemented\"", Line("\"m\" | modulemeta"));
+        Assert.Equal("\"caught\"", Line("try modulemeta catch \"caught\""));
         // Binding succeeds: the catalogue has the entry.
-        Assert.Equal("[1]", Line("[1, (if false then sqrt else empty end)]"));
+        Assert.Equal("[1]", Line("[1, (if false then modulemeta else empty end)]"));
     }
 
     [Fact]
