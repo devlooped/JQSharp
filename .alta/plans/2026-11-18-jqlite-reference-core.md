@@ -204,16 +204,19 @@ The JSONL `EvaluateAsync` helpers stay, as one overload each. `JQSharp.csproj` g
   - Done (3,286 tests): `IsAotCompatible` is on and a build with warnings as errors is clean. `PortabilityTests` fails, naming file and line, when a file under `Core` uses `System.Text.Json`, `yield`, LINQ, regex, reflection, date or culture APIs, `throw` or `catch` outside a per-file allow-list with its reason, and when a file outside `Json/JsonElementAdapter.cs` converts with `System.Text.Json`. `JqConcurrencyTests` runs one expression on 32 threads with different inputs and variables; `JqDepthTests` covers `100000 | f` through the public API, also on a 256 KB thread.
 - [x] 12. **Benchmarks.** Add the four scaling cases of Evidence to `src/Benchmarks` beside the WhatsApp one; refresh the table in `readme.md`.
   - Done: `src/Benchmarks/ScalingBenchmarks.cs` holds the four cases (cached expression, input `null`; the last one stops the streaming overload after the first result), and `Program.cs` runs either class through `BenchmarkSwitcher`. Measured here (BenchmarkDotNet, .NET 8.0.34): 22.33 ms / 26.2 MB; 1.68 ms / 3.6 MB; 0.59 ms / 1.3 MB; 423 ns / 1.5 KB, each more than 10 times below Evidence in time and memory. WhatsApp with a cached expression: 12.46 µs / 16.15 KB (old engine on this machine: 26.84 µs / 55.55 KB). The readme tables are refreshed.
-- [ ] 13. **Docs.** Rewrite the architecture part of `AGENTS.md` (layers, portability rules, spec as source of truth); update `readme.md` (API, profile); add `docs/porting.md` (folder-to-module map, notes per language); delete `.github/design.md`, `.github/product.md`, `.github/prompt.md`.
+- [x] 13. **Docs.** Rewrite the architecture part of `AGENTS.md` (layers, portability rules, spec as source of truth); update `readme.md` (API, profile); add `docs/porting.md` (folder-to-module map, notes per language); delete `.github/design.md`, `.github/product.md`, `.github/prompt.md`.
+  - Done: `docs/porting.md` (file-to-module map for the five languages, the shapes that carry over, notes per language, how to verify a port), `AGENTS.md` (layers, portability rules, spec as source of truth, host boundary) and `readme.md` (API as built, modules and resolvers, the jqlite profile, upgrading from 1.x; every sample compiled and run). The three old documents under `.github/` are deleted.
 
 ## How it is verified
 
-- [ ] `dnx --yes retest` is green after each step; after step 10 `spec/tests/pending.txt` is gone and every corpus case passes.
-- [ ] Every row of the Evidence tables is a corpus case and passes.
-- [ ] `dotnet build` reports no `IL2026`/`IL3050` warning for `JQSharp.csproj`.
-- [ ] `def f: if . == 0 then 0 else (. - 1 | f) end; 100000 | f` throws `JqException` and the test process survives.
-- [ ] The scaling cases take at least 10 times less time and memory than in Evidence; the WhatsApp benchmark is not slower than today (15.5 µs, 55 KB with a cached expression).
-- [ ] `dotnet format whitespace --verify-no-changes` and `dotnet format style --verify-no-changes` pass.
+- [x] `dnx --yes retest` is green after each step; after step 10 `spec/tests/pending.txt` is gone and every corpus case passes.
+- [x] Every row of the Evidence tables is a corpus case and passes.
+- [x] `dotnet build` reports no `IL2026`/`IL3050` warning for `JQSharp.csproj`.
+- [x] `def f: if . == 0 then 0 else (. - 1 | f) end; 100000 | f` throws `JqException` and the test process survives.
+- [x] The scaling cases take at least 10 times less time and memory than in Evidence; the WhatsApp benchmark is not slower than today (15.5 µs, 55 KB with a cached expression).
+- [x] `dotnet format whitespace --verify-no-changes` and `dotnet format style --verify-no-changes` pass.
+
+Checked on 2026-11-18 at the end of the work: `dotnet build` 0 warnings (also with warnings as errors under `IsAotCompatible`), `dnx --yes retest` 3,286 passed, both format checks clean, every Evidence row found in `spec/tests/*.test`, benchmark numbers under steps 10 and 12.
 
 ## Decisions
 
