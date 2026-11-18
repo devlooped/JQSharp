@@ -1,6 +1,6 @@
 ---
 title: Make JQSharp the portable reference implementation of jqlite
-status: in-progress
+status: done
 created: 2026-11-18
 summary: Replace the JsonElement-bound, iterator-based engine with a small layered core (lexer, parser, plain AST, resolver, push-based interpreter, own value model) specified by a jqlite profile and a shared conformance corpus, so it is correct, fast and portable 1:1 to JS/TS, Python, Java, Go and Rust.
 ---
