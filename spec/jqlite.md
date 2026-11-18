@@ -23,9 +23,9 @@ Source text is a sequence of code points. Tokens are matched longest-first.
 | --- | --- |
 | whitespace | `U+0020`, `U+0009`, `U+000A`, `U+000D` (only these) |
 | comment | `#` up to the end of the line. If the line ends with an odd number of `\` before the line break, the comment continues on the next line. Only U+000A ends a line (a lone U+000D does not: `1 # c` CR `+ 1` → `1`; with CRLF the CR is whitespace before the LF). |
-| `IDENT` | `[A-Za-z_][A-Za-z0-9_]*` optionally followed by `(::[A-Za-z_][A-Za-z0-9_]*)` (a module-qualified name, one `::` at most) |
+| `IDENT` | `[A-Za-z_][A-Za-z0-9_]*` followed by any number of `::[A-Za-z_][A-Za-z0-9_]*` (a qualified name: `a::b::c`) |
 | `FIELD` | `.` immediately followed by `[A-Za-z_][A-Za-z0-9_]*` (no whitespace between) |
-| `VAR` | `$` immediately followed by `[A-Za-z_][A-Za-z0-9_]*`, optionally `::[A-Za-z_][A-Za-z0-9_]*` |
+| `VAR` | `$` immediately followed by `[A-Za-z_][A-Za-z0-9_]*` and any number of `::[A-Za-z_][A-Za-z0-9_]*` |
 | `FORMAT` | `@` immediately followed by `[A-Za-z0-9_]+` |
 | `NUMBER` | `([0-9]+(\.[0-9]*)?\|\.[0-9]+)([eE][+-]?[0-9]+)?` |
 | `STRING` | `"` … `"`, see below |
@@ -387,7 +387,7 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 - `E as P1 ?// P2 ?// … | B`: every variable of every pattern is bound in `B`; those absent from the pattern in use are `null`. For each output `v` of `E`, try `P1`: if destructuring fails, or `B` raises an error, try the next pattern with the same `v` (outputs already produced stay); errors with the last pattern propagate. Errors raised by the consumer of the binding's outputs are not handled (§6.2).
 - Scope is lexical: a variable is visible in `B` (and nested definitions there), shadowing outer bindings of the same name.
 - `$ENV` is predefined in the outermost scope: an object of the host environment variables (§12). It can be shadowed.
-- **Host variables**: a `$name` (without `::`) that has no lexical binding and is not `$ENV` refers to a host-supplied variable, looked up when evaluated. If the host did not supply it: the error `$name is not defined`. A `$alias::name` must be bound by an import (§9.11), otherwise it is a binding error.
+- **Host variables**: a `$name` (without `::`) that has no lexical binding and is not `$ENV` refers to a host-supplied variable, looked up when evaluated. If the host did not supply it: the error `$name is not defined`. This holds inside a module too: a module's unbound `$name` is the same host variable as in the main program (§13). A `$alias::name` must be bound by a data import (§9.11), otherwise it is a binding error.
 
 ### 7.6 Indexing
 
@@ -411,7 +411,7 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 ### 7.7 Functions
 
 - `def f: B; R` and `def f(p1; …; pn): B; R` define `f/n` for `R` and for `B` itself (recursion). A definition is visible after its own `def` keyword only; later definitions with the same name and arity shadow earlier ones. Definitions inside a function body are local to it.
-- A call `f(a1; …; an)` resolves at bind time to the innermost visible definition of `f/n`, else the builtin `f/n`, else the error `f/n is not defined`. A closure parameter `p` is a definition of `p/0`: it shadows functions named `p` of arity 0 only (`def x(a): 7; def f(x): x(0); f(1)` → `7`), and a definition inside the body shadows it in turn (`def f(x): def x: 5; x; f(1)` → `5`).
+- A call `f(a1; …; an)` resolves at bind time to the innermost visible definition of `f/n`, else the builtin `f/n`, else the error `f/n is not defined`. A qualified name (`a::f`) is an ordinary name of the same lexical scope: `def a::f: 1; a::f` → `1` needs no import, and an import directive defines `alias::f/n` at that point for each export `f/n` (§9.11), which later definitions shadow like any other (`import "a" as a; def g: a::f; def a::f: "local"; [g, a::f]` → `["a.f","local"]`; `import "a" as a; [a::f, (def a::f: 2; a::f)]` → `["a.f",2]`; an alias without that export: `a::zz/0 is not defined`). A closure parameter `p` is a definition of `p/0`: it shadows functions named `p` of arity 0 only (`def x(a): 7; def f(x): x(0); f(1)` → `7`), and a definition inside the body shadows it in turn (`def f(x): def x: 5; x; f(1)` → `5`).
 - The body `B` is evaluated with the call's input in the environment where `f` was **defined** (plus its parameters). Free variables, functions and labels of `B` are those visible at the definition: `1 as $x | def f: $x; 2 as $x | f` → `1`.
 - A filter argument `ai` is a closure: each time the body evaluates `pi`, `ai` is evaluated on the input given to `pi` at that point, in the caller's environment. Example: `[1] | def f(x): x | x; f(. + [2])` → `[1,2,2]`.
 - A `$p` parameter binds each output of the argument (evaluated on the call's input) as `$p`, first parameter outermost (§3.3); it also defines the filter `p/0`.
@@ -908,12 +908,13 @@ Examples: `"abc" | [match(""; "g")] | length` → `4`; `"abc" | gsub(""; "-")` �
 
 A port MAY leave out the whole group: `import`, `include`, `module` and `modulemeta/0`. A port without it rejects those keywords with a syntax error and does not list `modulemeta/0`.
 
-- **Resolution** is the host's: a resolver maps (relative path, kind `code` or `data`, the import's metadata object, the identity of the importing module or the main program) to a module identity and its source text, or fails (the error is a binding error naming the path). The same identity is loaded once; an import cycle is a binding error.
-- **Code modules** consist of `ModuleBody` (§3.2). A module sees the builtins, its own imports and its own top-level definitions, nothing of the importer. Only its top-level definitions are exported; definitions nested in function bodies are not.
-- `import "p" as name;` makes every exported `f/n` of `p` callable as `name::f(…)`. `include "p";` makes them callable unqualified, as if defined at that point (later definitions shadow earlier ones). Re-importing under the same alias: the later import wins.
-- `import "p" as $name;` reads a **data** module: its text is a sequence of JSON values (§5.3, separated by whitespace), bound as an array to both `$name` and `$name::name`.
+- **Resolution** is the host's, as two operations: *resolve* maps (the directive's path, kind `code` or `data`, the directive's metadata object, the identity of the importing module or of the main program) to a module identity; *read* maps an identity to its text. A path that resolves to nothing is the binding error `module not found: <path>`. Within one binding of a program a module is read and bound once per identity, however many directives name it. A module that imports itself, directly or through others, is the binding error `circular import of <identity>`.
+- **Errors in modules.** A syntax or binding error inside a module is reported with the module's identity and its line and column. A data module that is not a sequence of JSON values is a binding error naming the module (text implementation-defined).
+- **Code modules** consist of `ModuleBody` (§3.2). A module sees the builtins, its own imports and its own top-level definitions, nothing of the importer (an unbound `$name` in it is a host variable, §7.5). It exports only the definitions written at its top level: not those nested in function bodies, and not those it got from its own `include` or `import` (`incb` = `include "b"; def k: f;` exports `k/0` only: `import "incb" as x; x::f` is `x::f/0 is not defined`).
+- `import "p" as name;` defines `name::f/n` for every export `f/n` of `p`, at the directive (§7.7); `name` may itself contain `::` (`import "a" as x::y; x::y::f`). `include "p";` makes them callable unqualified, as if defined at that point (later definitions shadow earlier ones). Re-importing under the same alias: the later import wins.
+- `import "p" as $name;` reads a **data** module: its text is a sequence of JSON values (§5.3, separated by whitespace), bound as an array to both `$name` and `$name::name` (`import "values" as $a::b;` binds `$a::b` and `$a::b::a::b`). A data module with no value binds `[]`.
 - `module {…};` attaches a metadata object to a module file. In a main program it is accepted and has no effect (`module {"x":1}; 5` → `5`).
-- `modulemeta`: input a module path string (resolved as from the main program); output the module's metadata object, followed by `"deps"`: one object per import in order (`include` too), with the import's metadata keys first, then `"as"` (the alias, without `$`; absent for `include`), `"is_data"`, `"relpath"`; then `"defs"`: the exported `"name/arity"` in definition order. Errors: non-string input `modulemeta input module name must be a string`; resolution errors as above.
+- `modulemeta`: input a module path string (resolved as from the main program); output the module's metadata object, followed by `"deps"`: one object per import in order (`include` too), with the import's metadata keys first, then `"as"` (the alias, without `$`; absent for `include`), `"is_data"`, `"relpath"`; then `"defs"`: the exported `"name/arity"` in the order of their first definition, each once (`def x: 1; def y: 1; def x: 2; def x(a): 3;` → `["x/0","y/0","x/1"]`). A module the program already loaded is reused, not read again. Errors: non-string input `modulemeta input module name must be a string`; the resolution and module errors above, raised as runtime errors (catchable: `try ("nosuch" | modulemeta) catch .` → `"module not found: nosuch"`).
 
 Example: for a module `c` with `module {"whatever":null}; import "a" as foo; include "b" {"search":"./"}; import "data" as $d; def c: 1; def aa: 2;`, `"c" | modulemeta` → `{"whatever":null,"deps":[{"as":"foo","is_data":false,"relpath":"a"},{"search":"./","is_data":false,"relpath":"b"},{"as":"d","is_data":true,"relpath":"data"}],"defs":["c/0","aa/0"]}`.
 
@@ -1079,7 +1080,7 @@ What the engine needs from its host and gives back (names are the reference's, `
 | host variables | a map `name → value`; names are identifiers without `$` (`[A-Za-z_][A-Za-z0-9_]*`), `ENV` is not allowed; invalid names are rejected before evaluation |
 | `Environment` | the map for `$ENV` (string → string; object key order as the host gives it); default: the process environment |
 | clock (`TimeProvider`) | `now`, and the local zone (`offset(t)`, optional abbreviation) of `localtime`, `strflocaltime`, `%Z`, `%z` |
-| `Resolver` | module resolution (§9.11), optional |
+| `Resolver` | module resolution (§9.11), optional: *resolve* (path, kind, metadata, importer's identity → identity) and *read* (identity → text) |
 | `MaxDepth` | §11 |
 
 | Out | Meaning |
@@ -1105,6 +1106,7 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 | Special functions | `erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1` by the formulas of §9.8 | libm | JavaScript, Java, Rust have none |
 | NaN ordering | `compare` treats NaNs as equal and below all numbers: `[nan < nan, nan <= nan, nan > nan, nan >= nan]` → `[false,true,false,true]`; `unique`/`group_by` merge NaNs | `[true,true,false,false]` | a consistent total order sorts identically everywhere |
 | Unbound `$x` | host variable: runtime error `$x is not defined` | compile error | host variables (`--arg`) without declaring them |
+| Unbound `$x` in a module | the same host variable as in the main program | compile error located in the module (`$zz is not defined at …/freevar.jq, line 1, column 8`) | one rule for programs and modules |
 | Path tracking | structural (§8.1): variables never carry paths; `limit`, `skip`, `last/1`, `first/1` pass paths | by value identity (a variable holding the value at the current path may pass) | no identity in values |
 | Dates | own calendar and directive tables (§9.12), English names, no locale; `gmtime` floors negative fractional seconds; strptime defaults and computed `wday`/`yday`; an unknown strftime directive is `Unsupported strftime format specifier %<c>` | C library (jq on Windows: `strftime/1: unknown system failure`) | no libc |
 | `%Z` | `UTC`, the host abbreviation, or `+hh` | C library zone names | portable |
@@ -1145,7 +1147,7 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 - Text forms (number text, escaping, key order of `tojson`) are tested through `tojson`, `tostring` or formats inside the programs, so the harness never compares text.
 - Expected errors are tested with `try … catch .` inside the program.
 - Transcendental results are rounded inside the programs (`sin * 1e9 | round`).
-- Module cases live in their own files and run with a resolver over `spec/tests/modules/`; a port without the modules group skips them.
+- Module cases (`spec/tests/modules.test`) run with a resolver over `spec/tests/modules/`: a path `p` of a code import or `include` names the file `p.jq`, of a data import `p.json`, in the directory of the file that holds the directive (for the main program, `spec/tests/modules/`); the module's identity is that file; a path that names no file is a missing module. A port without the modules group skips them.
 
 ### 14.3 Conformance of a port
 
