@@ -40,8 +40,9 @@ sealed class Resolver
     }
 
     // Variable, Parameter, Label: Depth is the frame holding it, Slot its slot there.
-    // Function: Depth is the number of frames where it is defined, Slot its index in functions.
-    readonly record struct Entry(EntryKind Kind, string Name, int Arity, int Depth, int Slot);
+    // Function: Depth is the number of frames where it is defined, Slot its index in functions,
+    // TopLevel whether it is a top-level definition of the program or module.
+    readonly record struct Entry(EntryKind Kind, string Name, int Arity, int Depth, int Slot, bool TopLevel = false);
 
     enum Step
     {
@@ -70,6 +71,8 @@ sealed class Resolver
     static readonly Node identity = new Identity();
 
     readonly Prelude? prelude;
+    // Whether builtins with a native override bind to it (Native.OverridesPrelude).
+    readonly bool nativeOverrides;
     readonly List<Entry> scope = [];
     readonly List<Function?> functions = [];
     readonly List<int> exports = [];
@@ -81,33 +84,38 @@ sealed class Resolver
     int depth;
     SyntaxError? error;
 
-    Resolver(Prelude? prelude)
+    Resolver(Prelude? prelude, bool nativeOverrides)
     {
         this.prelude = prelude;
+        this.nativeOverrides = nativeOverrides;
         if (prelude is not null)
             functions.AddRange(prelude.Functions);
     }
 
-    /// <summary>Binds a program against the prelude and the natives.</summary>
-    public static bool TryBind(S.Program program, [NotNullWhen(true)] out BoundProgram? bound, [NotNullWhen(false)] out SyntaxError? error)
+    /// <summary>
+    /// Binds a program against the prelude and the natives. Without <paramref name="nativeOverrides"/>
+    /// every prelude builtin binds to its definition, even where a native overrides it.
+    /// </summary>
+    public static bool TryBind(S.Program program, [NotNullWhen(true)] out BoundProgram? bound, [NotNullWhen(false)] out SyntaxError? error, bool nativeOverrides = true)
     {
-        var resolver = new Resolver(Prelude.Instance);
+        var prelude = nativeOverrides ? Prelude.Instance : Prelude.WithoutOverrides;
+        var resolver = new Resolver(prelude, nativeOverrides);
         bound = resolver.BindProgram(program) is { } body ? new BoundProgram(resolver.Functions(), [.. resolver.hostVariables], body) : null;
         error = resolver.error;
         return bound is not null;
     }
 
     /// <summary>Parses and binds a program.</summary>
-    public static bool TryCompile(string source, [NotNullWhen(true)] out BoundProgram? bound, [NotNullWhen(false)] out SyntaxError? error)
+    public static bool TryCompile(string source, [NotNullWhen(true)] out BoundProgram? bound, [NotNullWhen(false)] out SyntaxError? error, bool nativeOverrides = true)
     {
         bound = null;
-        return Parser.TryParse(source, out var program, out error) && TryBind(program, out bound, out error);
+        return Parser.TryParse(source, out var program, out error) && TryBind(program, out bound, out error, nativeOverrides);
     }
 
     /// <summary>Binds the prelude module against the natives only: all its functions, and its top-level definitions in order.</summary>
-    internal static bool TryBindPrelude(S.Program module, out ImmutableArray<Function> functions, out ImmutableArray<Function> definitions, [NotNullWhen(false)] out SyntaxError? error)
+    internal static bool TryBindPrelude(S.Program module, bool nativeOverrides, out ImmutableArray<Function> functions, out ImmutableArray<Function> definitions, [NotNullWhen(false)] out SyntaxError? error)
     {
-        var resolver = new Resolver(null);
+        var resolver = new Resolver(null, nativeOverrides);
         functions = definitions = [];
         error = null;
         if (resolver.BindProgram(module) is null)
@@ -449,7 +457,7 @@ sealed class Resolver
         functions.Add(null);
         if (topLevel)
             exports.Add(index);
-        scope.Add(new Entry(EntryKind.Function, definition.Name, definition.Params.Length, depth, index));
+        scope.Add(new Entry(EntryKind.Function, definition.Name, definition.Params.Length, depth, index, topLevel));
 
         Leave();
         tasks.Add(new Task(Step.EndFunction, Definition: definition, A: index));
@@ -529,7 +537,11 @@ sealed class Resolver
 
             if (entry.Kind == EntryKind.Function)
             {
-                tasks.Add(new Task(Step.BuildCall, call, A: entry.Slot, B: depth - entry.Depth));
+                // Inside the prelude, its own builtins with a native override bind to the native too.
+                if (prelude is null && entry.TopLevel && Override(call.Name, arity) is { } native)
+                    tasks.Add(new Task(Step.BuildNative, call, A: native.Index));
+                else
+                    tasks.Add(new Task(Step.BuildCall, call, A: entry.Slot, B: depth - entry.Depth));
                 PushAll(call.Arguments);
                 return;
             }
@@ -537,13 +549,21 @@ sealed class Resolver
 
         // The prelude is defined in the outermost, empty environment: every frame of the caller is left.
         if (prelude?.Find(call.Name, arity) is { } function)
-            tasks.Add(new Task(Step.BuildCall, call, A: function, B: depth));
+        {
+            if (Override(call.Name, arity) is { } native)
+                tasks.Add(new Task(Step.BuildNative, call, A: native.Index));
+            else
+                tasks.Add(new Task(Step.BuildCall, call, A: function, B: depth));
+        }
         else if (Natives.Find(call.Name, arity) is { } native)
             tasks.Add(new Task(Step.BuildNative, call, A: native.Index));
         else
             Fail(BindingMessages.NotDefined(call.Name, arity), call.Position);
         PushAll(call.Arguments);
     }
+
+    // The native override of a prelude builtin, when overrides are on.
+    Native? Override(string name, int arity) => nativeOverrides ? Natives.Override(name, arity) : null;
 
     Node? BindBreak(S.Break node)
     {

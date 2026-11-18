@@ -36,6 +36,7 @@ static class NativeTable
         PathNatives.Register();
         CollectionNatives.Register();
         StringNatives.Register();
+        AssignNatives.Register();
     }
 
     public static ValueNative? Value(Native native) => values[native.Index];

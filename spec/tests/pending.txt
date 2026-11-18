@@ -87,3 +87,10 @@ scoping.test	def f($a; a): [a, $a]; f(1;2)	null
 scoping.test	def f(x): def x: 5; x; f(1)	null
 syntax.test	1 # c+ 1	null
 try.test	[try ((try (1,2) catch "inner") | if . == 2 then error("consumer") else . end) catch ("outer: " + .)]	null
+
+# Cases added with the follow-up of step 6: ?// in reduce/foreach, computed pattern keys
+destructuring.test	. as {(.[0] * 0 + 1): $v} | $v	[5,6]
+destructuring.test	try (. as {(.a): $v} | $v) catch .	{"a":1}
+reduce.test	[foreach ([1]) as [$a] ?// $a (10; . + 1; if $a == 1 then ., error("x") else [., $a] end)]	null
+reduce.test	[reduce ([1],[5]) as [$a] ?// $a (10; if $a == 1 then error("e") else [., $a] end)]	null
+reduce.test	try (reduce ([1],[2]) as [$a] ?// $a (0; if $a == 1 then error("e") else . + $a end)) catch .	null

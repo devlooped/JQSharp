@@ -54,8 +54,10 @@ public partial class BuiltinCatalogueTests
     public void Natives_and_prelude_are_the_builtins_of_the_spec()
     {
         var spec = SpecBuiltins();
-        var natives = Natives.All.Select(Signature).ToHashSet();
+        var natives = Natives.All.Where(native => !native.OverridesPrelude).Select(Signature).ToHashSet();
         var prelude = Prelude.Instance.Definitions.Select(Signature).ToHashSet();
+        // An override implements a prelude builtin natively: it stays a prelude builtin of §9.
+        Assert.Subset(prelude, Natives.All.Where(native => native.OverridesPrelude).Select(Signature).ToHashSet());
 
         Assert.Empty(natives.Intersect(prelude));
         Assert.Equal(spec.All.Order(StringComparer.Ordinal), natives.Union(prelude).Order(StringComparer.Ordinal));
@@ -68,7 +70,7 @@ public partial class BuiltinCatalogueTests
     public void Internal_builtins_start_with_an_underscore()
     {
         Assert.Equal(["_group_by_impl/1", "_max_by_impl/1", "_min_by_impl/1", "_sort_by_impl/1", "_strindices/1"],
-            Natives.All.Where(native => native.IsInternal).Select(Signature).Order(StringComparer.Ordinal));
+            Natives.All.Where(native => native.IsInternal && !native.OverridesPrelude).Select(Signature).Order(StringComparer.Ordinal));
         Assert.Equal(["_assign/2", "_flatten/1", "_modify/2"],
             Prelude.Instance.Definitions.Where(function => function.Name.StartsWith('_')).Select(Signature).Order(StringComparer.Ordinal));
     }

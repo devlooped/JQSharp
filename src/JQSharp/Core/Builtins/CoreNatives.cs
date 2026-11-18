@@ -95,7 +95,7 @@ static class CoreNatives
         var names = new List<string>();
         foreach (var native in Natives.All)
         {
-            if (!native.IsInternal)
+            if (!native.IsInternal && !native.OverridesPrelude)
                 names.Add(native.ToString());
         }
 

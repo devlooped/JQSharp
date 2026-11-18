@@ -135,42 +135,73 @@ static class PathNatives
         return TryDelete(root, sorted, 0, sorted.Count, 0, out result, out error);
     }
 
+    // One container being rebuilt by TryDelete: the paths [Next, To) still to look at, at Depth; the
+    // keys deleted at this level; and the key of the child being rebuilt below it, if any.
+    sealed class Level(JqValue value, int from, int to, int depth)
+    {
+        public JqValue Value = value;
+        public int Next = from;
+        public readonly int To = to;
+        public readonly int Depth = depth;
+        public readonly List<JqValue> Deleted = [];
+        public JqValue ChildKey;
+        public int ChildEnd;
+    }
+
     // Deletes paths[from, to) (sorted, all longer than depth) from value at the given depth: groups
     // by the key at that depth; a group holding the path that ends there deletes the key, the
-    // others recurse into the child. All the keys of one level are removed at once.
-    // Recursion goes one level per key of the longest path.
+    // others go into the child first. All the keys of one level are removed at once. The levels
+    // being rebuilt are on an explicit stack, so a path of any length is no recursion.
     static bool TryDelete(JqValue value, JqArray paths, int from, int to, int depth, out JqValue result, out JqValue error)
     {
-        if (value.Kind == JqKind.Null)
-            return Ok(value, out result, out error);
-        var deleted = new List<JqValue>();
-        for (var group = from; group < to;)
+        var levels = new Stack<Level>();
+        levels.Push(new Level(value, from, to, depth));
+        while (true)
         {
-            var key = paths[group].AsArray()[depth];
-            var end = group + 1;
-            var ends = paths[group].AsArray().Count == depth + 1;
-            for (; end < to && ValueOps.Compare(paths[end].AsArray()[depth], key) == 0; end++)
-                ends |= paths[end].AsArray().Count == depth + 1;
+            var level = levels.Peek();
+            var descended = false;
+            while (level.Value.Kind != JqKind.Null && level.Next < level.To && !descended)
+            {
+                var key = paths[level.Next].AsArray()[level.Depth];
+                var end = level.Next + 1;
+                var ends = paths[level.Next].AsArray().Count == level.Depth + 1;
+                for (; end < level.To && ValueOps.Compare(paths[end].AsArray()[level.Depth], key) == 0; end++)
+                    ends |= paths[end].AsArray().Count == level.Depth + 1;
 
-            if (ends)
-            {
-                deleted.Add(key);
-            }
-            else
-            {
-                if (!ValueOps.TryIndex(value, key, out var child, out error))
-                    return Fail(error, out result, out error);
-                if (child.Kind != JqKind.Null)
+                if (ends)
                 {
-                    if (!TryDelete(child, paths, group, end, depth + 1, out child, out error) || !TrySet(value, key, child, out value, out error))
-                        return Fail(error, out result, out error);
+                    level.Deleted.Add(key);
+                    level.Next = end;
+                    continue;
                 }
+
+                if (!ValueOps.TryIndex(level.Value, key, out var child, out error))
+                    return Fail(error, out result, out error);
+                if (child.Kind == JqKind.Null)
+                {
+                    level.Next = end;
+                    continue;
+                }
+
+                (level.ChildKey, level.ChildEnd) = (key, end);
+                levels.Push(new Level(child, level.Next, end, level.Depth + 1));
+                descended = true;
             }
 
-            group = end;
-        }
+            if (descended)
+                continue;
 
-        return TryRemove(value, deleted, out result, out error);
+            // This level is done: remove its keys, then put it back into its parent.
+            if (!TryRemove(level.Value, level.Deleted, out var done, out error))
+                return Fail(error, out result, out error);
+            levels.Pop();
+            if (levels.Count == 0)
+                return Ok(done, out result, out error);
+            var parent = levels.Peek();
+            if (!TrySet(parent.Value, parent.ChildKey, done, out parent.Value, out error))
+                return Fail(error, out result, out error);
+            parent.Next = parent.ChildEnd;
+        }
     }
 
     // Removes keys from a container, all relative to the container as it is.
