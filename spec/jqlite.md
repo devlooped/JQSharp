@@ -198,7 +198,34 @@ The following are defined by rewriting; ports MAY implement them directly with t
 There are seven kinds: `null`, `false`, `true` (both of type `boolean`), `number`, `string`, `array`, `object`. Values are immutable; no operation observes identity.
 
 - **Numbers** are IEEE-754 binary64 doubles. NaN, +Infinity, −Infinity and −0 exist inside the engine. All arithmetic is IEEE (round half to even).
-- **Strings** are sequences of Unicode scalar values (code points U+0000–U+10FFFF, excluding surrogates). Wherever text enters the engine (program literals, the JSON reader, host strings, `implode`, `@base64d`), a lone surrogate or an ill-formed UTF-8 sequence becomes U+FFFD (one U+FFFD per maximal ill-formed subpart, Unicode §3.9).
+- **Strings** are sequences of Unicode scalar values (code points U+0000–U+10FFFF, excluding surrogates). Wherever text enters the engine (program literals, the JSON reader, host strings, `implode`, `@base64d`), a lone surrogate becomes U+FFFD, and bytes are decoded as UTF-8 with one U+FFFD per *maximal subpart* of an ill-formed sequence (below).
+
+**Decoding UTF-8.** The well-formed sequences are exactly these (byte values in hex):
+
+| Code points | Byte 1 | Byte 2 | Byte 3 | Byte 4 |
+| --- | --- | --- | --- | --- |
+| U+0000–U+007F | 00–7F | | | |
+| U+0080–U+07FF | C2–DF | 80–BF | | |
+| U+0800–U+0FFF | E0 | A0–BF | 80–BF | |
+| U+1000–U+CFFF | E1–EC | 80–BF | 80–BF | |
+| U+D000–U+D7FF | ED | 80–9F | 80–BF | |
+| U+E000–U+FFFF | EE–EF | 80–BF | 80–BF | |
+| U+10000–U+3FFFF | F0 | 90–BF | 80–BF | 80–BF |
+| U+40000–U+FFFFF | F1–F3 | 80–BF | 80–BF | 80–BF |
+| U+100000–U+10FFFF | F4 | 80–8F | 80–BF | 80–BF |
+
+At each position: if the byte is not a first byte of the table (80–C1, F5–FF), it alone becomes one U+FFFD. Otherwise take the row of that first byte and consume the following bytes while each is in the range of its column; if the row is complete, it is one code point; if a byte is missing (end of input) or out of range, the bytes consumed so far (the maximal subpart) become one U+FFFD and decoding resumes at the byte that did not fit. This is what the standard decoders of JavaScript (`TextDecoder`), Python (`errors="replace"`), Java, Rust (`from_utf8_lossy`) and .NET do. Examples:
+
+| Bytes | Result | Why |
+| --- | --- | --- |
+| C3 A9 | é | well-formed |
+| ED A0 80 (a surrogate) | U+FFFD ×3 | A0 is outside ED's 80–9F: ED alone, then A0 and 80 (not first bytes) |
+| E0 80 80 (overlong) | U+FFFD ×3 | 80 is outside E0's A0–BF |
+| F4 90 80 80 (above U+10FFFF) | U+FFFD ×4 | 90 is outside F4's 80–8F |
+| C0 A0 | U+FFFD ×2 | C0 is not a first byte |
+| E2 82 41 | U+FFFD, `A` | E2 82 is a maximal subpart; 41 does not fit and starts again |
+| E9 65 | U+FFFD, `e` | E9 alone; 65 starts again |
+| F0 9F 98 (end of input) | U+FFFD | F0 9F 98 is a maximal subpart |
 - **Arrays** are finite sequences of values.
 - **Objects** are finite maps from strings to values that remember insertion order:
   - setting an existing key replaces its value in place; setting a new key appends it;
@@ -817,7 +844,7 @@ Operations are evaluated left to right as written, each rounded to double (no fu
 | `@tsv` | array required; elements joined by U+0009: string with `\` → `\\`, tab → `\t`, LF → `\n`, CR → `\r`; number → canonical text (NaN → empty); `true`/`false`; `null` → empty | `<T> (<D>) cannot be tsv-formatted, only array`; array/object element: `<T> (<D>) is not valid in a csv row` (sic) |
 | `@sh` | a non-array is treated as a one-element array; elements joined by a space: string → `'` + the string with `'` → `'\''` + `'`; number, boolean, null → canonical text | array/object element: `<T> (<D>) can not be escaped for shell` |
 | `@base64` | tostring, UTF-8 bytes, RFC 4648 base64 with `=` padding | |
-| `@base64d` | tostring; trailing `=` removed; the rest must be in `A-Z a-z 0-9 + /` and its length mod 4 must not be 1; decoded (a final group of 2 or 3 characters gives 1 or 2 bytes); the bytes decoded as UTF-8 (§4.1 replacement) | another character: `<T> (<D>) is not valid base64 data`; length mod 4 = 1: `<T> (<D>) trailing base64 byte found` (the dump is of the converted string) |
+| `@base64d` | tostring; the text is cut at its first `=` and everything from that `=` on is ignored, valid or not (`"Zg==Zg=="` → `"f"`, `"Zm9v=!!!"` → `"foo"`, `"=Zg"` → `""`); the part before it must be in `A-Z a-z 0-9 + /` and its length mod 4 must not be 1 (`"Z=g"` is an error); decoded (a final group of 2 or 3 characters gives 1 or 2 bytes); the bytes decoded as UTF-8 (§4.1) | another character: `<T> (<D>) is not valid base64 data`; length mod 4 = 1: `<T> (<D>) trailing base64 byte found` (the dump is of the converted string) |
 
 ### 9.10 Regular expressions
 
@@ -962,7 +989,11 @@ Example: `"2015-03-05T23:51:47Z" | strptime("%Y-%m-%dT%H:%M:%SZ")` → `[2015,2,
 
 ### 10.1 Message rules
 
-- `<T>` is `T(v)`. `<D>` is the error dump `D(v)`: the canonical text of `v` (§5.1); if it is longer than 29 UTF-8 bytes, its longest prefix of at most 25 bytes that ends on a code point boundary, followed by `...`. Examples: `"very-long-long-long-long-string" | try -. catch .` → `"string (\"very-long-long-long-long...\") cannot be negated"`; `[1,2,3,4,5,6,7,8,9,10,11,12,13]` dumps as `[1,2,3,4,5,6,7,8,9,10,11,...`; a 27-character string (29 bytes with its quotes) is not cut.
+- `<T>` is `T(v)`. `<D>` is the error dump `D(v)`: the canonical text of `v` (§5.1) when it is at most 29 UTF-8 bytes long. A longer text is cut: its longest prefix of at most 25 bytes that ends on a code point boundary (it may end inside a key, an escape or a nested value), then `...`, then the closing character of `v` itself: `"` for a string, `]` for an array, `}` for an object (only the outermost one; nested values get nothing). The result is at most 29 bytes. Other kinds are never longer than 29 bytes (a number's text is at most 24). Examples:
+  - `"very-long-long-long-long-string" | try -. catch .` → `"string (\"very-long-long-long-long...\") cannot be negated"`;
+  - `[1,2,3,4,5,6,7,8,9,10,11,12,13]` → `[1,2,3,4,5,6,7,8,9,10,11,...]`; `{"a":[1,2,3,4,5,6,7,8,9,10,11,12]}` → `{"a":[1,2,3,4,5,6,7,8,9,1...}`; `[["aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]]` → `[["aaaaaaaaaaaaaaaaaaaaaa...]`;
+  - `["é","ééééééééééééééééé"]` → `["é","ééééééééé...]` (25 bytes: `é` is 2);
+  - a 27-character string (29 bytes with its quotes) and `[1,2,3,4,5,6,7,8,9,10,11,123]` (29 bytes) are not cut.
 - An error value is any value. `try … catch .` sees it unchanged.
 - When an error reaches the host, its message is the value itself if it is a string, else `D'(v) (not a string)` where `D'` is the full canonical text.
 
@@ -1080,6 +1111,7 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 | `fromjson` error text | `<reason> (while parsing '<text>')`, reason implementation-defined | jq parser messages with line and column | parser-specific |
 | `builtins` | sorted, only this profile's names | unsorted, jq's names | deterministic |
 | Host variable `ENV` | rejected | `$ENV` wins | no ambiguity |
+| Ill-formed UTF-8 (`@base64d`) | one U+FFFD per maximal subpart (§4.1): `["7aCA","4ICA","9JCAgA==","6WU="] \| map(@base64d \| explode)` → `[[65533,65533,65533],[65533,65533,65533],[65533,65533,65533,65533],[65533,101]]` | one U+FFFD for a whole overlong, surrogate or too-large sequence, and an incomplete sequence at the end swallows the remaining bytes: `[[65533],[65533],[65533],[65533]]` | the standard decoders of five of the six port languages do this; Go needs a short loop |
 | `?//` and the consumer | an error raised downstream of the binding is not handled: `[[1]] \| try ((.[] as [$a] ?// $a \| $a) \| error(tostring)) catch .` → `"1"` | backtracks into the next alternative: `"[1]"` | same principle as `try` (§6.2); jq's behaviour is an artifact of backtracking |
 | `?//` in `reduce`/`foreach` | a retried alternative starts from the state before the source value (§7.8): `[reduce ([1],[5]) as [$a] ?// $a (10; if $a == 1 then error("e") else [., $a] end)]` → `[[[10,[1]],5]]`; `[foreach ([1]) as [$a] ?// $a (10; . + 1; if $a == 1 then ., error("x") else [., $a] end)]` → `[11,[11,[1]]]` | after an `UPDATE` error the next alternative sees the state as `null` (`[[null,[1]],5]`); after an `EXTRACT` error it sees the failed alternative's new state (`[11,[12,[1]]]`); an error downstream of `foreach` also retries | artifacts of jq's bytecode (its state variable is cleared when loaded) |
 | Constant pattern keys | a non-string key computed by an expression (`. as {(1+0): $v}`) is matched at run time with the indexing rules: `Cannot index object with number (1)` on an object | folds constant expressions and rejects them at compile time: `Cannot use number (1) as object key` | no constant folder; literal keys are still rejected statically (§3.2) |
