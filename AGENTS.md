@@ -79,8 +79,13 @@ Values, the bound program and the prelude are immutable and shared between threa
   (positions, limits on small host stacks, binding printed as hops and slots, value sharing).
   `BuiltinCatalogueTests` reads the N/P lists of §9 from the spec and checks the catalogue and the
   prelude against them.
+- `src/Tests/PortabilityTests.cs` enforces the portability rules above, with a per-file allow-list
+  for each exception; `JqConcurrencyTests` and `JqDepthTests` cover thread safety and `MaxDepth`
+  through the public API.
 - `src/Benchmarks` (BenchmarkDotNet) compares JQSharp with `Devlooped.JQ` (the jq executable) on
-  the WhatsApp `Message.jq` filter, with and without a cached `JqExpression`.
+  the WhatsApp `Message.jq` filter, with and without a cached `JqExpression`, and measures four
+  programs whose cost must stay linear or lazy (`ScalingBenchmarks`). Run one with
+  `dotnet run -c Release --project src/Benchmarks -- --filter *Scaling*`.
 
 ## Where a change goes
 
