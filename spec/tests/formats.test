@@ -221,9 +221,9 @@ null
 null
 ["","Zg==","Zm8=","Zm9v","Zm9vYg==","Zm9vYmE=","Zm9vYmFy","w6nwn5iA"]
 
-["", "Zg", "Zg=", "Zg==", "Zm8", "Zm8=", "Zm9v", "Zm9vYg", "Zm9vYmE=", "w6nwn5iA", "/w==", "gA==", "4oI=", "7aCA", "===="] | map(@base64d)
+["", "Zg", "Zg=", "Zg==", "Zm8", "Zm8=", "Zm9v", "Zm9vYg", "Zm9vYmE=", "w6nwn5iA", "/w==", "gA==", "4oI=", "===="] | map(@base64d)
 null
-["","f","f","f","fo","fo","foo","foob","fooba","é😀","�","�","�","�",""]
+["","f","f","f","fo","fo","foo","foob","fooba","é😀","�","�","�",""]
 
 try ("Z" | @base64d) catch .
 null
@@ -265,9 +265,11 @@ try (12 | @base64d) catch .
 null
 "�"
 
+# Ill-formed UTF-8 gives one U+FFFD per maximal ill-formed subpart (spec 4.1); spec 13 lists the
+# difference: jq 1.8.2 gives "��" here (it swallows the "e" after the cut sequence E9 65).
 try (null | @base64d) catch .
 null
-"��"
+"��e"
 
 try ([1] | @base64d) catch .
 null
@@ -431,3 +433,14 @@ try (@foo "x") catch .
 [.[] | try @urid catch .]
 ["%e2%82%ac", "%E2%82%AC%41", "%ED%9F%BF", "%F4%8F%BF%BF", "%00", "a+b%2B", "%C3%A9é", "%C3é"]
 ["€","€A","퟿","􏿿","\u0000","a+b+","éé","string (\"%C3é\") is not a valid uri encoding"]
+
+[.[] | @base64d | explode]
+["4oJB", "wIA=", "4A==", "8J+Y", "8J+YQUE=", "QeKCQQ==", "/0E=", "QYBB", "7Z+/", "9I+/vw=="]
+[[65533,65],[65533,65533],[65533],[65533],[65533,65,65],[65,65533,65],[65533,65],[65,65533,65],[55295],[1114111]]
+
+# One U+FFFD per maximal ill-formed subpart (spec 4.1). Spec 13 lists the difference: jq 1.8.2 gives
+# one U+FFFD for each of these (an overlong form, a surrogate or a value above U+10FFFF is one
+# replacement, and a sequence cut by the end swallows the bytes after its lead), [65533] five times.
+[.[] | @base64d | explode]
+["7aCA", "4ICA", "9JCAgA==", "4IA=", "6WU="]
+[[65533,65533,65533],[65533,65533,65533],[65533,65533,65533,65533],[65533,65533],[65533,101]]

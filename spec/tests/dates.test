@@ -57,3 +57,153 @@ localtime | length
 strflocaltime("%Y-%m-%d") | length
 1425599507
 10
+
+# Spec 9.12 computed independently of the implementation (the formulas of the spec in Python, checked
+# against Python's calendar), where jq 1.8.2 on Windows depends on the C library (spec 13, Dates row).
+
+# Spec 13 (Dates row): own calendar, negative and fractional times floored; jq 1.8.2 on Windows fails
+# on negative times.
+[.[] | gmtime]
+[0,1425599507,-1,-86400.5,1.5,951782400,253402300799,-62135596800,4102444800,1078012800]
+[[1970,0,1,0,0,0,4,0],[2015,2,5,23,51,47,4,63],[1969,11,31,23,59,59,3,364],[1969,11,30,23,59,59.5,2,363],[1970,0,1,0,0,1.5,4,0],[2000,1,29,0,0,0,2,59],[9999,11,31,23,59,59,5,364],[1,0,1,0,0,0,1,0],[2100,0,1,0,0,0,5,0],[2004,1,29,0,0,0,0,59]]
+
+# Spec 13 (Dates row): any integer year, missing elements are 0, out-of-range fields roll over;
+# jq 1.8.2 on Windows fails on some of these.
+[.[] | mktime]
+[[2015,2,5,23,51,47,4,63],[2015,14,1,0,0,0,0,0],[2015,2,5],[1969,11,31,23,59,59,0,0],[2015,-1,1,0,0,0],[2015.7,2.9,5.9,23.9,51.9,47.9],[2016,1,30,0,0,0],[2015,0,0,24,60,60],[-1,0,1],[0,0,1],[10000,0,1],[],[2015,0,1,0,0,-1],[2015,0,1,-1,0,0],[1970,0,1,0,0,0.5],[1970,0,1,0,0,-0.5]]
+[1425599507,1456790400,1425513600,-1,1417392000,1425599507,1456790400,1420074060,-62198755200,-62167219200,253402300800,-62167305600,1420070399,1420066800,0,0]
+
+# Spec 13 (Dates row): gmtime floors negative fractional seconds (-0.5 is 23:59:59 of the day before).
+[.[] | todate]
+[0,1425599507,-1,951782400,1.9,-0.5]
+["1970-01-01T00:00:00Z","2015-03-05T23:51:47Z","1969-12-31T23:59:59Z","2000-02-29T00:00:00Z","1970-01-01T00:00:01Z","1969-12-31T23:59:59Z"]
+
+[.[] | strftime("%a %A %b %h %B %C %d %e %H %I %j %m %M %p %S %u %w %Y %%")]
+[0,1425599507,951782400,1104537600,1230508800,1262476800,1093996800,946684800,1609459199]
+["Thu Thursday Jan Jan January 19 01  1 00 12 001 01 00 AM 00 4 4 1970 %","Thu Thursday Mar Mar March 20 05  5 23 11 064 03 51 PM 47 4 4 2015 %","Tue Tuesday Feb Feb February 20 29 29 00 12 060 02 00 AM 00 2 2 2000 %","Sat Saturday Jan Jan January 20 01  1 00 12 001 01 00 AM 00 6 6 2005 %","Mon Monday Dec Dec December 20 29 29 00 12 364 12 00 AM 00 1 1 2008 %","Sun Sunday Jan Jan January 20 03  3 00 12 003 01 00 AM 00 7 0 2010 %","Wed Wednesday Sep Sep September 20 01  1 00 12 245 09 00 AM 00 3 3 2004 %","Sat Saturday Jan Jan January 20 01  1 00 12 001 01 00 AM 00 6 6 2000 %","Thu Thursday Dec Dec December 20 31 31 23 11 366 12 59 PM 59 4 4 2020 %"]
+
+[.[] | strftime("%G %V")]
+[0,1425599507,951782400,1104537600,1230508800,1262476800,1093996800,946684800,1609459199,1104451200,1104364800,1135987200,1198972800,1293753600,1072915200,1041379200]
+["1970 01","2015 10","2000 09","2004 53","2009 01","2009 53","2004 36","1999 52","2020 53","2004 53","2004 53","2005 52","2007 52","2010 52","2004 01","2003 01"]
+
+# Spec 13 (Dates row): %c, %x and %s by the table of 9.12; jq 1.8.2 on Windows uses the C library.
+[.[] | strftime("%c|%x|%X|%n|%t|%z|%Z|%s")]
+[0,1425599507,-1,-86400.5]
+["Thu Jan  1 00:00:00 1970|01/01/70|00:00:00|\n|\t|+0000|UTC|0","Thu Mar  5 23:51:47 2015|03/05/15|23:51:47|\n|\t|+0000|UTC|1425599507","Wed Dec 31 23:59:59 1969|12/31/69|23:59:59|\n|\t|+0000|UTC|-1","Tue Dec 30 23:59:59 1969|12/30/69|23:59:59|\n|\t|+0000|UTC|-86401"]
+
+[.[] | strftime("%H:%M:%S %I %p")]
+[0,43200,46800,3600,82800,59.9]
+["00:00:00 12 AM","12:00:00 12 PM","13:00:00 01 PM","01:00:00 01 AM","23:00:00 11 PM","00:00:59 12 AM"]
+
+# A broken-down time is normalized like mktime first; negative years print as -0001.
+[.[] | strftime("%Y-%m-%d %j %a %C %x %s")]
+[[2015,14,1,0,0,0,0,0],[2016,1,29,0,0,0,9,9],[2015,0,0],[1900,0,1,0,0,0],[2015,2,5,23,51,47.5,0,0],[-1,0,1],[2015,2,5,23,51,-0.5]]
+["2016-03-01 061 Tue 20 03/01/16 1456790400","2016-02-29 060 Mon 20 02/29/16 1456704000","2014-12-31 365 Wed 20 12/31/14 1419984000","1900-01-01 001 Mon 19 01/01/00 -2208988800","2015-03-05 064 Thu 20 03/05/15 1425599507","-0001-01-01 001 Fri -01 01/01/99 -62198755200","2015-03-05 064 Thu 20 03/05/15 1425599460"]
+
+[.[] | try gmtime catch .]
+["a", null, 1e16, -1e16, 9007199254740992]
+["gmtime requires numeric inputs","gmtime requires numeric inputs","error converting number of seconds since epoch to datetime","error converting number of seconds since epoch to datetime","error converting number of seconds since epoch to datetime"]
+
+[nan, infinite, -infinite] | map(try gmtime catch .)
+null
+["error converting number of seconds since epoch to datetime","error converting number of seconds since epoch to datetime","error converting number of seconds since epoch to datetime"]
+
+[.[] | try localtime catch .]
+["a"]
+["localtime requires numeric inputs"]
+
+[.[] | try mktime catch .]
+["a", 1, null, {}, ["a"], [2015,"a"], [2015,2,5,null]]
+["mktime requires array inputs","mktime requires array inputs","mktime requires array inputs","mktime requires array inputs","mktime requires parsed datetime inputs","mktime requires parsed datetime inputs","mktime requires parsed datetime inputs"]
+
+[.[] | try strftime("%Y") catch .]
+["a", null, {}, ["a"]]
+["strftime/1 requires parsed datetime inputs","strftime/1 requires parsed datetime inputs","strftime/1 requires parsed datetime inputs","strftime/1 requires parsed datetime inputs"]
+
+try strftime(1) catch .
+0
+"strftime/1 requires a string format"
+
+# Spec 13 (Dates row): an unknown directive is "Unsupported strftime format specifier %<c>"; jq 1.8.2 on
+# Windows gives "strftime/1: unknown system failure".
+[.[] as $f | try (0 | strftime($f)) catch .]
+["%Q", "abc%", "%E"]
+["Unsupported strftime format specifier %Q","Invalid format: trailing %","Unsupported strftime format specifier %E"]
+
+[nan, 1e16] | map(try strftime("%Y") catch .)
+null
+["error converting number of seconds since epoch to datetime","error converting number of seconds since epoch to datetime"]
+
+# strptime by the directive table of 9.12: whitespace, defaults and computed wday/yday (spec 13, Dates row).
+
+[.[] | strptime("%Y-%m-%dT%H:%M:%SZ")]
+["2015-03-05T23:51:47Z", "2000-02-29T00:00:00Z", "1970-01-01T00:00:00Z"]
+[[2015,2,5,23,51,47,4,63],[2000,1,29,0,0,0,2,59],[1970,0,1,0,0,0,4,0]]
+
+[.[] | try strptime("%Y-%m-%d") catch .]
+["2015-03-05", "2015-3-5", " 2015- 3- 5", "2015-03-05 ", "2015-03-05x", "15-03-05", "2015-13-01", "2015-00-01", "2015-03-32", "2015-03-00", "20150-03-05", "x2015-03-05"]
+[[2015,2,5,0,0,0,4,63],[2015,2,5,0,0,0,4,63],[2015,2,5,0,0,0,4,63],[2015,2,5,0,0,0,4,63],"date \"2015-03-05x\" does not match format \"%Y-%m-%d\"",[15,2,5,0,0,0,4,63],"date \"2015-13-01\" does not match format \"%Y-%m-%d\"","date \"2015-00-01\" does not match format \"%Y-%m-%d\"","date \"2015-03-32\" does not match format \"%Y-%m-%d\"","date \"2015-03-00\" does not match format \"%Y-%m-%d\"","date \"20150-03-05\" does not match format \"%Y-%m-%d\"","date \"x2015-03-05\" does not match format \"%Y-%m-%d\""]
+
+[.[] | try strptime("%d %b %Y") catch .]
+["05 Mar 2015", "5 march 2015", "05 MAR 2015", "05 Sept 2015", "05 Sep 2015", "05  Mar   2015", "05Mar2015"]
+[[2015,2,5,0,0,0,4,63],[2015,2,5,0,0,0,4,63],[2015,2,5,0,0,0,4,63],"date \"05 Sept 2015\" does not match format \"%d %b %Y\"",[2015,8,5,0,0,0,6,247],[2015,2,5,0,0,0,4,63],[2015,2,5,0,0,0,4,63]]
+
+[.[] | try strptime("%A, %B %e %Y") catch .]
+["Thursday, March  5 2015", "thu, mar 5 2015", "Sunday, March 5 2015", "Thurs, March 5 2015"]
+[[2015,2,5,0,0,0,4,63],[2015,2,5,0,0,0,4,63],[2015,2,5,0,0,0,0,63],"date \"Thurs, March 5 2015\" does not match format \"%A, %B %e %Y\""]
+
+[.[] | try strptime("%H:%M:%S") catch .]
+["23:59:60", "24:00:00", "1:2:3", "00:60:00"]
+[[1900,0,0,23,59,60,0,-1],"date \"24:00:00\" does not match format \"%H:%M:%S\"",[1900,0,0,1,2,3,0,-1],"date \"00:60:00\" does not match format \"%H:%M:%S\""]
+
+[.[] | try strptime("%j %Y") catch .]
+["064 2015", "1 2015", "366 2016", "367 2016", "0 2015"]
+[[2015,0,0,0,0,0,3,63],[2015,0,0,0,0,0,3,0],[2016,0,0,0,0,0,4,365],"date \"367 2016\" does not match format \"%j %Y\"","date \"0 2015\" does not match format \"%j %Y\""]
+
+[.[] | try strptime("%Y %z") catch .]
+["2015 +0200", "2015 -02:30", "2015 Z", "2015 +02", "2015 +2", "2015 0200"]
+[[2015,0,0,0,0,0,3,-1],[2015,0,0,0,0,0,3,-1],[2015,0,0,0,0,0,3,-1],[2015,0,0,0,0,0,3,-1],"date \"2015 +2\" does not match format \"%Y %z\"","date \"2015 0200\" does not match format \"%Y %z\""]
+
+[.[] | try strptime("%Y %Z") catch .]
+["2015 CEST", "2015 +02", "2015 "]
+[[2015,0,0,0,0,0,3,-1],[2015,0,0,0,0,0,3,-1],"date \"2015 \" does not match format \"%Y %Z\""]
+
+[.[] | try strptime("%m") catch .]
+["03", ""]
+[[1900,2,0,0,0,0,3,58],"date \"\" does not match format \"%m\""]
+
+[try strptime("%Q") catch ., try strptime("abc%") catch .]
+"x"
+["date \"x\" does not match format \"%Q\"","date \"x\" does not match format \"abc%\""]
+
+strptime("%%%Y")
+"%2015"
+[2015,0,0,0,0,0,3,-1]
+
+try ("a" | strptime(1)) catch .
+null
+"strptime/1 requires string inputs and arguments"
+
+try (1 | strptime("%Y")) catch .
+null
+"strptime/1 requires string inputs and arguments"
+
+[strptime(""), strptime(" ")]
+""
+[[1900,0,0,0,0,0,0,-1],[1900,0,0,0,0,0,0,-1]]
+
+[.[] | strptime("%Y-%m-%d")]
+["0000-01-01", "9999-12-31", "1900-02-29", "2016-02-30"]
+[[0,0,1,0,0,0,6,0],[9999,11,31,0,0,0,5,364],[1900,1,29,0,0,0,4,59],[2016,1,30,0,0,0,2,60]]
+
+strptime("%H:%M")
+"10:20"
+[1900,0,0,10,20,0,0,-1]
+
+strptime("%e/%d")
+"5/ 6"
+[1900,0,6,0,0,0,6,5]
+
+[.[] | strptime("%b %h %B") | .[1]]
+["jan feb march", "Dec DEC december"]
+[2,11]

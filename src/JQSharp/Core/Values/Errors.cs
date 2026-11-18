@@ -157,6 +157,44 @@ static class Errors
 
     public static JqValue NotAString(JqValue value) => Message($"{Describe(value)} is not a string");
 
+    /// <summary>"num req" (§9.1): <c>string ("a") number required</c>.</summary>
+    public static JqValue NumberRequired(JqValue value) => Message($"{Describe(value)} number required");
+
+    // Regular expressions (§9.10).
+    public static JqValue CannotBeMatched(JqValue value) => Message($"{Describe(value)} cannot be matched, as it is not a string");
+
+    public static JqValue InvalidModifiers(string flags) => Message($"{flags} is not a valid modifier string");
+
+    /// <summary>A pattern outside the dialect or that the engine rejects; the reason is implementation-defined.</summary>
+    public static JqValue RegexFailure(string reason) => Message($"Regex failure: {reason}");
+
+    // Dates (§9.7, §9.12).
+    public static JqValue GmtimeNumeric => Message("gmtime requires numeric inputs");
+
+    public static JqValue LocaltimeNumeric => Message("localtime requires numeric inputs");
+
+    public static JqValue CannotConvertSeconds => Message("error converting number of seconds since epoch to datetime");
+
+    public static JqValue MktimeArray => Message("mktime requires array inputs");
+
+    public static JqValue MktimeParsed => Message("mktime requires parsed datetime inputs");
+
+    /// <summary><paramref name="name"/> is <c>strftime</c> or <c>strflocaltime</c>.</summary>
+    public static JqValue RequiresParsedDatetime(string name) => Message($"{name}/1 requires parsed datetime inputs");
+
+    public static JqValue RequiresStringFormat(string name) => Message($"{name}/1 requires a string format");
+
+    public static JqValue TrailingPercent => Message("Invalid format: trailing %");
+
+    public static JqValue UnsupportedStrftime(string directive) => Message($"Unsupported strftime format specifier %{directive}");
+
+    public static JqValue StrptimeStrings => Message("strptime/1 requires string inputs and arguments");
+
+    public static JqValue DateDoesNotMatch(string input, string format) => Message($"date \"{input}\" does not match format \"{format}\"");
+
+    /// <summary><c>now</c> in an evaluation whose host gave no clock (the .NET boundary always gives one).</summary>
+    public static JqValue NoClock => Message("now/0 requires a host clock");
+
     public static JqValue CannotCheckContainment(JqValue a, JqValue b) => Message($"{Describe(a)} and {Describe(b)} cannot have their containment checked");
 
     // Formats (§9.9).

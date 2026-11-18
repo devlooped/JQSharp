@@ -75,3 +75,326 @@ gsub("(?<x>[a-z])(?<n>\\d)"; .n + "-" + .x)
 try (test("a")) catch .
 123
 "number (123) cannot be matched, as it is not a string"
+
+# The dialect, flags, captures, empty matches, code point offsets and the prelude builtins on top of
+# match (outputs of jq 1.8.2 unless a comment says otherwise).
+
+try test("(") catch .[:15]
+"a"
+"Regex failure: "
+
+try test("a{2,1}") catch .[:15]
+"a"
+"Regex failure: "
+
+# Spec 13 (Regex row): no lookaround; jq 1.8.2 gives true.
+try test("(?=a)") catch .[:15]
+"a"
+"Regex failure: "
+
+try test("a"; "q") catch .
+"a"
+"q is not a valid modifier string"
+
+try test("a"; "gq") catch .
+"a"
+"gq is not a valid modifier string"
+
+try test("a"; 1) catch .
+"a"
+"number (1) is not a string"
+
+try test(1) catch .
+"a"
+"number not a string or array"
+
+try test(1; null) catch .
+"a"
+"number (1) is not a string"
+
+try (1 | test("a"; "q")) catch .
+null
+"number (1) cannot be matched, as it is not a string"
+
+try ("a" | test(1; "q")) catch .
+null
+"number (1) is not a string"
+
+[test("a"; null), test("A"; "i"), test("a"; "gixnmpsl")]
+"a"
+[true,true,true]
+
+[match(""; "g") | .offset]
+"abc"
+[0,1,2,3]
+
+gsub(""; "-")
+"abc"
+"-a-b-c-"
+
+[match("foo"; "g") | .offset]
+"foo bar foo"
+[0,8]
+
+[match("."; "g") | [.offset, .length, .string]]
+"a😀é"
+[[0,1,"a"],[1,1,"😀"],[2,1,"é"]]
+
+[match("(a)|(b)"; "g") | .captures]
+"ab"
+[[{"offset":0,"length":1,"string":"a","name":null},{"offset":-1,"string":null,"length":0,"name":null}],[{"offset":-1,"string":null,"length":0,"name":null},{"offset":1,"length":1,"string":"b","name":null}]]
+
+match("(?<x>a)?(b)(?<y>c)?")
+"b"
+{"offset":0,"length":1,"string":"b","captures":[{"offset":-1,"string":null,"length":0,"name":"x"},{"offset":0,"length":1,"string":"b","name":null},{"offset":-1,"string":null,"length":0,"name":"y"}]}
+
+match("(?:(a)|b)+")
+"ab"
+{"offset":0,"length":2,"string":"ab","captures":[{"offset":0,"length":1,"string":"a","name":null}]}
+
+match("(a)*")
+"aaa"
+{"offset":0,"length":3,"string":"aaa","captures":[{"offset":2,"length":1,"string":"a","name":null}]}
+
+[match("a*?"; "g") | [.offset, .length]]
+"aa"
+[[0,0],[1,0],[2,0]]
+
+[match("a+?"; "g") | [.offset, .length]]
+"aa"
+[[0,1],[1,1]]
+
+[match("a*"; "gn") | [.offset, .length]]
+"baab"
+[[1,2]]
+
+[test(""; "n"), test("a*"; "n"), test("a"; "n")]
+"b"
+[false,false,false]
+
+# Spec 13 (Regex row): $ matches only at the end of the input; jq 1.8.2 gives [true,true,false,false].
+[.[] | test("^a$")]
+["a", "a\n", "\na", "ba"]
+[true,false,false,false]
+
+[match("a$"; "g") | .offset]
+"a\na"
+[2]
+
+[match("^a"; "g") | .offset]
+"aa"
+[0]
+
+[match("\\bfoo\\b"; "g") | .offset]
+"foo foobar foo_ (foo)"
+[0,17]
+
+[match("\\Bo\\B"; "g") | .offset]
+"foo boo"
+[1,5]
+
+# Spec 13 (Regex row): ASCII \d; jq 1.8.2 gives [true,true,false].
+[.[] | test("\\d")]
+["٣", "3", "a"]
+[false,true,false]
+
+# Spec 13 (Regex row): ASCII \w; jq 1.8.2 gives [true,true,false].
+[.[] | test("\\w")]
+["é", "_", "-"]
+[false,true,false]
+
+# Spec 13 (Regex row): ASCII \s; jq 1.8.2 gives [true,true,true,true].
+[.[] | test("\\s")]
+[" ", "\u000b", " ", " "]
+[false,true,false,true]
+
+[.[] | test("^.$")]
+["\n", "\r", "😀", "a"]
+[false,true,true,true]
+
+[.[] | test("^.$"; "s"), test("^.$"; "m"), test("^.$"; "p")]
+["\n"]
+[false,true,true]
+
+[test("K"; "i"), test("k"; "i"), test("ß"; "i"), test("SS"; "i")]
+"K"
+[true,true,false,false]
+
+[test("ss"; "i"), test("é"; "i"), test("[a-z]"; "i")]
+"É"
+[false,true,false]
+
+[match("[😀-😂]+") | [.offset, .length, .string]]
+"a😁😀b"
+[[1,2,"😁😀"]]
+
+[match("[^a]"; "g") | .string]
+"a😀b"
+["😀","b"]
+
+[match("\\D+") | .string]
+"12😀ab3"
+["😀ab"]
+
+[match("a b # comment\nc"; "x") | .string]
+"abc"
+["abc"]
+
+[match("[ #]"; "x") | .string]
+"a b#"
+[" "]
+
+[test("a\\x41"), test("\\t"), test("\\/"), test("\\-"), test("[\\]]"), test("[a\\-z]")]
+"aA\t/-]"
+[true,true,true,true,true,true]
+
+# Spec 13 (Regex row): everything outside the dialect of 9.10 is an error; jq 1.8.2 (Oniguruma) accepts most of these.
+[.[] | try test(.) catch "ERR"]
+["\\A", "\\z", "\\Z", "\\G", "\\K", "\\Qa\\E", "\\0", "\\1", "(a)\\1", "\\cA", "\\u0041", "\\x{41}", "\\p{L}", "[[:alpha:]]", "(?i)a", "(?>a)", "a++", "a*+", "(?<=a)b", "(?!a)", "a{", "a}", "]", "x{1001}", "x{2,1}", "\\e", "\\a", "\\h", "\\o", "(?P<n>a)", "(?<1n>a)", "(?<n>a)(?<n>b)", "[z-a]", "[a", "a)", "*a", "a**", "\\", "[\\d-z]", "x{1000}", "x{,3}", "x{3,}"]
+["ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR",false,"ERR",false]
+
+[.[] | try test("b") catch "ERR"]
+["abc"]
+[true]
+
+[match("(?<a>x)(y)(?<b>z)") | .captures[] | .name]
+"xyz"
+["a",null,"b"]
+
+capture("(?<a>x)(?<n>q)?")
+"x"
+{"a":"x","n":null}
+
+[scan("c")], [scan("(a)(b)?")], [scan("x"; "g")]
+"abcabc"
+["c","c"]
+[["a","b"],["a","b"]]
+[]
+
+[splits("a"; "g")], split(", *"; null), [splits("")]
+"xaya, b"
+["x","y",", b"]
+["xaya","b"]
+["","x","a","y","a",","," ","b",""]
+
+"aB" | [sub("(?<a>.)"; "\(.a | ascii_upcase)", "\(.a | ascii_downcase)")]
+null
+["AB","aB"]
+
+[sub("(?<x>a)"; "<\(.x)>"; "g"), gsub("(?<x>a)|b"; "[\(.x)]"), gsub("(?<d>\\d)"; "\(.d|tonumber+1)"), gsub("^"; ">"), gsub("$"; "<"), sub("a"; "b", "c"; "g")]
+"a1ba2"
+["<a>1b<a>2","[a]1[null][a]2","a2ba3",">a1ba2","a1ba2<","b1bb2","c1bc2"]
+
+# The search moves by code points after an empty match (9.10): 6 empty matches in 5 code points.
+# Not in spec 13: jq 1.8.2 moves by bytes and gives 14 (reported).
+[match("é😀"; "g") | [.offset, .length]], [match("b") | .offset], (sub("😀"; "x")), ([match(""; "g")] | length)
+"é😀é😀b"
+[[0,2],[2,2]]
+[4]
+"éxé😀b"
+6
+
+[test("a{3}"), test("a{2,}"), test("^a{1,2}$"), test("a{0}b")]
+"aaab"
+[true,true,false,true]
+
+[match("a{2,3}?") | .length], [match("a??") | .length], [match("(a|ab)(c|bcd)(d*)") | .string]
+"aaaabcd"
+[2]
+[0]
+["abcd"]
+
+[match("x*"; "g") | [.offset, .length]]
+"axxb"
+[[0,0],[1,2],[3,0],[4,0]]
+
+# \v is U+000B (9.10). Not in spec 13: jq 1.8.2 gives false for test("\\v") (reported).
+[test("\\Sx\\W"), test("[\\s\\d]"), test("[^\\w]"), test("\\v"), test("\\f"), test("\\r"), test("\\n")]
+"ax- \u000b\f\r\n"
+[true,true,true,true,true,true,true]
+
+[match("[😀-😂]"; "g") | .string]
+"😀😁😂😃"
+["😀","😁","😂"]
+
+[match("[^😀]"; "g") | .string]
+"😀a😁"
+["a","😁"]
+
+[test("[^a]"; "i"), test("[^b]"; "i")]
+"A"
+[false,true]
+
+[match("."; "g") | .string], [match("."; "gm") | .string]
+"a\n😀"
+["a","😀"]
+["a","\n","😀"]
+
+[test("\\b"), test("\\B")]
+"é"
+[true,false]
+
+[match("a{2}?"; "g") | .length]
+"aaa"
+[2]
+
+[match("(a|ab)(b?)") | .captures[].string]
+"ab"
+["a","b"]
+
+match("(?:(a)|(b))+") | [.captures[] | [.offset, .string]]
+"abab"
+[[2,"a"],[3,"b"]]
+
+[match("^a|y$"; "g") | .offset]
+"xay"
+[2]
+
+[match("a|"; "g") | [.offset, .length]]
+"ab"
+[[0,1],[1,0],[2,0]]
+
+[match("(?<e>😀)"; "g") | .captures[0] | [.offset, .length]]
+"😀😀"
+[[0,1],[1,1]]
+
+sub("(?<x>a)"; "\(.x)!"; "g")
+"aaa"
+"a!a!a!"
+
+[match("[a-c😀]+"; "g") | .string]
+"ab😀cd😁"
+["ab😀c"]
+
+[match("\\W"; "g") | .string]
+"a😀-"
+["😀","-"]
+
+[match("[^\\d😀]"; "g") | .string]
+"1😀a😁"
+["a","😁"]
+
+[match("(?<x>a)|(?<y>b)"; "g") | [.captures[] | .name]]
+"ab"
+[["x","y"],["x","y"]]
+
+[match("x"; "gn"), match(""; "gn")] | length
+"x"
+1
+
+[match("a"; "ig") | .offset]
+"AaA"
+[0,1,2]
+
+# Spec 13 (Regex row): a backslash before a space is not an escape of the dialect; jq 1.8.2 accepts it.
+[test("a b"; "x"), (try test("a\\ b"; "x") catch .[:15])]
+"ab"
+[true,"Regex failure: "]
+
+[test("[ ]"; "x")]
+" "
+[true]
+
+[match("a{0,1000}") | .length]
+"aaa"
+[3]

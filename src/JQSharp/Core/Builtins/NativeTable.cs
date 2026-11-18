@@ -39,6 +39,9 @@ static class NativeTable
         AssignNatives.Register();
         ModuleNatives.Register();
         Containment.Register();
+        MathNatives.Register();
+        DateNatives.Register();
+        RegexNatives.Register();
     }
 
     public static ValueNative? Value(Native native) => values[native.Index];

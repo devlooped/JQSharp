@@ -4,6 +4,7 @@ using Devlooped;
 using Devlooped.Core.Binding;
 using Devlooped.Core.Values;
 using EvaluationOptions = Devlooped.Core.Runtime.EvaluationOptions;
+using IClock = Devlooped.Core.Runtime.IClock;
 using Interpreter = Devlooped.Core.Runtime.Interpreter;
 using OutcomeKind = Devlooped.Core.Runtime.OutcomeKind;
 
@@ -20,10 +21,10 @@ public partial class ConformanceTests
 {
     static readonly string SpecDirectory = Path.Combine(AppContext.BaseDirectory, "spec", "tests");
 
-    // localtime.test needs a host fixed at UTC+02:00 without DST: the current engine always uses
-    // the time zone of the machine (step 10 enables it through JqOptions.TimeProvider), and the
-    // core's date natives come with step 8.
-    static readonly HashSet<string> SkippedFiles = ["localtime.test"];
+    // localtime.test needs a host fixed at UTC+02:00 without DST (spec §14.2): the core gets it
+    // from its clock, the current engine always uses the time zone of the machine (step 10
+    // enables it through JqOptions.TimeProvider), so it skips the file.
+    static readonly HashSet<string> SkippedByCurrentEngine = ["localtime.test"];
 
     // The module files of modules.test, for the core (spec §14.2).
     static readonly DirectoryModules CorpusModules = new(Path.Combine(SpecDirectory, "modules"));
@@ -31,12 +32,12 @@ public partial class ConformanceTests
     static readonly Lazy<HashSet<string>> Pending = new(() => LoadPending("pending.txt"));
     static readonly Lazy<HashSet<string>> PendingCore = new(() => LoadPending("pending-core.txt"));
 
-    public static IEnumerable<object?[]> Cases()
+    public static IEnumerable<object?[]> Cases(bool core)
     {
         foreach (var file in Directory.GetFiles(SpecDirectory, "*.test").Order(StringComparer.Ordinal))
         {
             var name = Path.GetFileName(file);
-            if (SkippedFiles.Contains(name))
+            if (!core && SkippedByCurrentEngine.Contains(name))
                 continue;
 
             foreach (var test in JqTestParser.ParseFile(file))
@@ -45,7 +46,7 @@ public partial class ConformanceTests
     }
 
     [Theory]
-    [MemberData(nameof(Cases))]
+    [MemberData(nameof(Cases), false)]
     public void Corpus_case(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
     {
         // The current engine's resolvers do not follow the module rule of README.md; its module
@@ -56,14 +57,14 @@ public partial class ConformanceTests
     }
 
     [Theory]
-    [MemberData(nameof(Cases))]
+    [MemberData(nameof(Cases), true)]
     public void Core_corpus_case(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
         => Check("pending-core.txt", PendingCore.Value, file, line, program, input, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: true));
 
     // The same with every prelude builtin bound to its definition: the natives that override some
     // (Native.OverridesPrelude) must change nothing.
     [Theory]
-    [MemberData(nameof(Cases))]
+    [MemberData(nameof(Cases), true)]
     public void Core_corpus_case_without_native_overrides(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
         => Check("pending-core.txt", PendingCore.Value, file, line, program, input, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: false));
 
@@ -131,7 +132,7 @@ public partial class ConformanceTests
         if (!ValueText.TryParse(input, out var value, out var inputError))
             return $"bad input: {inputError}";
         var outputs = new List<string>();
-        var options = new EvaluationOptions { Environment = JqValue.FromObject(JqObject.Empty), MaxDepth = 1000 };
+        var options = new EvaluationOptions { Environment = JqValue.FromObject(JqObject.Empty), MaxDepth = 1000, Clock = FixedZoneClock.Instance };
         var outcome = Interpreter.Run(bound, value, options, output =>
         {
             outputs.Add(ValueText.ToJson(output));
@@ -202,6 +203,18 @@ public partial class ConformanceTests
     // A %%FAIL case has no input line: its key is the file name and the program.
     static string Key(string file, string program, string input)
         => input.Length == 0 ? $"{file}\t{program}" : $"{file}\t{program}\t{input}";
+
+    // The host of spec §14.2: the real time, and a zone at UTC+02:00 without DST or abbreviation.
+    sealed class FixedZoneClock : IClock
+    {
+        public static readonly FixedZoneClock Instance = new();
+
+        public double Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+
+        public int Offset(double seconds) => 7200;
+
+        public string? Abbreviation(double seconds) => null;
+    }
 
     // Lines end at LF, as in the corpus: a program may hold a lone CR.
     static HashSet<string> LoadPending(string list)

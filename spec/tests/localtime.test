@@ -23,3 +23,37 @@ localtime | mktime
 gmtime | todate
 1425599507
 "2015-03-05T23:51:47Z"
+# Spec 9.12 under the +02:00 zone of spec 14.2, computed independently of the implementation; jq 1.8.2
+# on Windows fails on %s and on times before the epoch (spec 13, Dates row).
+
+[.[] | localtime]
+[0,1425599507,-7200,-7201,1.5]
+[[1970,0,1,2,0,0,4,0],[2015,2,6,1,51,47,5,64],[1970,0,1,0,0,0,4,0],[1969,11,31,23,59,59,3,364],[1970,0,1,2,0,1.5,4,0]]
+
+[.[] | strflocaltime("%Y-%m-%dT%H:%M:%S %z %Z %s")]
+[0,1425599507]
+["1970-01-01T02:00:00 +0200 +02 0","2015-03-06T01:51:47 +0200 +02 1425599507"]
+
+[.[] | strflocaltime("%Y-%m-%dT%H:%M:%S %z %Z %s")]
+[[2015,2,6,1,51,47,0,0],[1970,0,1,0,0,0]]
+["2015-03-06T01:51:47 +0200 +02 1425599507","1970-01-01T00:00:00 +0200 +02 -7200"]
+
+[.[] | localtime | strftime("%H %s %Z")]
+[0,1425599507]
+["02 7200 UTC","01 1425606707 UTC"]
+
+[.[] | gmtime | strflocaltime("%H %s %z")]
+[0,1425599507]
+["00 -7200 +0200","23 1425592307 +0200"]
+
+try strflocaltime(1) catch .
+0
+"strflocaltime/1 requires a string format"
+
+try ("a" | strflocaltime("%Y")) catch .
+null
+"strflocaltime/1 requires parsed datetime inputs"
+
+[localtime | length, (now | localtime | length)]
+0
+[8,8]
