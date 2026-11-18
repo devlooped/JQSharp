@@ -1,87 +1,46 @@
 using System.Reflection;
+using System.Text.Json;
 
 namespace Devlooped;
 
 /// <summary>
-/// A <see cref="JqResolver"/> that resolves module paths to embedded resources in
-/// one or more assemblies. Resource names are formed by combining an optional
-/// <see cref="Prefix"/> with the module path (slashes converted to dots, <c>.jq</c>
-/// extension added when absent).
+/// A <see cref="JqResolver"/> over the embedded resources of an assembly. A resource name is the
+/// <see cref="Prefix"/> and the path with <c>/</c> and <c>\</c> turned into dots, plus <c>.jq</c> (code)
+/// or <c>.json</c> (data) unless the path ends with one; a directive in a module is relative to that
+/// module's name without its last segment. Safe to use from several threads.
 /// </summary>
-/// <remarks>
-/// <para>
-/// For example, with <c>prefix = "MyApp.Filters"</c> an <c>include "utils"</c>
-/// statement resolves to the embedded resource named <c>MyApp.Filters.utils.jq</c>.
-/// </para>
-/// <para>
-/// Nested includes (from within a module) resolve relative to the parent module's
-/// canonical name, so <c>include "sub/helper"</c> inside <c>MyApp.Filters.utils.jq</c>
-/// resolves to <c>MyApp.Filters.sub.helper.jq</c>.
-/// </para>
-/// </remarks>
-/// <remarks>
-/// Initializes a new instance using the given assembly and resource name prefix.
-/// </remarks>
-/// <param name="assembly">The assembly whose embedded resources are searched.</param>
-/// <param name="prefix">
-/// A dot-separated prefix prepended to every resolved resource name
-/// (e.g. the default namespace of the assembly).  May be empty.
-/// </param>
+/// <remarks>With the prefix <c>MyApp.Filters</c>, <c>include "utils"</c> is <c>MyApp.Filters.utils.jq</c>, and <c>include "sub/helper"</c> in it is <c>MyApp.Filters.sub.helper.jq</c>.</remarks>
+/// <param name="assembly">The assembly whose embedded resources hold the modules.</param>
+/// <param name="prefix">The dot-separated prefix of the resource names (often the assembly's default namespace), without a final dot; may be empty.</param>
 public class JqResourceResolver(Assembly assembly, string? prefix = default) : JqResolver
 {
-    readonly Assembly _assembly = assembly ?? throw new ArgumentNullException(nameof(assembly));
+    readonly Assembly assembly = assembly ?? throw new ArgumentNullException(nameof(assembly));
 
-    /// <summary>
-    /// Gets the dot-separated resource name prefix applied before the module path.
-    /// May be empty. When non-empty it should NOT end with a dot.
-    /// </summary>
+    /// <summary>The dot-separated prefix of the resource names; may be empty.</summary>
     public string Prefix { get; } = prefix ?? string.Empty;
 
     /// <inheritdoc/>
-    public override TextReader Resolve(string path, string? fromPath)
+    public override string? GetCanonicalPath(string path, JqModuleKind kind, JsonElement? metadata, string? fromPath)
     {
-        var resourceName = GetCanonicalPath(path, fromPath);
-        var stream = _assembly.GetManifestResourceStream(resourceName)
-            ?? throw new JqException(
-                $"Embedded resource not found: '{resourceName}' in assembly '{_assembly.GetName().Name}'.");
-
-        return new StreamReader(stream);
-    }
-
-    /// <summary>
-    /// Returns the dot-separated embedded resource name for <paramref name="path"/>.
-    /// Slashes and backslashes are converted to dots; <c>.jq</c> is appended when
-    /// the path has no extension.
-    /// </summary>
-    public override string GetCanonicalPath(string path, string? fromPath)
-    {
-        var hasKnownExtension =
-            path.EndsWith(".jq", StringComparison.OrdinalIgnoreCase) ||
-            path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
-
-        // Resolve relative paths against the parent module's "directory" (prefix segment).
-        string basePart;
+        // A module's "directory" is its name without the last segment and the extension.
+        var directory = Prefix;
         if (fromPath is not null)
         {
-            // fromPath is e.g. "MyApp.Filters.utils.jq" — strip the last segment to get the "directory".
-            var lastDot = fromPath.LastIndexOf('.', fromPath.Length - 4); // skip the ".jq" suffix
-            basePart = lastDot >= 0 ? fromPath[..lastDot] : fromPath;
-        }
-        else
-        {
-            basePart = Prefix;
+            var extension = fromPath.LastIndexOf('.');
+            var lastDot = extension > 0 ? fromPath.LastIndexOf('.', extension - 1) : -1;
+            directory = lastDot >= 0 ? fromPath[..lastDot] : "";
         }
 
-        // Convert path separators to dots and combine.
         var normalized = path.Replace('/', '.').Replace('\\', '.');
-
-        var resourceName = string.IsNullOrEmpty(basePart)
-            ? normalized
-            : basePart + "." + normalized;
-
-        if (!hasKnownExtension && !resourceName.EndsWith(".jq", StringComparison.OrdinalIgnoreCase))
-            resourceName += ".jq";
-
-        return resourceName;
+        var name = directory.Length == 0 ? normalized : directory + "." + normalized;
+        var suffix = kind == JqModuleKind.Data ? ".json" : ".jq";
+        if (!name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            name += suffix;
+        return assembly.GetManifestResourceInfo(name) is null ? null : name;
     }
+
+    /// <inheritdoc/>
+    public override TextReader Open(string canonicalPath)
+        => new StreamReader(assembly.GetManifestResourceStream(canonicalPath)
+            ?? throw new JqException($"module not found: {canonicalPath}"));
 }

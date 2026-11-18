@@ -70,9 +70,3 @@ skips this file.
 Expected outputs do not depend on the machine (environment variables, current time, culture), except:
 
 - `localtime.test` runs with the host time zone fixed at UTC+02:00, with no daylight saving time.
-
-## pending.txt
-
-`pending.txt` lists the cases the current engine of JQSharp fails, grouped by cause; one per line:
-file name, program and input, separated by tabs. The new core (`src/JQSharp/Core`) passes every
-case. The list belongs to the C# runner (`src/Tests/ConformanceTests.cs`), not to the corpus.

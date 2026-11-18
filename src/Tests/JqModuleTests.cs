@@ -3,467 +3,162 @@ using Devlooped;
 
 namespace Devlooped.Tests;
 
-public class JqModuleTests : IDisposable
+/// <summary>
+/// The public resolvers (<see cref="JqFileResolver"/>, <see cref="JqResourceResolver"/>, a custom
+/// <see cref="JqResolver"/>) through <see cref="Jq.Parse"/>. What modules mean is the corpus's
+/// (spec/tests/modules.test).
+/// </summary>
+public sealed class JqModuleTests : IDisposable
 {
-    readonly string _tempDir;
+    readonly string directory = Path.Combine(Path.GetTempPath(), "JqModuleTests_" + Guid.NewGuid().ToString("N"));
 
-    public JqModuleTests()
+    public JqModuleTests() => Directory.CreateDirectory(directory);
+
+    public void Dispose() => Directory.Delete(directory, recursive: true);
+
+    void Write(string name, string content)
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "JqModuleTests_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_tempDir);
+        var path = Path.Combine(directory, name);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
     }
 
-    public void Dispose() => Directory.Delete(_tempDir, recursive: true);
-
-    void WriteModule(string name, string content)
-        => File.WriteAllText(Path.Combine(_tempDir, name + ".jq"), content);
-
-    void WriteJsonModule(string name, string jsonContent)
-        => File.WriteAllText(Path.Combine(_tempDir, name + ".json"), jsonContent);
-
-    static string[] EvaluateToStrings(string expression, string inputJson, JqResolver? resolver = null)
+    static string[] Run(string expression, JqResolver? resolver, string input = "null")
     {
-        using var document = JsonDocument.Parse(inputJson);
-        return Jq.Parse(expression, resolver).Evaluate(document.RootElement)
-            .Select(static e => JsonSerializer.Serialize(e))
-            .ToArray();
+        using var document = JsonDocument.Parse(input);
+        return [.. Jq.Parse(expression, new JqOptions { Resolver = resolver }).Evaluate(document.RootElement).Select(static e => e.GetRawText())];
     }
 
     [Fact]
-    public void Include_exposes_module_function()
+    public void File_resolver_adds_the_extension_of_the_kind()
     {
-        WriteModule("double", "def double: . * 2;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["10"], EvaluateToStrings("""include "double"; double""", "5", resolver));
+        Write("utils.jq", "def inc: . + 1;");
+        Write("config.json", """{"key":"value"} 2""");
+        Assert.Equal(["6", """[{"key":"value"},2]"""], Run("""include "utils"; import "config" as $c; inc, $c""", new JqFileResolver(directory), "5"));
     }
 
     [Fact]
-    public void Include_exposes_multiple_module_functions()
+    public void File_resolver_keeps_an_explicit_extension()
     {
-        WriteModule("math", "def double: . * 2; def triple: . * 3;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["[10,15]"], EvaluateToStrings("""include "math"; [double, triple]""", "5", resolver));
+        Write("ext.jq", "def ext: . + 100;");
+        Assert.Equal(["105", "105"], Run("""include "ext.jq"; import "ext.jq" as e; ext, e::ext""", new JqFileResolver(directory), "5"));
     }
 
     [Fact]
-    public void Include_jq_extension_added_automatically()
+    public void File_resolver_resolves_from_the_importing_module_directory()
     {
-        WriteModule("utils", "def inc: . + 1;");
-        var resolver = new JqFileResolver(_tempDir);
-        // Path without .jq extension — should be added automatically
-        Assert.Equal(["6"], EvaluateToStrings("""include "utils"; inc""", "5", resolver));
+        Write("lib/outer.jq", """include "inner"; def outer: inner * 2;""");
+        Write("lib/inner.jq", "def inner: . + 10;");
+        Assert.Equal(["30"], Run("""include "lib/outer"; outer""", new JqFileResolver(directory), "5"));
     }
 
     [Fact]
-    public void Include_with_metadata_object_parses_and_works()
+    public void A_missing_module_is_a_parse_error()
     {
-        WriteModule("helpers", "def negate: -. ;");
-        var resolver = new JqFileResolver(_tempDir);
-        // Metadata object is parsed but ignored for now
-        Assert.Equal(["-5"], EvaluateToStrings("""include "helpers" {"origin": "."}; negate""", "5", resolver));
+        var error = Assert.Throws<JqParseException>(() => Run("""include "nonexistent"; .""", new JqFileResolver(directory)));
+        Assert.Equal("module not found: nonexistent at line 1, column 1", error.Message);
+        Assert.Equal((1, 1), (error.Line, error.Column));
     }
 
     [Fact]
-    public void Include_is_cached_on_repeated_parse()
+    public void Without_a_resolver_no_module_exists()
     {
-        var readCount = 0;
-        WriteModule("counted", "def counted: . + 1;");
-        var resolver = new CountingResolver(new JqFileResolver(_tempDir), () => readCount++);
-        EvaluateToStrings("""include "counted"; include "counted"; counted""", "5", resolver);
-        Assert.Equal(1, readCount);
+        Assert.Throws<JqParseException>(() => Run("""import "something" as m; .""", null));
+        Assert.Throws<JqParseException>(() => Run("""import "data" as $d; $d""", null));
+        Assert.Equal(["\"module not found: x\""], Run("""try ("x" | modulemeta) catch .""", null));
     }
 
     [Fact]
-    public void Include_nested_modules()
+    public void An_error_in_a_module_names_it()
     {
-        WriteModule("inner", "def inner: . + 10;");
-        WriteModule("outer", """include "inner"; def outer: inner | . * 2;""");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["30"], EvaluateToStrings("""include "outer"; outer""", "5", resolver));
+        Write("bad.jq", "def ok: 1;\ndef broken: (1;");
+        var error = Assert.Throws<JqParseException>(() => Run("""import "bad" as b; 1""", new JqFileResolver(directory)));
+        Assert.Equal((2, 15), (error.Line, error.Column));
+        Assert.Contains(Path.Combine(directory, "bad.jq"), error.Message);
     }
 
     [Fact]
-    public void Include_missing_module_throws()
+    public void Data_modules_bind_an_array_of_their_values()
     {
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Throws<JqException>(() =>
-            EvaluateToStrings("""include "nonexistent"; .""", "null", resolver));
+        Write("config.json", """{"key":"value"}""");
+        Assert.Equal(["""[{"key":"value"}]""", "\"value\""], Run("""import "config" as $cfg; $cfg::cfg, $cfg[0].key""", new JqFileResolver(directory)));
     }
 
     [Fact]
-    public void Include_without_resolver_throws()
+    public void Invalid_data_is_a_parse_error()
     {
-        Assert.Throws<JqException>(() =>
-            EvaluateToStrings("""include "something"; .""", "null", resolver: null));
+        Write("bad.json", "not valid json {{{");
+        Assert.Throws<JqParseException>(() => Run("""import "bad" as $b; $b""", new JqFileResolver(directory)));
     }
 
     [Fact]
-    public void Include_module_functions_can_use_each_other()
+    public void Each_module_is_read_once_per_parse()
     {
-        WriteModule("funcs", "def addtwo: . + 2; def addtwo_twice: addtwo | addtwo;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["9"], EvaluateToStrings("""include "funcs"; addtwo_twice""", "5", resolver));
+        Write("counted.jq", "def counted: . + 1;");
+        var resolver = new CountingResolver(new JqFileResolver(directory));
+        Assert.Equal(["6"], Run("""include "counted"; import "counted" as c1; import "counted" as c2; c1::counted""", resolver, "5"));
+        Assert.Equal(1, resolver.Opens);
     }
 
     [Fact]
-    public void Include_module_with_parameterized_function()
+    public void Modulemeta_resolves_through_the_resolver_at_run_time()
     {
-        WriteModule("pf", "def add($n): . + $n;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["8"], EvaluateToStrings("""include "pf"; add(3)""", "5", resolver));
+        Write("meta.jq", """module {"version": "1.0"}; def double: . * 2;""");
+        var expression = Jq.Parse("""modulemeta""", new JqOptions { Resolver = new JqFileResolver(directory) });
+        using var input = JsonDocument.Parse("\"meta\"");
+        var results = new string[16];
+        Parallel.For(0, results.Length, i => results[i] = expression.Evaluate(input.RootElement)[0].GetRawText());
+        Assert.All(results, result => Assert.Equal("""{"version":"1.0","deps":[],"defs":["double/0"]}""", result));
     }
 
     [Fact]
-    public void Include_module_with_extension_path()
+    public void Resource_resolver_finds_embedded_modules()
     {
-        WriteModule("ext", "def ext: . + 100;");
-        var resolver = new JqFileResolver(_tempDir);
-        // Explicitly specifying .jq extension should also work
-        Assert.Equal(["105"], EvaluateToStrings("""include "ext.jq"; ext""", "5", resolver));
+        var resolver = new JqResourceResolver(typeof(JqModuleTests).Assembly, "Devlooped.Tests.Modules");
+        Assert.Equal(["\"hello world!\""], Run("""include "greet"; greet""", resolver, "\"world\""));
     }
 
     [Fact]
-    public void Import_exposes_prefixed_function()
-    {
-        WriteModule("double", "def double: . * 2;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["10"], EvaluateToStrings("""import "double" as m; m::double""", "5", resolver));
-    }
+    public void Resource_resolver_reports_missing_modules()
+        => Assert.Throws<JqParseException>(() => Run("""include "missing"; .""", new JqResourceResolver(typeof(JqModuleTests).Assembly, "Devlooped.Tests.Modules")));
 
     [Fact]
-    public void Import_exposes_multiple_prefixed_functions()
+    public void A_custom_resolver_names_and_opens_modules()
     {
-        WriteModule("math", "def double: . * 2; def triple: . * 3;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["[10,15]"], EvaluateToStrings("""import "math" as m; [m::double, m::triple]""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_function_not_in_caller_namespace()
-    {
-        WriteModule("double", "def double: . * 2;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Throws<JqException>(() =>
-            EvaluateToStrings("""import "double" as m; double""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_with_metadata_object()
-    {
-        WriteModule("helpers", "def negate: -. ;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["-5"], EvaluateToStrings("""import "helpers" as h {"origin": "."}; h::negate""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_module_functions_can_call_each_other()
-    {
-        WriteModule("funcs", "def addtwo: . + 2; def addtwo_twice: addtwo | addtwo;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["9"], EvaluateToStrings("""import "funcs" as m; m::addtwo_twice""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_with_parameterized_function()
-    {
-        WriteModule("pf", "def add($n): . + $n;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["8"], EvaluateToStrings("""import "pf" as m; m::add(3)""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_cached_on_repeated_import()
-    {
-        var readCount = 0;
-        WriteModule("counted", "def counted: . + 1;");
-        var resolver = new CountingResolver(new JqFileResolver(_tempDir), () => readCount++);
-        EvaluateToStrings("""import "counted" as c1; import "counted" as c2; c1::counted""", "5", resolver);
-        Assert.Equal(1, readCount);
-    }
-
-    [Fact]
-    public void Import_missing_module_throws()
-    {
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Throws<JqException>(() =>
-            EvaluateToStrings("""import "nonexistent" as m; .""", "null", resolver));
-    }
-
-    [Fact]
-    public void Import_without_resolver_throws()
-    {
-        Assert.Throws<JqException>(() =>
-            EvaluateToStrings("""import "something" as m; .""", "null", resolver: null));
-    }
-
-    [Fact]
-    public void Import_two_modules_different_aliases()
-    {
-        WriteModule("math", "def double: . * 2;");
-        WriteModule("str", "def upper: ascii_upcase;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["10"], EvaluateToStrings("""import "math" as m; import "str" as s; m::double""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_and_include_together()
-    {
-        WriteModule("bare", "def bare_fn: . + 1;");
-        WriteModule("ns", "def ns_fn: . * 10;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["[6,50]"], EvaluateToStrings("""include "bare"; import "ns" as n; [bare_fn, n::ns_fn]""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_nested_module_with_include()
-    {
-        WriteModule("inner", "def inner_fn: . + 10;");
-        WriteModule("outer", """include "inner"; def outer_fn: inner_fn | . * 2;""");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["30"], EvaluateToStrings("""import "outer" as o; o::outer_fn""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_jq_extension_added_automatically()
-    {
-        WriteModule("utils", "def inc: . + 1;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["6"], EvaluateToStrings("""import "utils" as u; u::inc""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_with_explicit_jq_extension()
-    {
-        WriteModule("ext", "def ext: . + 100;");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["105"], EvaluateToStrings("""import "ext.jq" as e; e::ext""", "5", resolver));
-    }
-
-    [Fact]
-    public void Import_json_data_as_variable()
-    {
-        WriteJsonModule("config", """{"key":"value"}""");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["""{"key":"value"}"""], EvaluateToStrings("""import "config" as $cfg; $cfg::cfg""", "null", resolver));
-    }
-
-    [Fact]
-    public void Import_json_data_nested_access()
-    {
-        WriteJsonModule("config", """{"key":"value"}""");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["\"value\""], EvaluateToStrings("""import "config" as $cfg; $cfg::cfg.key""", "null", resolver));
-    }
-
-    [Fact]
-    public void Import_json_data_array()
-    {
-        WriteJsonModule("data", "[1,2,3]");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["3"], EvaluateToStrings("""import "data" as $d; $d::d | length""", "null", resolver));
-    }
-
-    [Fact]
-    public void Import_json_data_scalar()
-    {
-        WriteJsonModule("num", "42");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["42"], EvaluateToStrings("""import "num" as $n; $n::n""", "null", resolver));
-    }
-
-    [Fact]
-    public void Import_json_data_missing_file_throws()
-    {
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Throws<JqException>(() =>
-            EvaluateToStrings("""import "missing" as $m; $m::m""", "null", resolver));
-    }
-
-    [Fact]
-    public void Import_json_data_invalid_json_throws()
-    {
-        File.WriteAllText(Path.Combine(_tempDir, "bad.json"), "not valid json {{{");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Throws<JqException>(() =>
-            EvaluateToStrings("""import "bad" as $b; $b::b""", "null", resolver));
-    }
-
-    [Fact]
-    public void Import_json_data_without_resolver_throws()
-    {
-        Assert.Throws<JqException>(() =>
-            EvaluateToStrings("""import "data" as $d; $d::d""", "null", resolver: null));
-    }
-
-    [Fact]
-    public void Include_resource_resolver_loads_embedded_module()
-    {
-        // The Tests assembly embeds suite/jq.test but not .jq files.
-        // Use a custom in-memory resolver to simulate an assembly resource.
-        var resolver = new InMemoryResolver(new Dictionary<string, string>
+        var resolver = new MemoryResolver(new Dictionary<string, string>
         {
-            ["myns.greet.jq"] = """def greet: "hello " + .;""",
+            ["mem:greet.jq"] = """include "punctuation"; def greet: "hello " + . + mark;""",
+            ["mem:punctuation.jq"] = """def mark: "!";""",
         });
-        Assert.Equal(["\"hello world\""], EvaluateToStrings("""include "greet"; greet""", "\"world\"", resolver));
+        Assert.Equal(["\"hello world!\""], Run("""include "greet"; greet""", resolver, "\"world\""));
     }
 
-    [Fact]
-    public void Module_statement_is_transparent()
+    // Counts the modules opened.
+    sealed class CountingResolver(JqResolver inner) : JqResolver
     {
-        WriteModule("meta", """module {"version": "1.0"}; def double: . * 2;""");
-        var resolver = new JqFileResolver(_tempDir);
-        Assert.Equal(["10"], EvaluateToStrings("""import "meta" as m; m::double""", "5", resolver));
-    }
+        int opens;
 
-    [Fact]
-    public void Modulemeta_returns_custom_metadata()
-    {
-        WriteModule("meta", """module {"version": "1.0", "homepage": "https://example.com"}; def double: . * 2;""");
-        var resolver = new JqFileResolver(_tempDir);
-        var result = EvaluateToStrings("""import "meta" as m; "meta" | modulemeta | .version""", "null", resolver);
-        Assert.Equal(["\"1.0\""], result);
-    }
+        public int Opens => opens;
 
-    [Fact]
-    public void Modulemeta_includes_defs()
-    {
-        WriteModule("funcs", "def double: . * 2; def triple: . * 3;");
-        var resolver = new JqFileResolver(_tempDir);
-        var result = EvaluateToStrings("""import "funcs" as f; "funcs" | modulemeta | .defs""", "null", resolver);
-        Assert.Equal(["""["double/0","triple/0"]"""], result);
-    }
+        public override string? GetCanonicalPath(string path, JqModuleKind kind, JsonElement? metadata, string? fromPath)
+            => inner.GetCanonicalPath(path, kind, metadata, fromPath);
 
-    [Fact]
-    public void Modulemeta_includes_deps()
-    {
-        WriteModule("base", "def base_fn: . + 1;");
-        WriteModule("derived", """import "base" as b; def derived_fn: b::base_fn | . * 2;""");
-        var resolver = new JqFileResolver(_tempDir);
-        var result = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps | length""", "null", resolver);
-        Assert.Equal(["1"], result);
-    }
-
-    [Fact]
-    public void Modulemeta_deps_include_relpath_and_as()
-    {
-        WriteModule("base", "def base_fn: . + 1;");
-        WriteModule("derived", """import "base" as b; def derived_fn: b::base_fn;""");
-        var resolver = new JqFileResolver(_tempDir);
-        var result = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[0].relpath""", "null", resolver);
-        Assert.Equal(["\"base\""], result);
-        result = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[0].as""", "null", resolver);
-        Assert.Equal(["\"b\""], result);
-    }
-
-    [Fact]
-    public void Modulemeta_without_module_statement()
-    {
-        WriteModule("plain", "def inc: . + 1;");
-        var resolver = new JqFileResolver(_tempDir);
-        var result = EvaluateToStrings("""import "plain" as p; "plain" | modulemeta | .defs""", "null", resolver);
-        Assert.Equal(["""["inc/0"]"""], result);
-    }
-
-    [Fact]
-    public void Modulemeta_with_include()
-    {
-        WriteModule("incmod", """module {"type": "include-test"}; def half: . / 2;""");
-        var resolver = new JqFileResolver(_tempDir);
-        var result = EvaluateToStrings("""include "incmod"; "incmod" | modulemeta | .type""", "null", resolver);
-        Assert.Equal(["\"include-test\""], result);
-    }
-
-    [Fact]
-    public void Modulemeta_data_import_dep()
-    {
-        WriteJsonModule("data", """{"key": "val"}""");
-        WriteModule("uses_data", """import "data" as $d; def get_data: $d::d;""");
-        var resolver = new JqFileResolver(_tempDir);
-        var result = EvaluateToStrings("""import "uses_data" as m; "uses_data" | modulemeta | .deps[0].is_data""", "null", resolver);
-        Assert.Equal(["true"], result);
-    }
-
-    [Fact]
-    public void Include_metadata_captured_in_deps()
-    {
-        WriteModule("base", "def base_fn: . + 1;");
-        WriteModule("uses_include", """include "base" {"search": "."}; def wrapper: base_fn;""");
-        var resolver = new JqFileResolver(_tempDir);
-        var result = EvaluateToStrings("""import "uses_include" as m; "uses_include" | modulemeta | .deps[0].relpath""", "null", resolver);
-        Assert.Equal(["\"base\""], result);
-        result = EvaluateToStrings("""import "uses_include" as m; "uses_include" | modulemeta | .deps[0].search""", "null", resolver);
-        Assert.Equal(["\".\""], result);
-    }
-
-    [Fact]
-    public void Import_metadata_captured_in_deps()
-    {
-        WriteModule("base", "def base_fn: . + 1;");
-        WriteModule("uses_import", """import "base" as b {"search": "."}; def wrapper: b::base_fn;""");
-        var resolver = new JqFileResolver(_tempDir);
-        var result = EvaluateToStrings("""import "uses_import" as m; "uses_import" | modulemeta | .deps[0].search""", "null", resolver);
-        Assert.Equal(["\".\""], result);
-    }
-
-    [Fact]
-    public void Modulemeta_deps_include_relpath_as_and_is_data_flags()
-    {
-        WriteModule("base", "def base_fn: . + 1;");
-        WriteModule("helpers", "def helper: . * 2;");
-        WriteModule("derived", """include "base"; import "helpers" as h; def run: h::helper | base_fn;""");
-        var resolver = new JqFileResolver(_tempDir);
-
-        var includeAs = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[0].as""", "null", resolver);
-        Assert.Equal(["null"], includeAs);
-
-        var includeIsData = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[0].is_data""", "null", resolver);
-        Assert.Equal(["false"], includeIsData);
-
-        var importRelpath = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[] | select(.as == "h") | .relpath""", "null", resolver);
-        Assert.Equal(["\"helpers\""], importRelpath);
-
-        var importAs = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[] | select(.as == "h") | .as""", "null", resolver);
-        Assert.Equal(["\"h\""], importAs);
-
-        var importIsData = EvaluateToStrings("""import "derived" as d; "derived" | modulemeta | .deps[] | select(.as == "h") | .is_data""", "null", resolver);
-        Assert.Equal(["false"], importIsData);
-    }
-
-    // Helper resolver that wraps another and counts Resolve() calls.
-    sealed class CountingResolver(JqResolver inner, Action onResolve) : JqResolver
-    {
-        public override TextReader Resolve(string path, string? fromPath)
+        public override TextReader Open(string canonicalPath)
         {
-            onResolve();
-            return inner.Resolve(path, fromPath);
+            Interlocked.Increment(ref opens);
+            return inner.Open(canonicalPath);
+        }
+    }
+
+    // Modules in a dictionary, by "mem:" and the path with its extension.
+    sealed class MemoryResolver(Dictionary<string, string> modules) : JqResolver
+    {
+        public override string? GetCanonicalPath(string path, JqModuleKind kind, JsonElement? metadata, string? fromPath)
+        {
+            var name = "mem:" + path + (kind == JqModuleKind.Code ? ".jq" : ".json");
+            return modules.ContainsKey(name) ? name : null;
         }
 
-        public override string GetCanonicalPath(string path, string? fromPath)
-            => inner.GetCanonicalPath(path, fromPath);
-    }
-
-    // In-memory resolver keyed by canonical name, used to simulate JqResourceResolver.
-    sealed class InMemoryResolver(Dictionary<string, string> modules) : JqResolver
-    {
-        public override TextReader Resolve(string path, string? fromPath)
-        {
-            var key = GetCanonicalPath(path, fromPath);
-            if (!modules.TryGetValue(key, out var content))
-                throw new JqException($"Module not found: '{key}'");
-            return new StringReader(content);
-        }
-
-        public override string GetCanonicalPath(string path, string? fromPath)
-        {
-            // Mimic JqResourceResolver: prefix "myns", dots for separators, .jq suffix.
-            var basePart = fromPath is not null
-                ? fromPath[..fromPath.LastIndexOf('.', fromPath.Length - 4)]
-                : "myns";
-            var normalized = path.Replace('/', '.').Replace('\\', '.');
-            var name = basePart + "." + normalized;
-            if (!name.EndsWith(".jq", StringComparison.OrdinalIgnoreCase))
-                name += ".jq";
-            return name;
-        }
+        public override TextReader Open(string canonicalPath) => new StringReader(modules[canonicalPath]);
     }
 }

@@ -11,120 +11,84 @@ using OutcomeKind = Devlooped.Core.Runtime.OutcomeKind;
 namespace Devlooped.Tests;
 
 /// <summary>
-/// Runs every case of the jqlite conformance corpus (spec/tests/*.test) twice, by the rules of
-/// spec/tests/README.md: through <see cref="Jq"/> (the current engine) and through the new core
-/// (parse, bind, evaluate on <see cref="JqValue"/>). The core must pass every case. Cases listed
-/// in spec/tests/pending.txt are known failures of the current engine: such a case must fail, and
-/// the run fails as soon as it passes, so the list only ever shrinks.
+/// Runs every case of the jqlite conformance corpus (spec/tests/*.test), by the rules of
+/// spec/tests/README.md: through the public API (<see cref="Jq.Parse"/>, <see cref="JqExpression"/>),
+/// and through the core with every prelude builtin bound to its definition, to check that the
+/// natives that override some change nothing. Every case must pass both ways.
 /// </summary>
 public partial class ConformanceTests
 {
     static readonly string SpecDirectory = Path.Combine(AppContext.BaseDirectory, "spec", "tests");
 
-    // localtime.test needs a host fixed at UTC+02:00 without DST (spec §14.2): the core gets it
-    // from its clock, the current engine always uses the time zone of the machine (step 10
-    // enables it through JqOptions.TimeProvider), so it skips the file.
-    static readonly HashSet<string> SkippedByCurrentEngine = ["localtime.test"];
+    // The host of spec §14.2: no environment variables, a zone at UTC+02:00 without DST or
+    // abbreviation, the default depth, and the module files of modules/.
+    static readonly JqOptions Options = new()
+    {
+        Environment = new Dictionary<string, string>(),
+        TimeProvider = new FixedZone(),
+        MaxDepth = 1000,
+        Resolver = new JqFileResolver(Path.Combine(SpecDirectory, "modules")),
+    };
 
-    // The module files of modules.test, for the core (spec §14.2).
     static readonly DirectoryModules CorpusModules = new(Path.Combine(SpecDirectory, "modules"));
 
-    static readonly Lazy<HashSet<string>> Pending = new(() => LoadPending("pending.txt"));
-
-    public static IEnumerable<object?[]> Cases(bool core)
+    public static IEnumerable<object?[]> Cases()
     {
         foreach (var file in Directory.GetFiles(SpecDirectory, "*.test").Order(StringComparer.Ordinal))
         {
-            var name = Path.GetFileName(file);
-            if (!core && SkippedByCurrentEngine.Contains(name))
-                continue;
-
             foreach (var test in JqTestParser.ParseFile(file))
-                yield return [name, test.LineNumber, test.Program, test.Input, string.Join('\n', test.ExpectedOutputs), test.ShouldFail, test.ExpectedError];
+                yield return [Path.GetFileName(file), test.LineNumber, test.Program, test.Input, string.Join('\n', test.ExpectedOutputs), test.ShouldFail, test.ExpectedError];
         }
     }
 
     [Theory]
-    [MemberData(nameof(Cases), false)]
+    [MemberData(nameof(Cases))]
     public void Corpus_case(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
-    {
-        // The current engine's resolvers do not follow the module rule of README.md; its module
-        // tests stay in JqModuleTests until step 10.
-        if (file == "modules.test")
-            return;
-        Check("pending.txt", Pending.Value, file, line, program, input, Run(program, input, expected, shouldFail, expectedError));
-    }
+        => Pass(file, line, Run(program, input, expected, shouldFail, expectedError));
 
     [Theory]
-    [MemberData(nameof(Cases), true)]
-    public void Core_corpus_case(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
-        => Pass(file, line, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: true));
-
-    // The same with every prelude builtin bound to its definition: the natives that override some
-    // (Native.OverridesPrelude) must change nothing.
-    [Theory]
-    [MemberData(nameof(Cases), true)]
-    public void Core_corpus_case_without_native_overrides(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
-        => Pass(file, line, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: false));
+    [MemberData(nameof(Cases))]
+    public void Corpus_case_without_native_overrides(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
+        => Pass(file, line, RunCore(program, input, expected, shouldFail, expectedError));
 
     static void Pass(string file, int line, string? failure) => Assert.True(failure is null, $"{file}:{line}: {failure}");
 
-    static void Check(string list, HashSet<string> pending, string file, int line, string program, string input, string? failure)
-    {
-        if (pending.Contains(Key(file, program, input)))
-            Assert.True(failure is not null, $"{file}:{line} passes but is listed in {list}: remove it from the list.");
-        else
-            Assert.True(failure is null, $"{file}:{line}: {failure}");
-    }
-
-    [Fact]
-    public void Pending_cases_exist_in_corpus()
-    {
-        const string list = "pending.txt";
-        var keys = Directory.GetFiles(SpecDirectory, "*.test")
-            .SelectMany(file => JqTestParser.ParseFile(file).Select(test => Key(Path.GetFileName(file), test.Program, test.Input)))
-            .ToHashSet();
-
-        var unknown = LoadPending(list).Where(key => !keys.Contains(key)).ToArray();
-        Assert.True(unknown.Length == 0, $"{list} lists cases that are not in the corpus:\n" + string.Join('\n', unknown));
-    }
-
     static string? Run(string program, string input, string expected, bool shouldFail, string? expectedError)
     {
-        if (shouldFail)
-        {
-            try
-            {
-                Jq.Parse(program);
-                return "the program parses but must not";
-            }
-            catch (JqException e)
-            {
-                return MissingFixedText(expectedError, e.Message);
-            }
-            catch (Exception e)
-            {
-                return $"expected a parse error '{expectedError}', got {e.GetType().Name}: {e.Message}";
-            }
-        }
-
-        string[] actual;
+        JqExpression expression;
         try
         {
-            using var document = JsonDocument.Parse(input);
-            actual = [.. Jq.Evaluate(program, document.RootElement).Select(static e => e.GetRawText())];
+            expression = Jq.Parse(program, Options);
         }
-        catch (Exception e)
+        catch (JqParseException e)
         {
-            return $"{e.GetType().Name}: {e.Message}";
+            return shouldFail ? MissingFixedText(expectedError, e.Message) : $"{e.Message} at {e.Line}:{e.Column}";
         }
 
-        return Compare(expected, actual);
+        if (shouldFail)
+            return "the program parses and binds but must not";
+
+        using var document = JsonDocument.Parse(input);
+        var outputs = new List<string>();
+        try
+        {
+            expression.Evaluate(document.RootElement, result =>
+            {
+                outputs.Add(result.GetRawText());
+                return true;
+            });
+        }
+        catch (JqException e)
+        {
+            return $"{e.GetType().Name} {e.Message} after [{string.Join(", ", outputs)}]";
+        }
+
+        return Compare(expected, [.. outputs]);
     }
 
-    static string? RunCore(string program, string input, string expected, bool shouldFail, string? expectedError, bool nativeOverrides)
+    static string? RunCore(string program, string input, string expected, bool shouldFail, string? expectedError)
     {
-        if (!Resolver.TryCompile(program, out var bound, out var error, nativeOverrides, CorpusModules))
+        if (!Resolver.TryCompile(program, out var bound, out var error, nativeOverrides: false, CorpusModules))
             return shouldFail ? MissingFixedText(expectedError, error.Message) : $"{error.Message} at {error.Line}:{error.Column}";
         if (shouldFail)
             return "the program parses and binds but must not";
@@ -132,7 +96,7 @@ public partial class ConformanceTests
         if (!ValueText.TryParse(input, out var value, out var inputError))
             return $"bad input: {inputError}";
         var outputs = new List<string>();
-        var options = new EvaluationOptions { Environment = JqValue.FromObject(JqObject.Empty), MaxDepth = 1000, Clock = FixedZoneClock.Instance };
+        var options = new EvaluationOptions { MaxDepth = 1000, Clock = FixedZoneClock.Instance };
         var outcome = Interpreter.Run(bound, value, options, output =>
         {
             outputs.Add(ValueText.ToJson(output));
@@ -146,8 +110,7 @@ public partial class ConformanceTests
         return Compare(expected, [.. outputs]);
     }
 
-    // The outputs, as canonical text, against the expected lines: each read back and compared
-    // structurally (spec §14.2).
+    // The outputs, as text, against the expected lines: each read back and compared structurally (spec §14.2).
     static string? Compare(string expected, string[] actual)
     {
         var outputs = expected.Length == 0 ? [] : expected.Split('\n');
@@ -200,11 +163,15 @@ public partial class ConformanceTests
     [GeneratedRegex(@"^(\S+/\d+ is not defined|\$\*label-\S+ is not defined|\$\S+::\S+ is not defined|Cannot use .+ as object key|May need parentheses around object key expression|Module metadata must be constant|Module metadata must be an object|Import path must be constant|Invalid escape)$")]
     private static partial Regex FixedText();
 
-    // A %%FAIL case has no input line: its key is the file name and the program.
-    static string Key(string file, string program, string input)
-        => input.Length == 0 ? $"{file}\t{program}" : $"{file}\t{program}\t{input}";
+    // UTC+02:00 without DST or abbreviation, for the public API.
+    sealed class FixedZone : TimeProvider
+    {
+        static readonly TimeZoneInfo zone = TimeZoneInfo.CreateCustomTimeZone("jqlite+02", TimeSpan.FromHours(2), "UTC+02", "UTC+02");
 
-    // The host of spec §14.2: the real time, and a zone at UTC+02:00 without DST or abbreviation.
+        public override TimeZoneInfo LocalTimeZone => zone;
+    }
+
+    // The same, for the core.
     sealed class FixedZoneClock : IClock
     {
         public static readonly FixedZoneClock Instance = new();
@@ -215,11 +182,4 @@ public partial class ConformanceTests
 
         public string? Abbreviation(double seconds) => null;
     }
-
-    // Lines end at LF, as in the corpus: a program may hold a lone CR.
-    static HashSet<string> LoadPending(string list)
-        => File.ReadAllText(Path.Combine(SpecDirectory, list)).Split('\n')
-            .Select(static line => line.EndsWith('\r') ? line[..^1] : line)
-            .Where(static line => line.Length > 0 && !line.StartsWith('#'))
-            .ToHashSet(StringComparer.Ordinal);
 }

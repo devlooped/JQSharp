@@ -5,15 +5,9 @@ using Xunit.Sdk;
 
 namespace Devlooped.Tests.Core.Binding;
 
-// Inside the namespace, so they win over the old engine's types of the same names (namespace
-// Devlooped, until step 10 removes them).
-using ArrayPattern = Devlooped.Core.Binding.ArrayPattern;
-using Binary = Devlooped.Core.Binding.Binary;
+// The bound node, not System.Index; the operators are the syntax's.
 using BinaryOp = Devlooped.Core.Syntax.BinaryOp;
 using Index = Devlooped.Core.Binding.Index;
-using ObjectPattern = Devlooped.Core.Binding.ObjectPattern;
-using Pattern = Devlooped.Core.Binding.Pattern;
-using VariablePattern = Devlooped.Core.Binding.VariablePattern;
 
 /// <summary>
 /// Prints a bound program as an S-expression stating what every reference resolved to, in the

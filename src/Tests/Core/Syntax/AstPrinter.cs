@@ -5,13 +5,8 @@ using Xunit.Sdk;
 
 namespace Devlooped.Tests.Core.Syntax;
 
-// Inside the namespace, so they win over the old engine's types of the same names (namespace
-// Devlooped, until step 10 removes them).
-using ArrayPattern = Devlooped.Core.Syntax.ArrayPattern;
-using BinaryOp = Devlooped.Core.Syntax.BinaryOp;
+// The AST node, not System.Index.
 using Index = Devlooped.Core.Syntax.Index;
-using ObjectPattern = Devlooped.Core.Syntax.ObjectPattern;
-using VariablePattern = Devlooped.Core.Syntax.VariablePattern;
 
 /// <summary>
 /// Prints an AST as an S-expression so tests can state structure: <c>.</c>, literals as JSON,

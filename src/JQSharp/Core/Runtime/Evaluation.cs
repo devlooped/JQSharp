@@ -21,8 +21,11 @@ sealed class EvaluationOptions
     /// <summary>The host variables, by name without '$'; names are validated by the host boundary.</summary>
     public IReadOnlyDictionary<string, JqValue>? Variables { get; init; }
 
-    /// <summary>The object <c>$ENV</c> is: string to string, in the order the host gives.</summary>
-    public JqValue Environment { get; init; } = JqValue.FromObject(JqObject.Empty);
+    /// <summary>
+    /// The object <c>$ENV</c> is (string to string, in the order the host gives), asked for once per
+    /// evaluation, when the program first reads it: a host can read its process environment then.
+    /// </summary>
+    public Func<JqValue> Environment { get; init; } = static () => JqValue.FromObject(JqObject.Empty);
 
     /// <summary>The call depth limit of §11.</summary>
     public int MaxDepth { get; init; } = 1000;

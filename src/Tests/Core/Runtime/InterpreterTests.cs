@@ -137,7 +137,7 @@ public class InterpreterTests
         => Assert.Equal(expected, Line(program, options: new EvaluationOptions
         {
             Variables = new Dictionary<string, JqValue> { ["x"] = JqValue.FromNumber(1), ["y"] = JqValue.FromString("two") },
-            Environment = JqValue.FromObject(JqObject.Empty.Set("HOME", JqValue.FromString("/home"))),
+            Environment = () => JqValue.FromObject(JqObject.Empty.Set("HOME", JqValue.FromString("/home"))),
         }));
 
     [Fact]

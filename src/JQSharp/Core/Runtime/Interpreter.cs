@@ -7,12 +7,8 @@ using Devlooped.Core.Values;
 
 namespace Devlooped.Core.Runtime;
 
-// Inside the namespace, so they win over the old engine's types of the same names (namespace
-// Devlooped, until step 10 removes them).
-using ArrayPattern = Devlooped.Core.Binding.ArrayPattern;
+// The bound node, not System.Index.
 using Index = Devlooped.Core.Binding.Index;
-using ObjectPattern = Devlooped.Core.Binding.ObjectPattern;
-using VariablePattern = Devlooped.Core.Binding.VariablePattern;
 
 /// <summary>Receives one output of an evaluation; returns null to go on, or the signal that stops it.</summary>
 delegate Signal? Emit(JqValue value, Path? path);
@@ -57,7 +53,8 @@ sealed class Interpreter
     readonly BoundProgram program;
     // The host variables, by the index of BoundProgram.HostVariables; null when the host has none.
     readonly JqValue?[] hostValues;
-    readonly JqValue environment;
+    readonly Func<JqValue> readEnvironment;
+    JqValue? environment;
     readonly int maxDepth;
     int depth;
     long labels;
@@ -76,7 +73,7 @@ sealed class Interpreter
                 hostValues[i] = value;
         }
 
-        environment = options.Environment;
+        readEnvironment = options.Environment;
         maxDepth = options.MaxDepth;
         Clock = options.Clock;
     }
@@ -398,7 +395,7 @@ sealed class Interpreter
                 (has, value) = (true, hostValue);
                 return null;
             case EnvVariable:
-                (has, value) = (true, environment);
+                (has, value) = (true, environment ??= readEnvironment());
                 return null;
             case Format format:
                 if (!Formats.TryApply(format.Name, input, out value, out var error))

@@ -339,19 +339,47 @@ static class ValueOps
     }
 
     // `*` on objects: keys of b win, except that two objects under the same key merge recursively.
+    // a * b on objects: like a + b, except that a key whose two values are objects gets their merge.
+    // The objects being merged are on an explicit stack, so nesting depth is not limited by the host stack.
     static JqObject DeepMerge(JqObject a, JqObject b)
     {
-        var builder = new JqObjectBuilder(a, b.Count);
-        for (var i = 0; i < b.Count; i++)
+        var stack = new List<Merge> { new(a, b) };
+        while (true)
         {
-            var key = b.KeyAt(i);
-            var value = b.ValueAt(i);
-            if (value.Kind == JqKind.Object && builder.TryGetValue(key, out var existing) && existing.Kind == JqKind.Object)
-                value = JqValue.FromObject(DeepMerge(existing.AsObject(), value.AsObject()));
-            builder.Set(key, value);
-        }
+            var top = stack[^1];
+            if (top.Next < top.Right.Count)
+            {
+                var key = top.Right.KeyAt(top.Next);
+                var value = top.Right.ValueAt(top.Next++);
+                if (value.Kind == JqKind.Object && top.Result.TryGetValue(key, out var existing) && existing.Kind == JqKind.Object)
+                {
+                    top.Key = key;
+                    stack.Add(new Merge(existing.AsObject(), value.AsObject()));
+                }
+                else
+                {
+                    top.Result.Set(key, value);
+                }
 
-        return builder.ToObject();
+                continue;
+            }
+
+            var merged = top.Result.ToObject();
+            stack.RemoveAt(stack.Count - 1);
+            if (stack.Count == 0)
+                return merged;
+            stack[^1].Result.Set(stack[^1].Key, JqValue.FromObject(merged));
+        }
+    }
+
+    // One pair of objects being merged: the result so far, the right side's next key, and the key
+    // whose values are being merged below.
+    sealed class Merge(JqObject left, JqObject right)
+    {
+        public readonly JqObjectBuilder Result = new(left, right.Count);
+        public readonly JqObject Right = right;
+        public int Next;
+        public string Key = "";
     }
 
     /// <summary>jq's <c>/</c>: numbers divide (a zero divisor is an error, <c>0/0</c> too); strings split on the right-hand string.</summary>

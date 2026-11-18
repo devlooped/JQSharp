@@ -97,5 +97,5 @@ public class AssignTests
     static BoundProgram Compile(string program, bool nativeOverrides)
         => Resolver.TryCompile(program, out var bound, out var error, nativeOverrides) ? bound : throw new Xunit.Sdk.XunitException(error.Message);
 
-    static string Line(BoundProgram program, string input) => string.Join(", ", Run(program, Json(input)));
+    static string Line(BoundProgram program, string input) => string.Join(", ", Run(program, Evaluate.Json(input)));
 }

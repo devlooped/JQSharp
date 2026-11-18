@@ -151,4 +151,27 @@ public class ValueArithmeticTests
         Assert.Equal("{\"a\":1,\"b\":{\"c\":2}}", J(a));
         Assert.Equal("{\"b\":{\"d\":3},\"e\":4}", J(b));
     }
+
+    [Fact]
+    public void Deep_merge_of_ten_thousand_levels_does_not_recurse()
+    {
+        // {"a":{"a":…{"x":1}}} * {"a":{"a":…{"y":2}}}, 10,000 levels, on a 1 MB stack.
+        static JqValue Nest(string key, int depth)
+        {
+            var value = JqValue.FromObject(JqObject.Empty.Set(key, JqValue.FromNumber(depth)));
+            for (var i = 0; i < depth; i++)
+                value = JqValue.FromObject(JqObject.Empty.Set("a", value));
+            return value;
+        }
+
+        JqValue result = default;
+        var ok = false;
+        var thread = new Thread(() => ok = ValueOps.TryMultiply(Nest("x", 10_000), Nest("y", 10_000), out result, out _), 1024 * 1024);
+        thread.Start();
+        thread.Join();
+        Assert.True(ok);
+        for (var i = 0; i < 10_000; i++)
+            result = result.AsObject().ValueAt(0);
+        Assert.Equal("{\"x\":10000,\"y\":10000}", ValueText.ToJson(result));
+    }
 }
