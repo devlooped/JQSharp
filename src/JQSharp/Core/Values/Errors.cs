@@ -155,12 +155,30 @@ static class Errors
 
     public static JqValue NotAString(JqValue value) => Message($"{Describe(value)} is not a string");
 
+    public static JqValue CannotCheckContainment(JqValue a, JqValue b) => Message($"{Describe(a)} and {Describe(b)} cannot have their containment checked");
+
+    // Formats (§9.9).
+    public static JqValue NotValidUriEncoding(JqValue text) => Message($"{Describe(text)} is not a valid uri encoding");
+
+    public static JqValue CannotBeCsvFormatted(JqValue value) => Message($"{Describe(value)} cannot be csv-formatted, only array");
+
+    public static JqValue CannotBeTsvFormatted(JqValue value) => Message($"{Describe(value)} cannot be tsv-formatted, only array");
+
+    /// <summary>An array or object in a row of <c>@csv</c> or <c>@tsv</c> (the text says csv for both).</summary>
+    public static JqValue NotValidInCsvRow(JqValue value) => Message($"{Describe(value)} is not valid in a csv row");
+
+    public static JqValue CannotBeEscapedForShell(JqValue value) => Message($"{Describe(value)} can not be escaped for shell");
+
+    public static JqValue NotValidBase64(JqValue text) => Message($"{Describe(text)} is not valid base64 data");
+
+    public static JqValue TrailingBase64Byte(JqValue text) => Message($"{Describe(text)} trailing base64 byte found");
+
     /// <summary><c>T(v) (D(v))</c>, as in <c>object ({"a":1})</c>.</summary>
     public static string Describe(JqValue value) => $"{value.TypeName} ({Dump(value)})";
 
     /// <summary>
     /// The error dump D(v) (§10.1): the canonical text; if longer than 29 UTF-8 bytes, its longest
-    /// prefix of at most 25 bytes ending on a code point boundary, then "...".
+    /// prefix of at most 25 bytes ending on a code point boundary, then "..." and the value's closing delimiter.
     /// </summary>
     public static string Dump(JqValue value) => ValueText.ToJsonTruncated(value, DumpLimit, DumpKeep);
 

@@ -238,18 +238,21 @@ public class ValueTextTests
 
     [Theory]
     [InlineData("[1,2]", "[1,2]")]
-    [InlineData("[1,2,3,4,5,6,7,8,9,10,11,12,13]", "[1,2,3,4,5,6,7,8,9,10,11,...")]
-    [InlineData("\"very-long-long-long-long-string\"", "\"very-long-long-long-long...")]
+    [InlineData("[1,2,3,4,5,6,7,8,9,10,11,12,13]", "[1,2,3,4,5,6,7,8,9,10,11,...]")]
+    [InlineData("{\"aaaaaaaaaaaaaaaaaaaaaaaaaa\":1}", "{\"aaaaaaaaaaaaaaaaaaaaaaa...}")]
+    // A cut value ends with "..." and its own closing delimiter, not those of what it contains.
+    [InlineData("\"very-long-long-long-long-string\"", "\"very-long-long-long-long...\"")]
+    [InlineData("[\"very-long-long-long-long-string\"]", "[\"very-long-long-long-lon...]")]
     // 27 characters: 29 bytes with the quotes, not cut; one more is cut.
     [InlineData("\"abcdefghijklmnopqrstuvwxyz0\"", "\"abcdefghijklmnopqrstuvwxyz0\"")]
-    [InlineData("\"abcdefghijklmnopqrstuvwxyz01\"", "\"abcdefghijklmnopqrstuvwx...")]
+    [InlineData("\"abcdefghijklmnopqrstuvwxyz01\"", "\"abcdefghijklmnopqrstuvwx...\"")]
     // Two-byte é: the quote and 12 of them make 25 bytes.
-    [InlineData("\"ééééééééééééééééééé\"", "\"éééééééééééé...")]
-    [InlineData("\"a😀😀😀😀😀😀😀\"", "\"a😀😀😀😀😀...")]
+    [InlineData("\"ééééééééééééééééééé\"", "\"éééééééééééé...\"")]
+    [InlineData("\"a😀😀😀😀😀😀😀\"", "\"a😀😀😀😀😀...\"")]
     public void Error_dump(string json, string expected)
     {
         var dump = Errors.Dump(V(json));
         Assert.Equal(expected, dump);
-        Assert.True(Encoding.UTF8.GetByteCount(dump) <= 29 || dump.EndsWith("...") && Encoding.UTF8.GetByteCount(dump) <= 28);
+        Assert.True(Encoding.UTF8.GetByteCount(dump) <= 29);
     }
 }
