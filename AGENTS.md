@@ -109,7 +109,7 @@ Only `src/JQLite` outside `Core` knows .NET's JSON types:
   `Host/TimeProviderClock.cs` adapts a `TimeProvider` to `IClock` (no zone abbreviations: `%Z`
   prints the offset).
 - `Jq.Parse(expression, JqOptions? options)` returns a `JqExpression` (sealed, parse once, evaluate
-  many times, thread-safe). `Jq.Evaluate` / `JqExpression.Evaluate` return all outputs (buffered);
+  many times, thread-safe); `Jq.Parse(expression, resolver)` is the same with only a `Resolver`. `Jq.Evaluate` / `JqExpression.Evaluate` return all outputs (buffered);
   the overload with `Func<JsonElement, bool> onResult` streams them and stops when it returns
   false. The JSONL `Jq.EvaluateAsync` helpers take the expression as a string or a
   `JqExpression`; each value is evaluated alone (jqlite has no `input`/`inputs`, spec §13).

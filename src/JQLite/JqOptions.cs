@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace JQLite;
 
 /// <summary>What an expression takes from its host besides the input and the variables: modules, <c>$ENV</c>, the clock, the depth limit and the handlers of <c>debug</c> and <c>stderr</c>.</summary>
-/// <remarks>Options are read when the expression is parsed (<see cref="Jq.Parse"/>) and apply to every evaluation of it.</remarks>
+/// <remarks>Options are read when the expression is parsed (<see cref="Jq.Parse(string, JqOptions?)"/>) and apply to every evaluation of it.</remarks>
 public sealed class JqOptions
 {
     /// <summary>Resolves <c>import</c> and <c>include</c> directives and <c>modulemeta</c>; without one, no module exists.</summary>

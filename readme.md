@@ -522,7 +522,6 @@ that make the profile portable. Those you are most likely to notice:
 - The package is now `JQLite` (it was `Devlooped.JQSharp`), and its namespace is `JQLite` (it was `Devlooped`).
 - `Jq.Evaluate` and `JqExpression.Evaluate` return an `IReadOnlyList<JsonElement>`; the new 
   callback overload streams results.
-- `Jq.Parse(expression, resolver)` is now `Jq.Parse(expression, new JqOptions { Resolver = resolver })`.
 - `JqParseException` and `JqHaltException` derive from `JqException`, which is no longer sealed.
 - An empty expression means `.`.
 - Unknown functions, labels and modules fail at `Jq.Parse` rather than when evaluated.
