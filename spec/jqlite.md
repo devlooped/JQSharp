@@ -2,7 +2,7 @@
 
 jqlite is the profile of the [jq](https://jqlang.org) language that JQSharp implements and that its ports (JavaScript/TypeScript, Python, Java, Go, Rust) reproduce. This file is normative: a port is written from it, from `spec/prelude.jq` (the builtins written in jqlite, assembled from §9) and from the conformance corpus `spec/tests/` (§14), without reading the C# code or the jq manual.
 
-Inside the profile jqlite behaves as **jq 1.8**, except for the differences listed in §13. "jq" below always means jq 1.8.
+Inside the profile jqlite behaves as **jq 1.8**, except for the differences listed in §13. "jq" below always means jq 1.8; every example of this file was checked against jq 1.8.2 and matches it unless it illustrates a difference of §13.
 
 Contents: [1 Conventions](#1-conventions) · [2 Lexical grammar](#2-lexical-grammar) · [3 Syntax](#3-syntax) · [4 Values](#4-values) · [5 Text](#5-text) · [6 Evaluation](#6-evaluation) · [7 Constructs](#7-constructs) · [8 Paths and assignment](#8-paths-and-assignment) · [9 Builtins](#9-builtins) · [10 Errors](#10-errors) · [11 Limits](#11-limits) · [12 Host interface](#12-host-interface) · [13 Differences from jq](#13-differences-from-jq-18) · [14 Conformance](#14-conformance)
 
@@ -38,7 +38,7 @@ Rules:
 - Keywords are reserved as function names and bare identifiers. They are allowed after `.` (`FIELD`: `.end`), as object keys (`{if: 1}`), as variable and label names (`$then`, `label $if`), and as keys of object patterns.
 - `null`, `true`, `false` are identifiers that always denote the literals; they cannot be redefined. `not` is an ordinary function (§9).
 - `.` followed by a digit starts a `NUMBER` (`.5`). `1.` is a number. `.e0` is a `FIELD`.
-- In an expression, the token `?//` is equivalent to `?` followed by `//`.
+- `?//` is valid only between the patterns of a binding (§3.2); anywhere else it is a syntax error (`.a?//1` fails; write `.a? // 1`).
 - A `NUMBER` is converted to the nearest double (round half to even); overflow gives ±Infinity, underflow gives 0.
 
 **Strings.** Inside `"…"` every code point except `"` and `\` stands for itself (raw line breaks included). Escapes:
@@ -47,7 +47,7 @@ Rules:
 | --- | --- |
 | `\"` `\\` `\/` | `"`, `\`, `/` |
 | `\b` `\f` `\n` `\r` `\t` | U+0008, U+000C, U+000A, U+000D, U+0009 |
-| `\uXXXX` | 4 hex digits (any case). A high surrogate escape immediately followed by a low surrogate escape is one code point; any other surrogate becomes U+FFFD. |
+| `\uXXXX` | 4 hex digits (any case). A high surrogate escape immediately followed by a low surrogate escape is one code point; any other surrogate becomes U+FFFD (§13). |
 | `\(` *Pipe* `)` | interpolation (§7.12) |
 
 Any other escape is the syntax error `Invalid escape`.
@@ -64,17 +64,17 @@ From loosest to tightest. Assoc: L left, R right, N non-associative (chaining is
 | --- | --- | --- | --- |
 | 1 | `\|` | R | `def …;`, `label $x \|` and `… as $x \|` bodies extend to the end of the enclosing pipe |
 | 2 | `,` | L | |
-| 3 | *Alt* `as` *Patterns* `\|` | — | the source of a binding is a level-4 expression |
+| 3 | *Alt* `as` *Patterns* `\|` | — | the source of a binding, and of `reduce`/`foreach`, is a level-4 expression: everything that binds tighter than `,` |
 | 4 | `//` | R | |
 | 5 | `=` `\|=` `+=` `-=` `*=` `/=` `%=` `//=` | N | |
 | 6 | `or` | L | |
 | 7 | `and` | L | |
 | 8 | `==` `!=` `<` `<=` `>` `>=` | N | |
 | 9 | `+` `-` | L | |
-| 10 | unary `-` | — | its operand is a level-11 expression: `-2 * 3` is `-(2 * 3)`, `2 * -3 * 4` is `2 * -(3 * 4)` |
-| 11 | `*` `/` `%` | L | |
+| 10 | `*` `/` `%` | L | |
+| 11 | unary `-` | — | its operand is a postfix expression or another unary minus: `-1 / 2` is `(-1) / 2` |
 | 12 | postfix `?`, `.name`, `."s"`, `[…]`, `.[…]` | — | |
-| 13 | terms | — | literals, `.`, `..`, `$x`, calls, `( )`, `[ ]`, `{ }`, `reduce`, `foreach`, `if`, `try`, `break` |
+| 13 | terms | — | literals, `.`, `..`, `$x`, calls, `( )`, `[ ]`, `{ }`, `reduce`, `foreach`, `if`, `try`, `break`; the operands of `try` and `catch` are level-11 expressions |
 
 Examples that follow from it:
 
@@ -84,8 +84,13 @@ Examples that follow from it:
 | `1 + 2 as $x \| -$x` | `(1 + 2) as $x \| -$x` | `-3` |
 | `[-1 as $x \| 1, $x]` | `[(-1) as $x \| (1, $x)]` | `[1,-1]` |
 | `1 // 2 == 2` | `1 // (2 == 2)` | `1` |
-| `.a = .b // 1` | `(.a = .b) // 1` | |
+| `{} \| .a = .b // 1` | `{} \| (.a = .b) // 1` | `{"a":null}` |
+| `[1 // 2 as $x \| 10]` | `[(1 // 2) as $x \| 10]` | `[10]` |
+| `reduce 1, 2 as $x (0; . + $x)` | | syntax error (the source stops before `,`) |
+| `try (2 * -3 / "a") catch .` | `(2 * (-3)) / "a"` | `"number (-6) and string (\"a\") cannot be divided"` |
 | `1 + try 2 catch 3 + 4` | `1 + (try 2 catch 3) + 4` | `7` |
+| `try 1 * 2 catch 3` | `(try 1) * 2`, then `catch`: syntax error | |
+| `try -.? catch .` on `"a"` | `try (-(.?)) catch .` | `"string (\"a\") cannot be negated"` |
 | `def f: 1; f \| f, 2` | `def f: 1; (f \| (f, 2))` | `1, 2` |
 
 ### 3.2 Grammar (EBNF)
@@ -117,7 +122,7 @@ Compare     = Add (CmpOp Add)?
 CmpOp       = '==' | '!=' | '<' | '<=' | '>' | '>='
 Add         = Mul (('+' | '-') Mul)*
 Mul         = Unary (('*' | '/' | '%') Unary)*
-Unary       = '-' Mul | Postfix
+Unary       = '-' Unary | Postfix
 Postfix     = Term Suffix*
 Suffix      = '?' | FIELD | '.' STRING | '.'? '[' Index? ']'
 Index       = Pipe | Pipe? ':' Pipe?                  (Pipe alone: index; with ':' a slice; nothing: iterate)
@@ -162,7 +167,6 @@ Static rules (checked when the program is parsed and bound; violations are synta
 - An object key that is not an identifier, keyword, variable, string or parenthesized expression is the error `May need parentheses around object key expression` (`{1+2: 3}`).
 - A parenthesized key whose expression is a number, `true`, `false` or `null` literal is the error `Cannot use <T> (<D>) as object key` (`{(0): 1}`, `. as {(true): $x} | …`).
 - `ModuleDecl` and `ConstObject` metadata must be constant objects (`Module metadata must be constant`, `Module metadata must be an object`).
-- `FORMAT` names are `text json html uri urid csv tsv sh base64 base64d` (§9.9); another name is the error `<name> is not a valid format`.
 - Program nesting is limited (§11).
 
 ### 3.3 Desugaring
@@ -191,7 +195,7 @@ The following are defined by rewriting; ports MAY implement them directly with t
 There are seven kinds: `null`, `false`, `true` (both of type `boolean`), `number`, `string`, `array`, `object`. Values are immutable; no operation observes identity.
 
 - **Numbers** are IEEE-754 binary64 doubles. NaN, +Infinity, −Infinity and −0 exist inside the engine. All arithmetic is IEEE (round half to even).
-- **Strings** are sequences of Unicode scalar values (code points U+0000–U+10FFFF, excluding surrogates). Wherever text enters the engine (program literals, the JSON reader, host strings, `implode`, `@base64d`, `@urid`), a lone surrogate or an ill-formed UTF-8 sequence becomes U+FFFD (one U+FFFD per maximal ill-formed subpart, Unicode §3.9).
+- **Strings** are sequences of Unicode scalar values (code points U+0000–U+10FFFF, excluding surrogates). Wherever text enters the engine (program literals, the JSON reader, host strings, `implode`, `@base64d`), a lone surrogate or an ill-formed UTF-8 sequence becomes U+FFFD (one U+FFFD per maximal ill-formed subpart, Unicode §3.9).
 - **Arrays** are finite sequences of values.
 - **Objects** are finite maps from strings to values that remember insertion order:
   - setting an existing key replaces its value in place; setting a new key appends it;
@@ -235,13 +239,13 @@ Binary operators on values `a` (left) and `b` (right). Any combination not liste
 | `-` | numbers: difference; arrays: `a` without every element equal to some element of `b` | `… cannot be subtracted` |
 | `*` | numbers: product; string × number or number × string: repetition (below); objects: deep merge (below) | `… cannot be multiplied` |
 | `/` | numbers: quotient, error if `b == 0` (also `0/0`); strings: `a \| split(b)` | `… cannot be divided` |
-| `%` | numbers: integer remainder (below) | `… cannot be divided` |
+| `%` | numbers: integer remainder (below) | `… cannot be divided (remainder)` |
 
 - **Division by zero**: `<T> (<D>) and <T> (<D>) cannot be divided because the divisor is zero`.
 - **Remainder** `a % b`: if `a` or `b` is NaN the result is NaN. Otherwise each is converted to a 64-bit signed integer: truncate toward zero, then clamp to [−2^63, 2^63−1] (±Infinity clamp to the ends). If the divisor is 0: `<T> (<D>) and <T> (<D>) cannot be divided (remainder) because the divisor is zero`. If the divisor is −1 the result is 0. Otherwise the result is the C remainder (`ia − ib·trunc(ia/ib)`, sign of `ia`), computed exactly and converted to a double. Example: `[(infinite, -infinite) % (1, -1, infinite)]` → `[0,0,0,0,0,-1]`.
-- **Repetition** `s * n`: if `n` is NaN or `n < 0` the result is `null`; otherwise `s` repeated `trunc(n)` times (`"x" * 0` → `""`, `"ab" * 1.5` → `"ab"`). If the result would exceed 2^31−1 UTF-8 bytes: `Repeat string result too long`.
+- **Repetition** `s * n`: if `n` is NaN or `n < 0` the result is `null`; otherwise `s` repeated `trunc(n)` times (`"x" * 0` → `""`, `"ab" * 1.5` → `"ab"`). If the result would exceed 2^31−1 UTF-8 bytes: `Repeat string result too long`; a host that cannot hold a shorter string than that (its own string length limit) reports the same error.
 - **Deep merge** `a * b` (objects): like `+`, except that when both values of a key are objects, they are merged with `*` recursively.
-- **Unary minus** `-x`: numbers only, IEEE negation; otherwise `<T> (<D>) cannot be negated`.
+- **Unary minus** `-x`: numbers only, IEEE negation (`0 | -.` is −0); otherwise `<T> (<D>) cannot be negated`.
 
 ## 5. Text
 
@@ -273,11 +277,11 @@ Used by `fromjson`, `tonumber`, module data files and the conformance harness. I
 
 - Whitespace: space, tab, LF, CR. A leading U+FEFF is ignored.
 - Literals `null`, `true`, `false`.
-- Numbers: the *numeric text* grammar `[+-]? ( [0-9]+ ('.' [0-9]*)? | '.' [0-9]+ ) ([eE] [+-]? [0-9]+)?`, plus `[+-]?` followed by `nan`, `NaN` (NaN) or `Infinity` (±Infinity). The token must be followed by whitespace, `,`, `]`, `}` or the end (`NaN1` is an error).
-- Strings: escapes as in JSON (`\" \\ \/ \b \f \n \r \t \uXXXX`, surrogates as in §2); an unescaped code point below U+0020 is an error.
+- Numbers: the *numeric text* grammar `[+-]? ( [0-9]+ ('.' [0-9]*)? | '.' [0-9]+ ) ([eE] [+-]? [0-9]+)?`, plus `[+-]?` followed by `nan` or `snan` (NaN) or `inf` or `infinity` (±Infinity), these words in any ASCII case. The token must be followed by whitespace, `,`, `]`, `}`, `:`, `"` or the end (`NaN1` is an error).
+- Strings: escapes as in JSON (`\" \\ \/ \b \f \n \r \t \uXXXX`, surrogates as in §2, a lone one becomes U+FFFD); an unescaped code point below U+0020 is an error.
 - Duplicate object keys: the later value replaces the earlier one, at the earlier position.
 - Containers nested deeper than 10000 levels: the error `Exceeds depth limit for parsing`.
-- `fromjson` requires exactly one value (only whitespace around it).
+- `fromjson` requires exactly one value (only whitespace around it): no value is `Expected JSON value`, more than one is `Unexpected extra JSON values`.
 - Errors: `<reason> (while parsing '<text>')` where `<text>` is the whole input string and `<reason>` is implementation-defined text (jq adds a line and column).
 
 ## 6. Evaluation
@@ -294,13 +298,13 @@ Besides producing outputs, evaluation may stop with one of three signals. A sign
 
 | Signal | Raised by | Handled by |
 | --- | --- | --- |
-| `Error(v)` | `error`, failed operations (§10) | `try … catch`, `?`, `//` (its left side), `?//` (all alternatives but the last) |
+| `Error(v)` | `error`, failed operations (§10) | `try … catch`, `?`, `?//` (all alternatives but the last) |
 | `Break(l)` | `break $name` | the label instance `l` it names (§7.15) |
 | `Halt(v?, code)` | `halt`, `halt_error` | the host only |
 
 Outputs produced before a signal are kept.
 
-**Errors of the consumer are not errors of the producer.** A construct that handles errors (`try`, `?`, `//`, `?//`) handles only errors raised while evaluating its own operand, never an error raised by whatever consumes the outputs of that operand. Example: `"x" | try ((try . catch "too much") | error) catch "right"` → `"right"`.
+**Errors of the consumer are not errors of the producer.** A construct that handles errors (`try`, `?`, `?//`) handles only errors raised while evaluating its own operand, never an error raised by whatever consumes the outputs of that operand. Example: `"x" | try ((try . catch "too much") | error) catch "right"` → `"right"`.
 
 Note: the reference interpreter is a push-based tree walker, `Eval(node, env, input, path, emit) → Signal?`, where `emit(value, path)` returns the consumer's signal; an error-handling construct tells its operand's own errors from the consumer's by marking the signals that come back from `emit`.
 
@@ -336,7 +340,7 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 - Arithmetic and comparisons: §4.4, §4.2, §4.3, order §6.3.
 - `a and b`: for each output `x` of `a`: if `x` is false, output `false`; otherwise for each output `y` of `b`, output the truthiness of `y`. `a or b`: for each `x` of `a`: if `x` is true, output `true`; otherwise for each `y` of `b`, output its truthiness. The right side is not evaluated when the left decides (`false and error("x")` → `false`).
 - `not`: `if . then false else true end`.
-- `a // b`: outputs the true outputs of `a`, as they come. An error raised by `a` stops `a` and is discarded. If `a` produced no true output, outputs `b`. Examples: `(false, null, 1) // 42` → `1`; `[(1, error("x"), 2) // 3]` → `[1]`; `(null, error("x")) // 3` → `3`.
+- `a // b`: outputs the true outputs of `a`, as they come; if `a` produced no true output, the outputs of `b`. Errors raised by `a` propagate. Examples: `[(false, null, 1) // 42]` → `[1]`; `[(1, null, 2) // 3]` → `[1,2]`; `[empty // 3]` → `[3]`; `[(1, error("x")) // 3]` → error `x`.
 
 ### 7.4 Conditionals
 
@@ -347,8 +351,8 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 - `E as $x | B`: for each output `v` of `E` (on the input), `B` on the same input with `$x` bound to `v`.
 - `E as P | B` with a pattern `P` destructures each `v`:
   - `$name` binds `v`;
-  - `[P1, …, Pn]` matches `Pi` against `v[i-1]` (index semantics, §7.6: `null` gives `null`, a non-array is an index error);
-  - `{key: P, …}` matches `P` against `v[key]`; `$name` binds `$name` to `v.name`; `$name: P` binds `$name` to `v.name` and also matches `P` against it; `(e): P` evaluates `e` (in the binding's scope, input `v`) and matches each output key; a key expression with several outputs gives several bindings, in order.
+  - `[P1, …, Pn]` matches `Pi` against `v[i-1]` (index semantics, §7.6: `null` gives `null`, a non-array is an index error), from the last position to the first: `1 | . as [$a, $b] | 0` fails with `Cannot index number with number (1)`;
+  - `{key: P, …}` matches `P` against `v[key]`, entries from the first to the last; `$name` binds `$name` to `v.name`; `$name: P` binds `$name` to `v.name` and also matches `P` against it; `(e): P` evaluates `e` (in the binding's scope, input `v`) and matches each output key; a key expression with several outputs gives several bindings, in order.
 - `E as P1 ?// P2 ?// … | B`: every variable of every pattern is bound in `B`; those absent from the pattern in use are `null`. For each output `v` of `E`, try `P1`: if destructuring fails, or `B` raises an error, try the next pattern with the same `v` (outputs already produced stay); errors with the last pattern propagate.
 - Scope is lexical: a variable is visible in `B` (and nested definitions there), shadowing outer bindings of the same name.
 - `$ENV` is predefined in the outermost scope: an object of the host environment variables (§12). It can be shadowed.
@@ -363,13 +367,13 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 | object | string | the value, or `null` if absent |
 | array | number | NaN → `null`; else `i = trunc(k)`, `i < 0` → `i + length`; out of range → `null` |
 | array | array | the indices at which `k` occurs as a contiguous sub-array (`[]` if none; `k = []` → `[]`) |
-| array, string, null | `{"start": s, "end": e}` | a slice (below) |
-| null | string, number | `null` |
-| anything else | | `Cannot index <T(t)> with <T(k)> (<D(k)>)`; a slice of an object, number or boolean is `Cannot index <T(t)> with object` |
+| array, string | object | a slice (below); the object must have both keys `start` and `end`, each a number or `null`, else `Array/string slice indices must be integers` |
+| null | string, number, object | `null` |
+| anything else | | `Cannot index <T(t)> with <T(k)> (<D(k)>)` (`{} \| .[0]` → `Cannot index object with number (0)`; `1 \| .[1:2]` → `Cannot index number with object ({"start":1,"end":2})`) |
 
-**Slices** `T[s:e]` (either bound may be omitted, which is `null`): with `len` the length (code points for strings): `s` null or NaN → 0, `e` null or NaN → `len`; negative bounds add `len`; clamp both to [0, `len`]; `s = floor(s)`, `e = ceil(e)`; if `e < s` then `e = s`. The result is the sub-array or substring `[s, e)`. `null` sliced is `null`. Non-number bounds: `Start and end indices of an array slice must be numbers`. Examples: `[range(10)] | .[1.2:3.5]` → `[1,2,3]`; `"abcdefghi" | .[-2:]` → `"hi"`; `"aé😀b" | .[2:3]` → `"😀"`.
+**Slices** `T[s:e]` (either bound may be omitted, which is `null`): with `len` the length (code points for strings): `s` null or NaN → 0, `e` null or NaN → `len`; negative bounds add `len`; clamp both to [0, `len`]; `s = floor(s)`, `e = ceil(e)`; if `e < s` then `e = s`. The result is the sub-array or substring `[s, e)`. `null` sliced is `null`. Bounds that are neither numbers nor null: `Array/string slice indices must be integers`. Examples: `[range(10)] | .[1.2:3.5]` → `[1,2,3]`; `"abcdefghi" | .[-2:]` → `"hi"`; `"aé😀b" | .[2:3]` → `"😀"`.
 
-`T[]` outputs the elements of an array or the values of an object (insertion order); `null` and others: `Cannot iterate over null`, `Cannot iterate over <T> (<D>)`.
+`T[]` outputs the elements of an array or the values of an object (insertion order); any other value: `Cannot iterate over <T> (<D>)` (`Cannot iterate over null (null)`).
 
 `T?`, `T[…]?`: §7.13.
 
@@ -462,22 +466,22 @@ Examples: `path(.a[0, 1])` → `["a",0], ["a",1]`; `path(..)` on `{"a":[1]}` →
 
 ### 8.2 getpath, setpath, delpaths
 
-- `getpath(p)`: `p` must be an array (`null` is `[]`), else `Path must be specified as an array`. `getpath([])` is the input; otherwise `.[p0] | getpath(rest)` with the indexing rules of §7.6 (so `null` stays `null`, and a wrong type is an index error).
-- `setpath(p; v)`: `p` must be an array. `setpath([]; v)` is `v`. Otherwise with `k = p[0]`: `child = .[k]` (§7.6, `null` if the container is `null`), then the container with `k` set to `setpath(rest; v)` applied to `child`:
+- `getpath(p)`: `p` must be an array, else `Path must be specified as an array`. `getpath([])` is the input; otherwise `.[p0] | getpath(rest)` with the indexing rules of §7.6 (so `null` stays `null`, and a wrong type is an index error).
+- `setpath(p; v)`: `p` must be an array. `setpath([]; v)` is `v`. Otherwise with `k = p[0]`: `child = .[k]` (§7.6, so its errors come first: `{} | setpath([0]; 1)` is `Cannot index object with number (0)`), then the container with `k` set to `setpath(rest; v)` applied to `child`:
 
 | Container | Key | Set |
 | --- | --- | --- |
 | object or null | string | set the key (null becomes `{}`) |
 | array or null | number | NaN: `Cannot set array element at NaN index`; `i = trunc(k)`; `i < 0` → `i + length`, still negative: `Out of bounds negative array index`; `i > 536870911`: `Array index too large`; beyond the end: pad with `null` (null becomes `[]`) |
-| array or null | slice object | bounds as §7.6 on the current length; the value must be an array (`A slice of an array can only be assigned another array`), which replaces `[s, e)` |
+| array or null | slice object | bounds as §7.6 on the current length (`Array/string slice indices must be integers`); the value must be an array (`A slice of an array can only be assigned another array`), which replaces `[s, e)` |
 | string | slice object | `Cannot update string slices` |
 | other | other | `Cannot update field at <T(k)> index of <T(container)>` |
 
-- `delpaths(ps)`: `ps` must be an array (`Paths must be specified as an array`), each element an array (`Path must be specified as an array`). No paths: the input. If one path is `[]`: `null`. Otherwise sort `ps` (§4.3), then delete level by level: group the paths by their first key; a group containing the one-element path deletes that key (more specific paths of the group are ignored); for the other groups, `child = .[k]` (index errors propagate; `null` child: nothing to do) is replaced by the deletion of the rest of the group's paths in it. The keys to delete at one level are removed all at once, relative to the container as it was:
+- `delpaths(ps)`: `ps` must be an array (`Paths must be specified as an array`), each element an array (`Path must be specified as array, not <T>`). No paths: the input. If one path is `[]`: `null`. Otherwise sort `ps` (§4.3), then delete level by level: group the paths by their first key; a group containing the one-element path deletes that key (more specific paths of the group are ignored); for the other groups, `child = .[k]` (index errors propagate; `null` child: nothing to do) is replaced by the deletion of the rest of the group's paths in it. The keys to delete at one level are removed all at once, relative to the container as it was:
   - `null`: unchanged;
   - array: numbers (NaN ignored; `trunc`; negative + length; out of range ignored) and slices (§7.6 bounds) select the elements removed; another key kind: `Cannot delete <T(k)> element of array`;
-  - object: string keys removed (absent keys ignored); another key kind: `Cannot delete field at index of <T(k)>`;
-  - other containers: `Cannot delete fields from <T>`.
+  - object: string keys removed (absent keys ignored); another key kind: `Cannot delete <T(k)> field of object`;
+  - other containers: `Cannot delete fields from <T>` (also when a path goes through a scalar: `{"a":1} | delpaths([["a","b"]])`).
 
 Example: `del(.[1], .[-6], .[2], .[-3:9])` on `[0,1,2,3,4,5,6,7,8,9]` → `[0,3,5,6,9]`.
 
@@ -506,7 +510,7 @@ So:
 
 ### 9.1 Conventions
 
-- Each builtin is identified by `name/arity`. **N** = native (implemented in the host language, listed in the native table of the port); **P** = prelude (defined in jqlite; the definition given here goes to `spec/prelude.jq` as is, in the order of this section). A port MAY implement a prelude builtin natively for speed if the results, the errors and the path behavior are identical.
+- Each builtin is identified by `name/arity`. **N** = native (implemented in the host language, listed in the native table of the port); **P** = prelude (defined in jqlite; the definition given here goes to `spec/prelude.jq` as is: first the two definitions of §8.3, then those of §9 in the order of this section). A port MAY implement a prelude builtin natively for speed if the results, the errors and the path behavior are identical.
 - Names starting with `_` are internal: callable, never listed by `builtins`.
 - In the tables, `\|` is the character `|` (Markdown escaping); `spec/prelude.jq` contains the definitions without it.
 - Natives receive their arguments as closures. Unless an entry says otherwise, a native with value arguments evaluates each argument on the input and calls itself once per combination (§6.3: first argument fastest).
@@ -527,7 +531,7 @@ So:
 | `builtins/0` | N | array of `"name/arity"` of every non-internal builtin of the port (prelude and native; `modulemeta/0` only with modules), sorted by code point | |
 | `env/0` | P | `def env: $ENV;` | |
 | `halt/0` | N | `Halt(none, 0)` | |
-| `halt_error/1` | N | `Halt(., trunc(c))` for the first output `c` | `c` not a number: `halt_error/1: number required` |
+| `halt_error/1` | N | `Halt(., trunc(c))` for the first output `c` | `c` not a number: `<T> (<D>) halt_error/1: number required`, the dump being the input's |
 | `select/1` | P | `def select(f): if f then . else empty end;` | |
 | `recurse/1` | P | `def recurse(f): def r: ., (f \| r); r;` | |
 | `recurse/2` | P | `def recurse(f; cond): def r: ., (f \| select(cond) \| r); r;` | |
@@ -555,11 +559,11 @@ So:
 | `scalars/0` | P | `def scalars: select(type \| . != "array" and . != "object");` | |
 | `infinite/0` | N | +Infinity | |
 | `nan/0` | N | NaN | |
-| `isinfinite/0` | N | ±Infinity → true | num req |
-| `isnan/0` | N | NaN → true | num req |
-| `isnormal/0` | N | finite, non-zero and not subnormal (\|x\| ≥ 2^−1022) | num req |
+| `isinfinite/0` | N | ±Infinity → true; any other value, numbers or not, → false | |
+| `isnan/0` | N | NaN → true; any other value → false | |
+| `isnormal/0` | N | a finite, non-zero, not subnormal number (\|x\| ≥ 2^−1022) → true; any other value → false | |
 | `isfinite/0` | P | `def isfinite: type == "number" and (isinfinite \| not);` (true for NaN, as in jq) | |
-| `finites/0` | P | `def finites: select(isinfinite or isnan \| not);` | |
+| `finites/0` | P | `def finites: select(isfinite);` (keeps NaN, as in jq) | |
 | `normals/0` | P | `def normals: select(isnormal);` | |
 
 ### 9.4 Objects, arrays and collections
@@ -568,7 +572,7 @@ So:
 | --- | --- | --- | --- |
 | `keys/0` | N | object: keys sorted by code point; array: `[0, …, length−1]` | `<T> (<D>) has no keys` |
 | `keys_unsorted/0` | N | as `keys`, objects in insertion order | idem |
-| `has/1` | N | object & string: key present; array & number: NaN → false, else `0 ≤ trunc(k) < length` | `Cannot check whether <T> has a <T(k)> key` |
+| `has/1` | N | object & string: key present; array & number: NaN → false, else `0 ≤ trunc(k) < length`; null → false | `Cannot check whether <T> has a <T(k)> key` |
 | `in/1` | P | `def in(xs): . as $x \| xs \| has($x);` | |
 | `contains/1` | N | `a \| contains(b)`: strings: `b` is a substring; arrays: every element of `b` is contained (recursively) by some element of `a`; objects: every key of `b` is in `a` and `a[k]` contains `b[k]`; other kinds: equality. At the top level the kinds must be equal (`true` and `false` are different kinds); inside, a kind mismatch is `false` | `<T> (<D>) and <T> (<D>) cannot have their containment checked` |
 | `inside/1` | P | `def inside(xs): . as $x \| xs \| contains($x);` | |
@@ -589,8 +593,8 @@ So:
 | `skip/2` | N | as `def skip($n; f): if $n > 0 then foreach f as $item ($n; . - 1; if . < 0 then $item else empty end) elif $n == 0 then f else error("skip doesn't support negative count") end;` passing paths. *loop* | |
 | `while/2` | N | as `def while(cond; update): def _while: if cond then ., (update \| _while) else empty end; _while;` *loop* | |
 | `until/2` | N | as `def until(cond; update): def _until: if cond then . else (update \| _until) end; _until;` *loop* | |
-| `repeat/1` | N | as `def repeat(f): def _repeat: ., (f \| _repeat); _repeat;` *loop* | |
-| `reverse/0` | P | `def reverse: if type == "string" then explode \| reverse \| implode else [.[length - 1 - range(0; length)]] end;` | |
+| `repeat/1` | N | as `def repeat(f): def _repeat: f, _repeat; _repeat;`: the outputs of `f` on the **same input**, again and again (jq 1.8.2: `[limit(4; 1 \| repeat(. + 1))]` → `[2,2,2,2]`, `[limit(4; repeat(1, 2))]` → `[1,2,1,2]`). *loop* | |
+| `reverse/0` | P | `def reverse: [.[length - 1 - range(0; length)]];` (null → `[]`; `""` → `[]`; another string: an index error, as in jq) | |
 | `sort/0` | N | stable sort by `compare` (§4.3) | `<T> (<D>) cannot be sorted, as it is not an array` |
 | `_sort_by_impl/1` | N | input and `keys` arrays of equal length: the input stably sorted by the corresponding keys | `<T> (<D>) and <T> (<D>) cannot be sorted, as they are not both arrays` |
 | `_group_by_impl/1` | N | as `_sort_by_impl`, then consecutive elements with equal keys grouped: an array of arrays | idem |
@@ -599,7 +603,7 @@ So:
 | `sort_by/1` | P | `def sort_by(f): _sort_by_impl(map([f]));` (several outputs of `f` sort by the tuple) | |
 | `group_by/1` | P | `def group_by(f): _group_by_impl(map([f]));` | |
 | `unique_by/1` | P | `def unique_by(f): [group_by(f)[] \| .[0]];` | |
-| `unique/0` | P | `def unique: unique_by(.);` | |
+| `unique/0` | N | `sort`, then consecutive equal elements kept once | as `sort` |
 | `min_by/1` | P | `def min_by(f): _min_by_impl(map([f]));` | |
 | `max_by/1` | P | `def max_by(f): _max_by_impl(map([f]));` | |
 | `min/0` | N | as `_min_by_impl` with the elements as keys | `<T> (<D>) and <T> (<D>) cannot be iterated over` (the input twice) |
@@ -608,7 +612,7 @@ So:
 | `flatten/1` | P | `def flatten($x): if $x < 0 then error("flatten depth must not be negative") else _flatten($x) end;` | |
 | `flatten/0` | P | `def flatten: _flatten(-1);` | |
 | `to_entries/0` | P | `def to_entries: [keys_unsorted[] as $k \| {key: $k, value: .[$k]}];` | |
-| `from_entries/0` | P | `def from_entries: reduce .[] as $x ({}; . + {($x \| if .key == null then .k // .name // .Name // .K // .Key else .key end \| if type == "string" then . else tojson end): ($x \| if has("value") then .value elif has("v") then .v else .Value end)});` | |
+| `from_entries/0` | P | `def from_entries: reduce .[] as $x ({}; . + {($x \| .key // .Key // .name // .Name): ($x \| if has("value") then .value else .Value end)});` (a key that is not a string is an error, `false` and `null` keys fall through to the next name) | |
 | `with_entries/1` | P | `def with_entries(f): to_entries \| map(f) \| from_entries;` | |
 | `transpose/0` | P | `def transpose: [range(0; map(length) \| max // 0) as $i \| [.[][$i]]];` | |
 | `combinations/0` | P | `def combinations: if length == 0 then [] else .[0][] as $x \| (.[1:] \| combinations) as $w \| [$x] + $w end;` | |
@@ -645,8 +649,8 @@ So:
 | `tonumber/0` | N | numbers unchanged; strings: the whole string must match the numeric text of §5.3 (no whitespace): `"+5.43"` → `5.43`, `".89"` → `0.89`, `"nan"` → NaN, `" 4"` → error | `<T> (<D>) cannot be parsed as a number` |
 | `explode/0` | N | array of code points | `explode input must be a string` |
 | `implode/0` | N | string of the code points `trunc(n)`; values outside [0, 0x10FFFF] or in [0xD800, 0xDFFF] become U+FFFD | non-array: `implode input must be an array`; non-number or NaN element: `<T> (<D>) can't be imploded, unicode codepoint needs to be numeric` |
-| `ascii_downcase/0` | N | `A`–`Z` → `a`–`z`, other code points unchanged | `ascii_downcase input must be a string` |
-| `ascii_upcase/0` | N | `a`–`z` → `A`–`Z` | `ascii_upcase input must be a string` |
+| `ascii_downcase/0` | N | `A`–`Z` → `a`–`z`, other code points unchanged | `explode input must be a string` |
+| `ascii_upcase/0` | N | `a`–`z` → `A`–`Z` | `explode input must be a string` |
 | `startswith/1` | N | prefix test | non-strings: `startswith() requires string inputs` |
 | `endswith/1` | N | suffix test | `endswith() requires string inputs` |
 | `ltrimstr/1` | P | `def ltrimstr($x): if startswith($x) then .[($x \| length):] else . end;` | |
@@ -654,16 +658,16 @@ So:
 | `trimstr/1` | P | `def trimstr($x): ltrimstr($x) \| rtrimstr($x);` | |
 | `split/1` | N | split on each non-overlapping occurrence of the separator, left to right; `""` input → `[]`; `""` separator → one string per code point | `split input and separator must be strings` |
 | `join/1` | P | `def join($x): reduce .[] as $i (null; (if . == null then "" else . + $x end) + ($i \| if . == null then "" elif type == "boolean" or type == "number" then tojson else . end)) // "";` | |
-| `_strindices/1` | N | the offsets (code points) of every occurrence of the needle in the input, overlapping occurrences included, ascending; `""` needle → `[]` | non-strings: `<T> (<D>) cannot be searched from` |
+| `_strindices/1` | N | the offsets (code points) of every occurrence of the needle in the input, overlapping occurrences included, ascending; `""` needle → `[]` | input: `<T> (<D>) cannot be searched, as it is not a string`; needle: `<T> (<D>) is not a string` |
 | `indices/1` | P | `def indices($i): if type == "array" and ($i \| type) == "array" then .[$i] elif type == "array" then .[[$i]] elif type == "string" and ($i \| type) == "string" then _strindices($i) else .[$i] end;` | |
 | `index/1` | P | `def index($i): indices($i) \| .[0];` | |
 | `rindex/1` | P | `def rindex($i): indices($i) \| .[-1:][0];` | |
 | `test/2` | N | §9.10: whether the regex matches (`re` fastest, then `flags`) | §9.10 |
 | `match/2` | N | §9.10: one match object per match (`re` fastest, then `flags`) | §9.10 |
 | `test/1` | P | `def test($val): ($val \| type) as $vt \| if $vt == "string" then test($val; null) elif $vt == "array" and ($val \| length) > 1 then test($val[0]; $val[1]) elif $vt == "array" and ($val \| length) > 0 then test($val[0]; null) else error($vt + " not a string or array") end;` | |
-| `match/1` | P | the same definition with `match` | |
+| `match/1` | P | `def match($val): ($val \| type) as $vt \| if $vt == "string" then match($val; null) elif $vt == "array" and ($val \| length) > 1 then match($val[0]; $val[1]) elif $vt == "array" and ($val \| length) > 0 then match($val[0]; null) else error($vt + " not a string or array") end;` | |
 | `capture/2` | P | `def capture(re; mods): match(re; mods) \| [.captures[] \| select(.name != null) \| {key: .name, value: .string}] \| from_entries;` | |
-| `capture/1` | P | the definition of `test/1` with `capture` | |
+| `capture/1` | P | `def capture($val): ($val \| type) as $vt \| if $vt == "string" then capture($val; null) elif $vt == "array" and ($val \| length) > 1 then capture($val[0]; $val[1]) elif $vt == "array" and ($val \| length) > 0 then capture($val[0]; null) else error($vt + " not a string or array") end;` | |
 | `scan/2` | P | `def scan($re; $flags): match($re; "g" + $flags) \| if (.captures \| length) > 0 then [.captures[].string] else .string end;` | |
 | `scan/1` | P | `def scan($re): scan($re; null);` | |
 | `split/2` | P | `def split($re; flags): . as $s \| [match($re; "g" + flags) \| (.offset, .offset + .length)] as $ms \| [0] + $ms + [$s \| length] \| [range(0; length; 2) as $i \| $s[.[$i]:.[$i + 1]]];` | |
@@ -692,9 +696,9 @@ def sub($re; str; $flags): . as $in
 | Builtin | K | Meaning | Errors |
 | --- | --- | --- | --- |
 | `now/0` | N | current time from the host clock, seconds since the Unix epoch (fraction allowed) | |
-| `gmtime/0` | N | broken-down UTC time of a number of seconds (§9.12) | `gmtime() requires a number`; non-finite or \|t\| ≥ 2^53: `error converting number of seconds since epoch to datetime` |
-| `localtime/0` | N | the same in the host zone: `gmtime` of `t + offset(t)` | `localtime() requires a number`; idem |
-| `mktime/0` | N | seconds since the epoch of a broken-down time read as UTC (§9.12), an integer | not an array: `mktime requires array of 6 numbers`; a non-number element: `mktime requires parsed datetime inputs` |
+| `gmtime/0` | N | broken-down UTC time of a number of seconds (§9.12) | `gmtime requires numeric inputs`; non-finite or \|t\| ≥ 2^53: `error converting number of seconds since epoch to datetime` |
+| `localtime/0` | N | the same in the host zone: `gmtime` of `t + offset(t)` | `localtime requires numeric inputs`; idem |
+| `mktime/0` | N | seconds since the epoch of a broken-down time read as UTC (§9.12), an integer | not an array: `mktime requires array inputs`; a non-number element: `mktime requires parsed datetime inputs` |
 | `strftime/1` | N | format a number (via `gmtime`) or a broken-down time as UTC with the directives of §9.12 | input neither: `strftime/1 requires parsed datetime inputs`; format not a string: `strftime/1 requires a string format`; directive errors |
 | `strflocaltime/1` | N | the same, a number via `localtime`, a broken-down time read as local time | `strflocaltime/1 requires parsed datetime inputs`, `strflocaltime/1 requires a string format` |
 | `strptime/1` | N | parse a string into a broken-down time (§9.12) | non-strings: `strptime/1 requires string inputs and arguments`; mismatch: `date "<input>" does not match format "<format>"` |
@@ -722,10 +726,10 @@ All natives. One-input functions take a number input (num req). Multi-input func
 | `fmin/2`, `fmax/2` | if one argument is NaN, the other; else the smaller / larger; if equal, the first |
 | `ldexp/2`, `scalbln/2` | `x · 2^trunc(e)`, correctly rounded (including subnormal results) |
 | `logb/0` | the unbiased binary exponent of `x` as a number (subnormals included); `0` → −Infinity; ±Infinity → +Infinity; NaN → NaN |
-| `frexp/0` | `[m, e]` with `x = m · 2^e` and `0.5 ≤ \|m\| < 1`; `0` → `[0, 0]`; ±Infinity → `[±Infinity, 0]`; NaN → `[NaN, 0]` |
+| `frexp/0` | `[m, e]` with `x = m · 2^e` and `0.5 ≤ \|m\| < 1`; `0` → `[0, 0]`; ±Infinity → `[±Infinity, 0]`; NaN → `[NaN, 0]` (C leaves this exponent unspecified; jq 1.8.2 on Windows gives −1) |
 | `modf/0` | `[frac, int]`, both with the sign of `x` (`int = trunc(x)`); ±Infinity → `[±0, ±Infinity]`; NaN → `[NaN, NaN]` |
 
-**Library functions** (C99 / IEEE semantics, including the C99 Annex F special cases, e.g. `pow(1; nan)` = 1, `pow(-1; infinite)` = 1, `atan2(0; -0)` = π): `acos asin atan acosh asinh atanh cbrt cos cosh exp exp2 expm1 log log10 log1p log2 sin sinh tan tanh` (one input) and `atan2/2`, `pow/2`, `hypot/2` (no intermediate overflow). Results SHOULD be correctly rounded and MAY differ in the last bit between hosts; the corpus rounds them inside the programs.
+**Library functions** (C99 / IEEE semantics, including the C99 Annex F special cases, e.g. `pow(1; nan)` = 1, `pow(-1; infinite)` = 1): `acos asin atan acosh asinh atanh cbrt cos cosh exp exp2 expm1 log log10 log1p log2 sin sinh tan tanh` (one input) and `atan2/2`, `pow/2`, `hypot/2` (no intermediate overflow). Results SHOULD be correctly rounded and MAY differ in the last bit between hosts; the corpus rounds them inside the programs.
 
 **Defined by formula** (no standard library equivalent; written so they port digit for digit; `exp`, `sin`, `cos`, `log`, `pow`, `sqrt` below are the library functions above):
 
@@ -756,7 +760,7 @@ tgamma(x): if x <= 0 and floor(x) == x: return +Infinity
 lgamma(x): log(|tgamma(x)|)
 ```
 
-`π` is the double nearest π (3.141592653589793). Consequences of the formulas, kept as specified: `tgamma(x)` is +Infinity for `x` above about 141, `tgamma(infinite)` is NaN, `lgamma` overflows where `tgamma` does.
+`π` is the double nearest π (3.141592653589793).
 
 `j0/0`, `j1/0` (Numerical Recipes rational approximations):
 
@@ -784,13 +788,16 @@ j1(x): s = 1.0; a = x; if a < 0.0: a = -a; s = -1.0
        return s * sqrt(0.636619772 / a) * (p * cos(xx) - z * q * sin(xx))
 ```
 
-Operations are evaluated left to right as written, each rounded to double (no fused multiply-add, no extended precision). `j0(infinite)` and `j1(infinite)` are NaN by these formulas.
+Operations are evaluated left to right as written, each rounded to double (no fused multiply-add, no extended precision).
 
-`abs/0` is prelude: `def abs: if type == "number" and . < 0 then -. else . end;` (non-numbers are returned unchanged, `-0` stays `-0`).
+> [!NOTE]
+> Non-normative: these formulas are approximations with known weak points, kept as specified. `erf` is accurate to about 1.5e−7 only. `tgamma` overflows to +Infinity above about x = 141 (the true value is finite up to about 171.6), gives +Infinity at the poles (C gives NaN for negative integers) and NaN for +Infinity. `lgamma` is `log|tgamma|`, so it overflows where `tgamma` does, far below the true limit of `lgamma`. `j0` and `j1` give NaN for ±Infinity (C gives 0).
+
+`abs/0` is prelude: `def abs: if . < 0 then -. else . end;` (as jq 1.8.2: `-0` stays `-0`, values above all numbers such as strings are returned unchanged, `null` and booleans are below 0 and fail with `cannot be negated`).
 
 ### 9.9 Formats
 
-`@name` applied to a value `v` produces a string. Formats that say "tostring" first convert `v` with `tostring`.
+`@name` applied to a value `v` produces a string. Formats that say "tostring" first convert `v` with `tostring`. Another name: the runtime error `<name> is not a valid format` (without `@`).
 
 | Format | Result | Errors |
 | --- | --- | --- |
@@ -798,12 +805,12 @@ Operations are evaluated left to right as written, each rounded to double (no fu
 | `@json` | `v \| tojson` | |
 | `@html` | tostring, then `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `'` → `&apos;`, `"` → `&quot;` | |
 | `@uri` | tostring, UTF-8 bytes; `A-Z a-z 0-9 - _ . ~` kept, every other byte → `%XX` (uppercase hex) | |
-| `@urid` | tostring; `%XX` (hex of either case) → that byte, other code points → their UTF-8 bytes; the bytes decoded as UTF-8 (§4.1 replacement) | a `%` not followed by two hex digits: `<T> (<D>) is not a valid uri encoding` |
-| `@csv` | array required; elements joined by `,`: string → `"` + the string with `"` doubled + `"`; number → canonical text (NaN → empty); `true`/`false`; `null` → empty | non-array: `<T> (<D>) cannot be csv-formatted, only an array can be`; array/object element: `<T> (<D>) is not valid in a csv row` |
-| `@tsv` | array required; elements joined by U+0009: string with `\` → `\\`, tab → `\t`, LF → `\n`, CR → `\r`; number → canonical text (NaN → empty); `true`/`false`; `null` → empty | `… cannot be tsv-formatted, only an array can be`; `<T> (<D>) is not valid in a tsv row` |
+| `@urid` | tostring; `%XX` (hex of either case) → that byte, other code points → their UTF-8 bytes; the bytes decoded as UTF-8 | a `%` not followed by two hex digits, or bytes that are not well-formed UTF-8 (`"%FF"`): `<T> (<D>) is not a valid uri encoding` |
+| `@csv` | array required; elements joined by `,`: string → `"` + the string with `"` doubled + `"`; number → canonical text (NaN → empty); `true`/`false`; `null` → empty | non-array: `<T> (<D>) cannot be csv-formatted, only array`; array/object element: `<T> (<D>) is not valid in a csv row` |
+| `@tsv` | array required; elements joined by U+0009: string with `\` → `\\`, tab → `\t`, LF → `\n`, CR → `\r`; number → canonical text (NaN → empty); `true`/`false`; `null` → empty | `<T> (<D>) cannot be tsv-formatted, only array`; array/object element: `<T> (<D>) is not valid in a csv row` (sic) |
 | `@sh` | a non-array is treated as a one-element array; elements joined by a space: string → `'` + the string with `'` → `'\''` + `'`; number, boolean, null → canonical text | array/object element: `<T> (<D>) can not be escaped for shell` |
 | `@base64` | tostring, UTF-8 bytes, RFC 4648 base64 with `=` padding | |
-| `@base64d` | tostring; trailing `=` removed; the rest must be in `A-Z a-z 0-9 + /` and its length mod 4 must not be 1; decoded (a final group of 2 or 3 characters gives 1 or 2 bytes); the bytes decoded as UTF-8 (§4.1 replacement) | `<T> (<D>) is not valid base64 data` |
+| `@base64d` | tostring; trailing `=` removed; the rest must be in `A-Z a-z 0-9 + /` and its length mod 4 must not be 1; decoded (a final group of 2 or 3 characters gives 1 or 2 bytes); the bytes decoded as UTF-8 (§4.1 replacement) | another character: `<T> (<D>) is not valid base64 data`; length mod 4 = 1: `<T> (<D>) trailing base64 byte found` (the dump is of the converted string) |
 
 ### 9.10 Regular expressions
 
@@ -821,7 +828,7 @@ Operations are evaluated left to right as written, each rounded to double (no fu
 | quantifiers | `* + ?`, `{n}`, `{n,}`, `{n,m}` (n ≤ m ≤ 1000), each optionally followed by `?` (lazy) |
 | alternation | `a\|b` (empty alternatives allowed) |
 
-Everything else is the error `<re> is not a valid regex: <reason>` (reason implementation-defined), in particular: lookahead and lookbehind, backreferences, possessive quantifiers, atomic groups, inline flags `(?i)`, `\p{…}`, POSIX classes, `\A \z \Z \G \K \Q…\E`, `\0`, octal, `\cX`, `\u…`, `\x{…}`, a `{` or `}` that is not a quantifier, a lone `]`.
+Everything else is the error `Regex failure: <reason>` (as jq; the reason is implementation-defined), in particular: lookahead and lookbehind, backreferences, possessive quantifiers, atomic groups, inline flags `(?i)`, `\p{…}`, POSIX classes, `\A \z \Z \G \K \Q…\E`, `\0`, octal, `\cX`, `\u…`, `\x{…}`, a `{` or `}` that is not a quantifier, a lone `]`.
 
 Matching is leftmost, with Perl priority (greedy or lazy quantifiers, left alternative first). A group inside a repetition reports its last successful participation. Offsets and lengths are in code points.
 
@@ -832,7 +839,7 @@ Note for ports: engines with a different native meaning (`.` excluding `\r` in J
 | Flag | Meaning |
 | --- | --- |
 | `g` | all matches (not only the first) |
-| `i` | case-insensitive: Unicode simple case folding |
+| `i` | case-insensitive: Unicode simple case folding (`"K"` matches U+212A; `"ß"` does not match `"SS"`, §13) |
 | `x` | extended: before compiling, unescaped whitespace (U+0009–U+000D, U+0020) outside classes is removed and `#` outside classes starts a comment up to the next U+000A |
 | `n` | ignore empty matches |
 | `m`, `p` | `.` also matches U+000A (Oniguruma's "multi line") |
@@ -857,7 +864,8 @@ while p <= length(input):
 {"offset": o, "length": l, "string": s, "captures": [c1, …]}
 c = {"offset": o, "length": l, "string": s, "name": n}    one per capturing group, in order of their "(";
                                                             n is null for unnamed groups;
-                                                            a group that did not participate: offset -1, length 0, string null
+                                                            a group that did not participate: {"offset": -1, "string": null, "length": 0, "name": n}
+                                                            (this key order, as jq)
 ```
 
 Examples: `"abc" | [match(""; "g")] | length` → `4`; `"abc" | gsub(""; "-")` → `"-a-b-c-"`; `"foo bar foo" | [match("foo"; "g") | .offset]` → `[0,8]`.
@@ -871,9 +879,9 @@ A port MAY leave out the whole group: `import`, `include`, `module` and `modulem
 - `import "p" as name;` makes every exported `f/n` of `p` callable as `name::f(…)`. `include "p";` makes them callable unqualified, as if defined at that point (later definitions shadow earlier ones). Re-importing under the same alias: the later import wins.
 - `import "p" as $name;` reads a **data** module: its text is a sequence of JSON values (§5.3, separated by whitespace), bound as an array to both `$name` and `$name::name`.
 - `module {…};` attaches a metadata object to a module.
-- `modulemeta`: input a module path string (resolved as from the main program); output the module's metadata object, followed by `"deps"`: one object per import in order (`include` too), with the import's metadata keys first, then `"as"` (the alias, without `$`; absent for `include`), `"is_data"`, `"relpath"`; then `"defs"`: the exported `"name/arity"` in definition order. Errors: non-string input `modulemeta input module not a string`; resolution errors as above.
+- `modulemeta`: input a module path string (resolved as from the main program); output the module's metadata object, followed by `"deps"`: one object per import in order (`include` too), with the import's metadata keys first, then `"as"` (the alias, without `$`; absent for `include`), `"is_data"`, `"relpath"`; then `"defs"`: the exported `"name/arity"` in definition order. Errors: non-string input `modulemeta input module name must be a string`; resolution errors as above.
 
-Example: `modulemeta` on `"c"` → `{"whatever":null,"deps":[{"as":"foo","is_data":false,"relpath":"a"},{"search":"./","as":"d","is_data":false,"relpath":"d"}],"defs":["a/0","c/0"]}` (abridged).
+Example: for a module `c` with `module {"whatever":null}; import "a" as foo; include "b" {"search":"./"}; import "data" as $d; def c: 1; def aa: 2;`, `"c" | modulemeta` → `{"whatever":null,"deps":[{"as":"foo","is_data":false,"relpath":"a"},{"search":"./","is_data":false,"relpath":"b"},{"as":"d","is_data":true,"relpath":"data"}],"defs":["c/0","aa/0"]}`.
 
 ### 9.12 Broken-down time and directives
 
@@ -922,7 +930,7 @@ days(y, m, d): y = y - (1 if m <= 2 else 0)
 
 ISO week: with `iw = ((wday + 6) mod 7) + 1`, `week = floor((yday + 1 − iw + 10) / 7)`; if `week < 1` it is the last week of `year − 1` (and `%G` is `year − 1`); if `week` exceeds the weeks of `year` it is week 1 of `year + 1`. A year has 53 weeks iff `p(y) = 4` or `p(y − 1) = 3`, with `p(y) = (y + floor(y/4) − floor(y/100) + floor(y/400)) mod 7`.
 
-Another directive: `Unsupported strftime format specifier %<c>`; a final lone `%`: `Invalid format: trailing %`.
+Another directive: `Unsupported strftime format specifier %<c>`; a final lone `%`: `Invalid format: trailing %` (§13).
 
 **strptime directives.** The input is read left to right. A whitespace character in the format matches zero or more whitespace characters of the input; another literal character matches itself exactly. Before a numeric directive, input whitespace is skipped; a numeric directive reads 1 up to *n* digits and checks the range.
 
@@ -939,7 +947,7 @@ Another directive: `Unsupported strftime format specifier %<c>`; a final lone `%
 | `%Z` | a run of non-whitespace characters (read and ignored) |
 | `%%` | `%` |
 
-After the format, only whitespace may remain. Fields not read are `year` 1900, `month` 0, `mday` 0 and 0 for the time. `wday` and `yday` are computed from `year`, `month`, `mday` (`wday = (days(year, month + 1, mday) + 4) mod 7`, `yday = days(year, month + 1, mday) − days(year, 1, 1)`) unless `%a`/`%A` or `%j` read them. Another directive: `Unsupported strptime format specifier %<c>`. Any mismatch: `date "<input>" does not match format "<format>"`.
+After the format, only whitespace may remain. Fields not read are `year` 1900, `month` 0, `mday` 0 and 0 for the time. `wday` and `yday` are computed from `year`, `month`, `mday` (`wday = (days(year, month + 1, mday) + 4) mod 7`, `yday = days(year, month + 1, mday) − days(year, 1, 1)`) unless `%a`/`%A` or `%j` read them. An unknown directive is a mismatch. Any mismatch: `date "<input>" does not match format "<format>"`.
 
 Example: `"2015-03-05T23:51:47Z" | strptime("%Y-%m-%dT%H:%M:%SZ")` → `[2015,2,5,23,51,47,4,63]`.
 
@@ -947,13 +955,13 @@ Example: `"2015-03-05T23:51:47Z" | strptime("%Y-%m-%dT%H:%M:%SZ")` → `[2015,2,
 
 ### 10.1 Message rules
 
-- `<T>` is `T(v)`. `<D>` is the error dump `D(v)`: the canonical text of `v` (§5.1); if it is longer than 29 UTF-8 bytes, its longest prefix of at most 25 bytes that ends on a code point boundary, followed by `...`. Example: `"very-long-long-long-long-string" | try -. catch .` → `"string (\"very-long-long-long-long...\") cannot be negated"`.
+- `<T>` is `T(v)`. `<D>` is the error dump `D(v)`: the canonical text of `v` (§5.1); if it is longer than 29 UTF-8 bytes, its longest prefix of at most 25 bytes that ends on a code point boundary, followed by `...`. Examples: `"very-long-long-long-long-string" | try -. catch .` → `"string (\"very-long-long-long-long...\") cannot be negated"`; `[1,2,3,4,5,6,7,8,9,10,11,12,13]` dumps as `[1,2,3,4,5,6,7,8,9,10,11,...`; a 27-character string (29 bytes with its quotes) is not cut.
 - An error value is any value. `try … catch .` sees it unchanged.
 - When an error reaches the host, its message is the value itself if it is a string, else `D'(v) (not a string)` where `D'` is the full canonical text.
 
 ### 10.2 Binding and syntax errors
 
-Reported before evaluation, with line and column (§2). Their message texts are implementation-defined except:
+Reported before evaluation, with line and column (§2). Their message texts are implementation-defined except these fixed texts (placeholders filled in), which the error message MUST contain:
 
 | Message | When |
 | --- | --- |
@@ -962,7 +970,6 @@ Reported before evaluation, with line and column (§2). Their message texts are 
 | `$<alias>::<name> is not defined` | qualified variable without its data import |
 | `Cannot use <T> (<D>) as object key` | constant non-string key (§3.2) |
 | `May need parentheses around object key expression` | §3.2 |
-| `<name> is not a valid format` | unknown `@name` |
 | `Module metadata must be constant` / `… must be an object` | §3.2 |
 | `Import path must be constant` | interpolated import path |
 | `Invalid escape` | §2 |
@@ -974,22 +981,23 @@ Reported before evaluation, with line and column (§2). Their message texts are 
 | add | `<T> (<D>) and <T> (<D>) cannot be added` | §4.4 |
 | sub | `… cannot be subtracted` | |
 | mul | `… cannot be multiplied` | |
-| div | `… cannot be divided` | `/` and `%` on unsupported kinds |
+| div | `… cannot be divided` | `/` on unsupported kinds |
+| mod | `… cannot be divided (remainder)` | `%` on unsupported kinds |
 | div0 | `… cannot be divided because the divisor is zero` | `/` by 0 |
 | mod0 | `… cannot be divided (remainder) because the divisor is zero` | `%` by 0 |
 | neg | `<T> (<D>) cannot be negated` | unary `-` |
 | repeat | `Repeat string result too long` | §4.4 |
 | index | `Cannot index <T> with <T> (<D>)` | §7.6 (the dump is the key's) |
-| sliceidx | `Cannot index <T> with object` | slice of a non-sliceable value |
-| slicenum | `Start and end indices of an array slice must be numbers` | |
-| iternull | `Cannot iterate over null` | `.[]` on null |
-| iter | `Cannot iterate over <T> (<D>)` | `.[]` on a scalar |
+| slicenum | `Array/string slice indices must be integers` | §7.6 |
+| iter | `Cannot iterate over <T> (<D>)` | `.[]` on null or a scalar |
 | objkey | `Cannot use <T> (<D>) as object key` | §7.11 |
 | undefvar | `$<name> is not defined` | unbound host variable |
+| format | `<name> is not a valid format` | unknown `@name` (§9.9) |
 | path-result | `Invalid path expression with result <D>` | §8.1 |
 | path-access | `Invalid path expression near attempt to access element <D> of <D>` | §8.1 |
 | path-iter | `Invalid path expression near attempt to iterate through <D>` | §8.1 |
-| patharray | `Path must be specified as an array` | §8.2 |
+| patharray | `Path must be specified as an array` | `getpath`, `setpath` |
+| delpath | `Path must be specified as array, not <T>` | `delpaths` |
 | pathsarray | `Paths must be specified as an array` | §8.2 |
 | negidx | `Out of bounds negative array index` | §8.2 |
 | bigidx | `Array index too large` | §8.2 |
@@ -998,7 +1006,7 @@ Reported before evaluation, with line and column (§2). Their message texts are 
 | strslice | `Cannot update string slices` | §8.2 |
 | setfield | `Cannot update field at <T> index of <T>` | §8.2 |
 | delelem | `Cannot delete <T> element of array` | §8.2 |
-| delfield | `Cannot delete field at index of <T>` | §8.2 |
+| delfield | `Cannot delete <T> field of object` | §8.2 |
 | delfrom | `Cannot delete fields from <T>` | §8.2 |
 | depth | `Maximum call depth exceeded` | §11 |
 | *builtins* | the texts in the tables of §9 | |
@@ -1045,30 +1053,25 @@ What the engine needs from its host and gives back (names are the reference's, `
 
 ## 13. Differences from jq 1.8
 
-Each difference makes jqlite portable or simpler to specify; jq programs that do not depend on them behave identically.
+Each difference makes jqlite portable or simpler to specify; jq programs that do not depend on them behave identically. The jq column was observed on jq 1.8.2.
 
 | Area | jqlite | jq 1.8 | Why |
 | --- | --- | --- | --- |
-| Numbers | IEEE doubles only; canonical text §5.2 (`1e-7`, `1e+21`, `100000000000000000000`) | keeps the literal text of unmodified numbers (decNumber), prints 17 significant digits (`1e-07`) | exact in every language without a decimal library |
-| Surrogates | a lone surrogate becomes U+FFFD everywhere text enters | same in most places, host-dependent in others | one rule for UTF-16 and UTF-8 hosts |
-| Regex | the dialect of §9.10 (no lookaround, backreferences, inline flags, Unicode classes; ASCII `\d \w \s \b`; `$` only at the end) | Oniguruma Perl-NT | the only subset common to Go, Rust, JS, Java, Python, .NET; linear time |
-| Regex empty matches | the loop of §9.10 (`"abc" \| gsub(""; "-")` → `"-a-b-c-"`) | Oniguruma loop | JS/Python/.NET behavior, simple to emulate elsewhere |
+| Numbers | IEEE doubles only; canonical text §5.2 (`1e-7`, `0.00001`, `100000000000000000000`, `1e+21`); `0 \| -.` prints `-0` | keeps the literal text of numbers that are not computed (decNumber: `1e20` prints `1E+20`, `-0` and `0 \| -.` print `0`); computed numbers in C `%.17g` layout (`1e+20`, `1e-05`, `1e-07`) | exact in every language without a decimal library |
+| Surrogates | a lone surrogate becomes U+FFFD everywhere text enters, including `"\ud800"` in a program and in `fromjson` | rejects a lone `\uXXXX` surrogate escape (`Invalid \uXXXX\uXXXX surrogate pair escape`) | one rule for UTF-16 and UTF-8 hosts |
+| `break` and `try` | `try` does not catch `break`: `label $out \| try (0, break $out, 1) catch 99` → `0` | `break` is an error that `try` catches: `0, 99` | `break` is a signal of its own (§6.2) |
+| Regex | the dialect of §9.10: no lookaround, backreferences, inline flags, `\A \z`, Unicode or POSIX classes; ASCII `\d \w \s \b`; `$` only at the end of the input; `i` by simple case folding | Oniguruma Perl-NT: all of these; Unicode `\d`; `$` also before a final newline; full case folding (`"ß"` matches `"SS"`) | the only subset common to Go, Rust, JS, Java, Python, .NET; linear time |
 | Regex `l` flag | accepted, no effect | longest match | no common engine support |
-| Regex error text | `<re> is not a valid regex: <reason>` | `<re> (at offset n) is not a valid regex: <onig message>` | engine-specific |
 | Recursion | depth limit (§11), no tail calls | grows the heap, tail calls optimized | host stacks differ (Python 1000 frames) |
-| Special functions | `erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1` by the formulas of §9.8 (`erf` within 1.5e−7) | libm | JavaScript, Java, Rust have none |
-| NaN ordering | `compare` treats NaNs as equal and below all numbers: `nan < nan` is false, `nan >= nan` true; `unique`/`group_by` merge NaNs | `nan < nan` is true | a consistent total order sorts identically everywhere |
+| Special functions | `erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1` by the formulas of §9.8 | libm | JavaScript, Java, Rust have none |
+| NaN ordering | `compare` treats NaNs as equal and below all numbers: `[nan < nan, nan <= nan, nan > nan, nan >= nan]` → `[false,true,false,true]`; `unique`/`group_by` merge NaNs | `[true,true,false,false]` | a consistent total order sorts identically everywhere |
 | Unbound `$x` | host variable: runtime error `$x is not defined` | compile error | host variables (`--arg`) without declaring them |
-| Unknown `@format` | binding error | runtime error | detectable statically |
 | Path tracking | structural (§8.1): variables never carry paths; `limit`, `skip`, `last/1`, `first/1` pass paths | by value identity (a variable holding the value at the current path may pass) | no identity in values |
-| Dates | own calendar and directive tables (§9.12), English names, no locale; `gmtime` floors negative fractional seconds; strptime defaults and computed `wday`/`yday` | C library | no libc |
+| Dates | own calendar and directive tables (§9.12), English names, no locale; `gmtime` floors negative fractional seconds; strptime defaults and computed `wday`/`yday`; an unknown strftime directive is `Unsupported strftime format specifier %<c>` | C library (jq on Windows: `strftime/1: unknown system failure`) | no libc |
 | `%Z` | `UTC`, the host abbreviation, or `+hh` | C library zone names | portable |
-| `tonumber`, reader | numeric text of §5.3 plus `nan`, `NaN`, `Infinity` with an optional sign | decNumber syntax (also `inf`, any case) | one small grammar |
 | `fromjson` error text | `<reason> (while parsing '<text>')`, reason implementation-defined | jq parser messages with line and column | parser-specific |
-| Error dump | §10.1 (29/25 bytes) | the same cut, on jq's number text | stated once |
 | `builtins` | sorted, only this profile's names | unsorted, jq's names | deterministic |
 | Host variable `ENV` | rejected | `$ENV` wins | no ambiguity |
-| `as` and `reduce`/`foreach` sources | a level-4 expression (§3.1: everything above `,`) | not documented; agrees on `1 + 2 as $x`, `-1 as $x`, `reduce .[] / .[] as $x` | stated precisely |
 
 **Not in the profile.** jq 1.8 has these; JQSharp does not, so jqlite 1.0 does not (a program using one gets `name/arity is not defined`, or the host-variable error for `$__loc__`):
 
@@ -1087,13 +1090,14 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 
 - Lines starting with `#` and blank lines separate cases and are otherwise ignored.
 - A case is: one line with the program, one line with the input (JSON), then one line per expected output (JSON), ended by a blank line or the end of the file.
-- A case starting with a line `%%FAIL` (or `%%FAIL IGNORE MSG`) is: the program line, then one or more message lines. It passes iff the program fails to parse or bind (§10.2). The message lines are not compared.
+- A case starting with a line `%%FAIL` (or `%%FAIL IGNORE MSG`) is: the program line, then zero or more message lines. It passes iff the program fails to parse or bind (§10.2). Under `%%FAIL`, each message line that is one of the fixed texts of §10.2 (placeholders filled in) must be contained in the implementation's error message; other message lines (jq's own wording, such as `syntax error, unexpected …`) are not compared. Under `%%FAIL IGNORE MSG` no message is compared.
 
 ### 14.2 Running a case
 
 - The input and expected lines are read with the JSON reader (§5.3).
-- The program runs on the input with no host variables, an empty `$ENV`, `MaxDepth` 1000, and (for files using local time, `spec/tests/localtime.test`) a host zone with the fixed offset +02:00 (7200 s), no daylight saving and no abbreviation (so `%Z` prints `+02`, `%z` prints `+0200`).
-- The case passes iff the program ends normally (no uncaught error, no halt) and its outputs equal the expected values one by one, in number and order. Equality for the test is structural: numbers compared as doubles (NaN equals NaN, −0 equals 0), strings by code points, arrays elementwise, objects with **the same keys in the same insertion order** and equal values.
+- The program runs on the input with no host variables, an empty `$ENV`, `MaxDepth` 1000, and (for `spec/tests/localtime.test`) a host zone with the fixed offset +02:00 (7200 s), no daylight saving and no abbreviation (so `%Z` prints `+02`, `%z` prints `+0200`).
+- The case passes iff the program ends normally or by `halt` (not by an uncaught error or `halt_error`) and its outputs equal the expected values one by one, in number and order.
+- Each output is compared as it reads back from its canonical text (§5.1, §5.3): NaN compares as `null` and ±Infinity as ±1.7976931348623157e+308, the way jq prints them. Equality for the test is then structural: numbers compared as doubles (−0 equals 0), strings by code points, arrays elementwise, objects with **the same keys in the same insertion order** and equal values.
 - Text forms (number text, escaping, key order of `tojson`) are tested through `tojson`, `tostring` or formats inside the programs, so the harness never compares text.
 - Expected errors are tested with `try … catch .` inside the program.
 - Transcendental results are rounded inside the programs (`sin * 1e9 | round`).
