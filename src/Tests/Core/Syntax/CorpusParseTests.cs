@@ -14,6 +14,8 @@ public class CorpusParseTests
     static readonly HashSet<string> BindingFailures =
     [
         ". as $foo | break $foo",
+        "input",
+        "[inputs]",
     ];
 
     public static IEnumerable<object[]> Files()
@@ -59,7 +61,7 @@ public class CorpusParseTests
         var source = File.ReadAllText(FindPrelude());
         Assert.True(Parser.TryParseModule(source, out var program, out var error), error is null ? null : $"{error.Message} at {error.Line}:{error.Column}");
         Assert.Null(program.Body);
-        Assert.Equal(91, program.Definitions.Length);
+        Assert.Equal(102, program.Definitions.Length);
         Assert.Contains(program.Definitions, definition => definition.Name == "_modify" && definition.Params.Length == 2);
 
         // And as a program of definitions only, whose body is '.'.

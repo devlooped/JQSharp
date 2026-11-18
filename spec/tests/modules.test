@@ -279,3 +279,8 @@ import "broken" as b; 1
 
 %%FAIL IGNORE MSG
 import "bad" as $b; $b
+
+# $__loc__ in a module: the module's identity (here its file) and the line of the '$' (spec 7.5).
+include "loc"; where | [(.file | endswith("loc.jq")), .line]
+null
+[true,3]

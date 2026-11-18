@@ -97,11 +97,18 @@ public class ResolverTests
     [Theory]
     // An unbound simple $name is a host variable, numbered by first appearance.
     [InlineData("$foo, $bar, $foo", "(, $$foo $$bar $$foo)")]
-    [InlineData("$__loc__", "$$__loc__")]
+    [InlineData("$__prog__", "$$__prog__")]
     [InlineData("$ENV", "$ENV")]
     [InlineData("1 as $ENV | $ENV", "(as 1 $0 $0.0)")]
     [InlineData("def env: $ENV; env", "(def env/0#0 $ENV) env/0#0^0")]
     public void Unbound_variables_are_host_variables(string program, string bound)
+        => Assert.Equal(bound, Bind(program));
+
+    [Theory]
+    // $__loc__ is not a variable: the resolver writes its location object (§7.5).
+    [InlineData("$__loc__", "{\"file\":\"<top-level>\",\"line\":1}")]
+    [InlineData("1 as $x |\n\n$__loc__", "(as 1 $0 {\"file\":\"<top-level>\",\"line\":3})")]
+    public void The_location_is_a_literal(string program, string bound)
         => Assert.Equal(bound, Bind(program));
 
     [Fact]

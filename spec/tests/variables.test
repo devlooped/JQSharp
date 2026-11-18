@@ -65,3 +65,28 @@ null
 null
 1
 20
+
+# $__loc__ (spec 7.5): the line of its '$' and "<top-level>" in the main program.
+$__loc__
+null
+{"file":"<top-level>","line":1}
+
+{$__loc__}
+null
+{"__loc__":{"file":"<top-level>","line":1}}
+
+$__loc__ | .file |= 1
+null
+{"file":1,"line":1}
+
+%%FAIL
+. as $__loc__ | 1
+syntax error, unexpected $__loc__, expecting BINDING or '[' or '{'
+
+%%FAIL
+. as {$__loc__} | 1
+syntax error, unexpected $__loc__
+
+%%FAIL
+def f($__loc__): 1; 2
+syntax error, unexpected $__loc__, expecting IDENT or BINDING

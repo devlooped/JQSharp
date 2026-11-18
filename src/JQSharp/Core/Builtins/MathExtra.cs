@@ -51,6 +51,38 @@ static class MathExtra
     /// <summary>The larger argument; NaN gives way to the other; equal values give the first.</summary>
     public static double Max(double x, double y) => double.IsNaN(x) ? y : double.IsNaN(y) ? x : y > x ? y : x;
 
+    /// <summary>x − y when x > y, else 0; NaN when either is NaN.</summary>
+    public static double Fdim(double x, double y) => double.IsNaN(x) || double.IsNaN(y) ? double.NaN : x > y ? x - y : 0.0;
+
+    /// <summary>|x| with the sign of y (-0 negative); a NaN y counts as positive, since not every language can tell its sign.</summary>
+    public static double CopySign(double x, double y) => double.IsNaN(y) ? Math.Abs(x) : Math.CopySign(x, y);
+
+    /// <summary>The double next to x toward y, by its bits; y when they are equal.</summary>
+    public static double NextAfter(double x, double y)
+    {
+        if (double.IsNaN(x) || double.IsNaN(y))
+            return double.NaN;
+        if (x == y)
+            return y;
+        if (x == 0)
+            return y > 0 ? double.Epsilon : -double.Epsilon;
+        // Away from zero is one more in the magnitude bits, toward zero one less, whatever the sign.
+        var bits = BitConverter.DoubleToInt64Bits(x);
+        return BitConverter.Int64BitsToDouble(bits + ((y > x) == (x > 0) ? 1 : -1));
+    }
+
+    /// <summary>x · 2^e for an integer e (as ldexp); NaN for a finite e that is not an integer; an infinite e multiplies or divides by Infinity.</summary>
+    public static double Scalb(double x, double e)
+    {
+        if (double.IsNaN(x) || double.IsNaN(e))
+            return double.NaN;
+        if (double.IsPositiveInfinity(e))
+            return x * e;
+        if (double.IsNegativeInfinity(e))
+            return x / double.PositiveInfinity;
+        return Math.Truncate(e) == e ? ScaleB(x, e) : double.NaN;
+    }
+
     /// <summary>x · 2^trunc(e), correctly rounded, also to a subnormal (musl's scalbn).</summary>
     public static double ScaleB(double x, double e)
     {
@@ -87,6 +119,9 @@ static class MathExtra
         return Exponent(x);
     }
 
+    /// <summary>x · 2^−logb(x), between 1 and 2 in magnitude: twice the mantissa of frexp; 0, ±Infinity and NaN unchanged.</summary>
+    public static double Significand(double x) => x == 0 || !double.IsFinite(x) ? x : 2 * Frexp(x).Mantissa;
+
     /// <summary>[m, e] with x = m · 2^e and 0.5 ≤ |m| &lt; 1; 0 → [0, 0]; ±Infinity → [±Infinity, 0]; NaN → [NaN, 0].</summary>
     public static (double Mantissa, double Exponent) Frexp(double x)
     {
@@ -113,6 +148,9 @@ static class MathExtra
     /// </code>
     /// </remarks>
     public static double Exp2(double x) => Math.Pow(2, x);
+
+    /// <summary>10^x, as the library pow.</summary>
+    public static double Exp10(double x) => Math.Pow(10, x);
 
     /// <summary>log(1 + x), accurate near 0 (Goldberg: the rounding of 1 + x cancels out).</summary>
     /// <remarks>
@@ -189,6 +227,9 @@ static class MathExtra
 
     public static double LGamma(double x) => Math.Log(Math.Abs(TGamma(x)));
 
+    /// <summary>The sign of tgamma(x): -1 when it is negative, else 1 (lgamma_r's second element).</summary>
+    public static double GammaSign(double x) => TGamma(x) < 0 ? -1.0 : 1.0;
+
     /// <summary>Bessel J0, Numerical Recipes rational approximations.</summary>
     public static double J0(double x)
     {
@@ -234,6 +275,149 @@ static class MathExtra
         var p = 1.0 + yy * (0.183105e-2 + yy * (-0.3516396496e-4 + yy * (0.2457520174e-5 + yy * (-0.240337019e-6))));
         var q = 0.04687499995 + yy * (-0.2002690873e-3 + yy * (0.8449199096e-5 + yy * (-0.88228987e-6 + yy * 0.105787412e-6)));
         return s * Math.Sqrt(0.636619772 / a) * (p * Math.Cos(xx) - z * q * Math.Sin(xx));
+    }
+
+    /// <summary>Bessel Y0, Numerical Recipes rational approximations.</summary>
+    public static double Y0(double x)
+    {
+        if (x < 0)
+            return double.NaN;
+        if (x == 0)
+            return double.NegativeInfinity;
+        if (x < 8.0)
+        {
+            var y = x * x;
+            var n = -2957821389.0 + y * (7062834065.0 + y * (-512359803.6 + y * (10879881.29 + y * (-86327.92757 + y * 228.4622733))));
+            var d = 40076544269.0 + y * (745249964.8 + y * (7189466.438 + y * (47447.26470 + y * (226.1030244 + y))));
+            return n / d + 0.636619772 * J0(x) * Math.Log(x);
+        }
+
+        var z = 8.0 / x;
+        var yy = z * z;
+        var xx = x - 0.785398164;
+        var p = 1.0 + yy * (-0.1098628627e-2 + yy * (0.2734510407e-4 + yy * (-0.2073370639e-5 + yy * 0.2093887211e-6)));
+        var q = -0.1562499995e-1 + yy * (0.1430488765e-3 + yy * (-0.6911147651e-5 + yy * (0.7621095161e-6 + yy * (-0.934945152e-7))));
+        return Math.Sqrt(0.636619772 / x) * (p * Math.Sin(xx) + z * q * Math.Cos(xx));
+    }
+
+    /// <summary>Bessel Y1, Numerical Recipes rational approximations.</summary>
+    public static double Y1(double x)
+    {
+        if (x < 0)
+            return double.NaN;
+        if (x == 0)
+            return double.NegativeInfinity;
+        if (x < 8.0)
+        {
+            var y = x * x;
+            var n = x * (-0.4900604943e13 + y * (0.1275274390e13 + y * (-0.5153438139e11 + y * (0.7349264551e9 + y * (-0.4237922726e7 + y * 0.8511937935e4)))));
+            var d = 0.2499580570e14 + y * (0.4244419664e12 + y * (0.3733650367e10 + y * (0.2245904002e8 + y * (0.1020426050e6 + y * (0.3549632885e3 + y)))));
+            return n / d + 0.636619772 * (J1(x) * Math.Log(x) - 1.0 / x);
+        }
+
+        var z = 8.0 / x;
+        var yy = z * z;
+        var xx = x - 2.356194491;
+        var p = 1.0 + yy * (0.183105e-2 + yy * (-0.3516396496e-4 + yy * (0.2457520174e-5 + yy * (-0.240337019e-6))));
+        var q = 0.04687499995 + yy * (-0.2002690873e-3 + yy * (0.8449199096e-5 + yy * (-0.88228987e-6 + yy * 0.105787412e-6)));
+        return Math.Sqrt(0.636619772 / x) * (p * Math.Sin(xx) + z * q * Math.Cos(xx));
+    }
+
+    /// <summary>Bessel J of integer order trunc(n): upward recurrence when |x| > n, else Miller's downward recurrence (Numerical Recipes bessj).</summary>
+    public static double Jn(double order, double x)
+    {
+        if (!Order(order, x, out var n))
+            return double.NaN;
+        if (n < 0)
+            return n % 2 != 0 ? -Jn(-n, x) : Jn(-n, x);
+        if (n == 0)
+            return J0(x);
+        if (n == 1)
+            return J1(x);
+        if (x == 0)
+            return 0;
+        var a = Math.Abs(x);
+        var t = 2.0 / a;
+        double r;
+        if (a > n)
+        {
+            var p = J0(a);
+            r = J1(a);
+            for (long k = 1; k < n; k++)
+            {
+                var s = k * t * r - p;
+                p = r;
+                r = s;
+            }
+        }
+        else
+        {
+            var m = 2 * ((n + (long)Math.Floor(Math.Sqrt(160.0 * n))) / 2);
+            var even = false;
+            double p = 0.0, sum = 0.0, b = 1.0;
+            r = 0.0;
+            for (var k = m; k > 0; k--)
+            {
+                var s = k * t * b - p;
+                p = b;
+                b = s;
+                if (Math.Abs(b) > 1e10)
+                {
+                    b = b * 1e-10;
+                    p = p * 1e-10;
+                    r = r * 1e-10;
+                    sum = sum * 1e-10;
+                }
+
+                if (even)
+                    sum = sum + b;
+                even = !even;
+                if (k == n)
+                    r = p;
+            }
+
+            r = r / (2.0 * sum - b);
+        }
+
+        return x < 0 && n % 2 != 0 ? -r : r;
+    }
+
+    /// <summary>Bessel Y of integer order trunc(n), by upward recurrence from Y0 and Y1 (Numerical Recipes bessy).</summary>
+    public static double Yn(double order, double x)
+    {
+        if (!Order(order, x, out var n))
+            return double.NaN;
+        if (n < 0)
+            return n % 2 != 0 ? -Yn(-n, x) : Yn(-n, x);
+        if (n == 0)
+            return Y0(x);
+        if (n == 1)
+            return Y1(x);
+        if (x < 0)
+            return double.NaN;
+        if (x == 0)
+            return double.NegativeInfinity;
+        var t = 2.0 / x;
+        var p = Y0(x);
+        var r = Y1(x);
+        for (long k = 1; k < n; k++)
+        {
+            var s = k * t * r - p;
+            p = r;
+            r = s;
+        }
+
+        return r;
+    }
+
+    // The order of jn and yn, trunc(order); false (a NaN result) for a NaN argument or |order| >= 2^31.
+    static bool Order(double order, double x, out long n)
+    {
+        n = 0;
+        if (double.IsNaN(order) || double.IsNaN(x) || !(Math.Abs(order) < 2147483648.0))
+            return false;
+        n = (long)Math.Truncate(order);
+        return true;
     }
 
     // The unbiased exponent of a finite non-zero x, from its bits; a subnormal is scaled up first.

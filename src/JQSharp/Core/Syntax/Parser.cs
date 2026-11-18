@@ -44,6 +44,9 @@ sealed class Parser
     /// <summary>The variable that the rewriting of <c>L op= R</c> binds; '*' cannot appear in a source name.</summary>
     public const string UpdateVariable = "*update";
 
+    /// <summary><c>$__loc__</c>, the location object of §7.5: the resolver replaces it; no pattern, parameter or import binds it.</summary>
+    public const string LocationVariable = "__loc__";
+
     enum Assoc
     {
         Left,
@@ -108,6 +111,8 @@ sealed class Parser
     }
 
     static Position Pos(Token token) => new(token.Line, token.Column);
+
+    static bool IsLocation(Token token) => token.Kind == TokenKind.Variable && token.Text == LocationVariable;
 
     // Program = ModuleDecl? Import* FuncDef* Pipe?      ModuleBody = ModuleDecl? Import* FuncDef*
     Program? ParseProgram(bool module)
@@ -176,7 +181,7 @@ sealed class Parser
         {
             if (!Expect(TokenKind.As, "'as'"))
                 return null;
-            if (current.Kind is not (TokenKind.Ident or TokenKind.Variable))
+            if (current.Kind is not (TokenKind.Ident or TokenKind.Variable) || IsLocation(current))
                 return Fail<Import>(SyntaxMessages.Expected("a module name or a $name", current), current);
             alias = current.Text;
             isData = current.Kind == TokenKind.Variable;
@@ -319,7 +324,7 @@ sealed class Parser
         do
         {
             Advance();
-            if (current.Kind is not (TokenKind.Ident or TokenKind.Variable))
+            if (current.Kind is not (TokenKind.Ident or TokenKind.Variable) || IsLocation(current))
                 return Fail<List<Param>>(SyntaxMessages.Expected("a parameter name", current), current);
             parameters.Add(new Param(current.Text, current.Kind == TokenKind.Variable, Pos(current)));
             Advance();
@@ -1066,7 +1071,7 @@ sealed class Parser
         var at = Pos(token);
         switch (token.Kind)
         {
-            case TokenKind.Variable:
+            case TokenKind.Variable when !IsLocation(token):
                 Advance();
                 return new VariablePattern(token.Text, at);
             case TokenKind.LeftBracket:
@@ -1123,6 +1128,8 @@ sealed class Parser
         var at = Pos(token);
         Node? key;
         string? variable = null;
+        if (IsLocation(token))
+            return Fail<PatternEntry>(SyntaxMessages.Unexpected(token), token);
         if (token.Kind == TokenKind.Variable)
         {
             Advance();

@@ -8,7 +8,7 @@ using Path = Devlooped.Core.Runtime.Path;
 
 namespace Devlooped.Core.Builtins;
 
-/// <summary>§9.2 Core and §9.3 Types: the natives of the evaluation model itself.</summary>
+/// <summary>§9.2 Core and §9.3 Types: the natives of the evaluation model itself and of its host (§12).</summary>
 static class CoreNatives
 {
     // builtins/0: every non-internal builtin, natives and prelude, sorted by code point.
@@ -25,6 +25,16 @@ static class CoreNatives
         Add("halt", 0, static (_, _, _, _, _, _) => Signal.Halt(null, 0));
         Add("halt_error", 1, HaltError);
         Add("last", 1, Last);
+        Add("debug", 0, static (interpreter, input, _, out result, out error) =>
+        {
+            interpreter.Debug?.Invoke(input);
+            return Ok(input, out result, out error);
+        });
+        Add("stderr", 0, static (interpreter, input, _, out result, out error) =>
+        {
+            interpreter.Stderr?.Invoke(input);
+            return Ok(input, out result, out error);
+        });
         Add("infinite", 0, static (_, _, _, out result, out error) => Ok(JqValue.FromNumber(double.PositiveInfinity), out result, out error));
         Add("nan", 0, static (_, _, _, out result, out error) => Ok(JqValue.FromNumber(double.NaN), out result, out error));
         Add("isinfinite", 0, static (_, input, _, out result, out error) => Ok(JqValue.FromBool(input.Kind == JqKind.Number && double.IsInfinity(input.AsNumber())), out result, out error));

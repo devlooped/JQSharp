@@ -16,6 +16,10 @@ static class StringNatives
             ? ValueText.TryParse(input.AsString(), out result, out error)
             : Fail(Errors.OnlyStringsParse(input), out result, out error));
         Add("tonumber", 0, ToNumber);
+        Add("toboolean", 0, ToBoolean);
+        Add("format", 1, static (_, input, arguments, out result, out error) => arguments[0].Kind == JqKind.String
+            ? Formats.TryApply(arguments[0].AsString(), input, out result, out error)
+            : Fail(Errors.NotAValidFormat(arguments[0]), out result, out error));
         Add("explode", 0, static (_, input, _, out result, out error) => ValueOps.TryExplode(input, out result, out error));
         Add("implode", 0, static (_, input, _, out result, out error) => ValueOps.TryImplode(input, out result, out error));
         Add("ascii_downcase", 0, static (_, input, _, out result, out error) => AsciiCase(input, upper: false, out result, out error));
@@ -26,6 +30,9 @@ static class StringNatives
         Add("endswith", 1, static (_, input, arguments, out result, out error) => BothStrings(input, arguments[0])
             ? Ok(JqValue.FromBool(input.AsString().EndsWith(arguments[0].AsString(), StringComparison.Ordinal)), out result, out error)
             : Fail(Errors.EndsWithStrings, out result, out error));
+        Add("trim", 0, static (_, input, _, out result, out error) => Trim(input, start: true, end: true, out result, out error));
+        Add("ltrim", 0, static (_, input, _, out result, out error) => Trim(input, start: true, end: false, out result, out error));
+        Add("rtrim", 0, static (_, input, _, out result, out error) => Trim(input, start: false, end: true, out result, out error));
         Add("split", 1, static (_, input, arguments, out result, out error) => BothStrings(input, arguments[0])
             ? Ok(JqValue.FromArray(ValueOps.Split(input.AsString(), arguments[0].AsString())), out result, out error)
             : Fail(Errors.SplitStrings, out result, out error));
@@ -43,6 +50,33 @@ static class StringNatives
             return Ok(JqValue.FromNumber(number), out result, out error);
         return Fail(Errors.CannotParseNumber(input), out result, out error);
     }
+
+    static bool ToBoolean(Interpreter interpreter, JqValue input, JqValue[] arguments, out JqValue result, out JqValue error)
+    {
+        if (input.Kind is JqKind.True or JqKind.False)
+            return Ok(input, out result, out error);
+        if (input.Kind == JqKind.String && input.AsString() is "true" or "false")
+            return Ok(JqValue.FromBool(input.AsString() == "true"), out result, out error);
+        return Fail(Errors.CannotParseBoolean(input), out result, out error);
+    }
+
+    // trim, ltrim, rtrim: the Unicode White_Space code points, all of them single UTF-16 units.
+    static bool Trim(JqValue input, bool start, bool end, out JqValue result, out JqValue error)
+    {
+        if (input.Kind != JqKind.String)
+            return Fail(Errors.TrimNotString, out result, out error);
+        var text = input.AsString();
+        int from = 0, to = text.Length;
+        while (start && from < to && IsWhiteSpace(text[from]))
+            from++;
+        while (end && to > from && IsWhiteSpace(text[to - 1]))
+            to--;
+        return Ok(from == 0 && to == text.Length ? input : JqValue.FromString(text[from..to]), out result, out error);
+    }
+
+    static bool IsWhiteSpace(char c)
+        => c is (>= '\u0009' and <= '\u000D') or '\u0020' or '\u0085' or '\u00A0' or '\u1680' or (>= '\u2000' and <= '\u200A')
+            or '\u2028' or '\u2029' or '\u202F' or '\u205F' or '\u3000';
 
     static bool AsciiCase(JqValue input, bool upper, out JqValue result, out JqValue error)
     {

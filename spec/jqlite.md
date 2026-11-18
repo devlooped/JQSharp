@@ -387,7 +387,8 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 - `E as P1 ?// P2 ?// … | B`: every variable of every pattern is bound in `B`; those absent from the pattern in use are `null`. For each output `v` of `E`, try `P1`: if destructuring fails, or `B` raises an error, try the next pattern with the same `v` (outputs already produced stay); errors with the last pattern propagate. Errors raised by the consumer of the binding's outputs are not handled (§6.2).
 - Scope is lexical: a variable is visible in `B` (and nested definitions there), shadowing outer bindings of the same name.
 - `$ENV` is predefined in the outermost scope: an object of the host environment variables (§12). It can be shadowed.
-- **Host variables**: a `$name` (without `::`) that has no lexical binding and is not `$ENV` refers to a host-supplied variable, looked up when evaluated. If the host did not supply it: the error `$name is not defined`. This holds inside a module too: a module's unbound `$name` is the same host variable as in the main program (§13). A `$alias::name` must be bound by a data import (§9.11), otherwise it is a binding error.
+- `$__loc__` is the object `{"file": F, "line": L}`: `L` the line of its `$` (§2), `F` `"<top-level>"` in the main program and the module's identity in a module (§9.11). It is not a variable: `$__loc__` as a pattern, a parameter or a data import alias is a syntax error; `{$__loc__}` is `{"__loc__": $__loc__}`.
+- **Host variables**: a `$name` (without `::`) that has no lexical binding and is not `$ENV` or `$__loc__` refers to a host-supplied variable, looked up when evaluated. If the host did not supply it: the error `$name is not defined`. This holds inside a module too: a module's unbound `$name` is the same host variable as in the main program (§13). A `$alias::name` must be bound by a data import (§9.11), otherwise it is a binding error.
 
 ### 7.6 Indexing
 
@@ -566,6 +567,7 @@ So:
 | `env/0` | P | `def env: $ENV;` | |
 | `halt/0` | N | `Halt(none, 0)` | |
 | `halt_error/1` | N | `Halt(., trunc(c))` for the first output `c` | `c` not a number: `<T> (<D>) halt_error/1: number required`, the dump being the input's |
+| `halt_error/0` | P | `def halt_error: halt_error(5);` | |
 | `select/1` | P | `def select(f): if f then . else empty end;` | |
 | `recurse/1` | P | `def recurse(f): def r: ., (f \| r); r;` | |
 | `recurse/2` | P | `def recurse(f; cond): def r: ., (f \| select(cond) \| r); r;` | |
@@ -577,6 +579,13 @@ So:
 | `last/1` | N | the last output of `f`, with its path in path mode; nothing if `f` has none. Same as `reduce f as $x (null; [$x]) \| .[]?` without losing the path. *loop* | |
 | `nth/1` | P | `def nth($n): .[$n];` | |
 | `nth/2` | P | `def nth($n; f): if $n < 0 then error("nth doesn't support negative indices") else first(skip($n; f)) end;` | |
+| `have_decnum/0` | P | `def have_decnum: false;` (numbers are doubles, §4.1) | |
+| `have_literal_numbers/0` | P | `def have_literal_numbers: false;` (the text of number literals is not kept, §13) | |
+| `debug/0` | N | gives `.` to the host's debug handler (§12), then outputs `.` | |
+| `debug/1` | P | `def debug(msgs): (msgs \| debug \| empty), .;` | |
+| `stderr/0` | N | gives `.` to the host's stderr handler (§12), then outputs `.` | |
+| `input_filename/0` | P | `def input_filename: null;` (inputs are values, not files) | |
+| `input_line_number/0` | P | `def input_line_number: 0;` (inputs are values, not lines of text) | |
 
 ### 9.3 Types and selection
 
@@ -658,6 +667,8 @@ So:
 | `IN/1` | P | `def IN(s): any(s == .; .);` | |
 | `IN/2` | P | `def IN(src; s): any(src == s; .);` | |
 | `JOIN/2` | P | `def JOIN($idx; idx_expr): [.[] \| [., $idx[idx_expr]]];` | |
+| `JOIN/3` | P | `def JOIN($idx; stream; idx_expr): stream \| [., $idx[idx_expr]];` | |
+| `JOIN/4` | P | `def JOIN($idx; stream; idx_expr; join_expr): stream \| [., $idx[idx_expr]] \| join_expr;` | |
 
 ### 9.5 Paths
 
@@ -671,6 +682,9 @@ So:
 | `paths/1` | P | `def paths(node_filter): . as $dot \| paths \| select(. as $p \| $dot \| getpath($p) \| node_filter);` | |
 | `del/1` | P | `def del(f): delpaths([path(f)]);` | |
 | `pick/1` | P | `def pick(pathexps): . as $top \| reduce path(pathexps) as $p (null; setpath($p; $top \| getpath($p)));` | |
+| `tostream/0` | P | `def tostream: path(def r: (.[]? \| r), .; r) as $p \| getpath($p) \| reduce path(.[]?) as $q ([$p, .]; [$p + $q]);` (`[1,[2]]` → `[[0],1]`, `[[1,0],2]`, `[[1,0]]`, `[[1]]`) | |
+| `fromstream/1` | P | `def fromstream(f): {x: null, e: false} as $init \| foreach f as $i ($init; if .e then $init else . end \| if $i \| length == 2 then setpath(["e"]; $i[0] \| length == 0) \| setpath(["x"] + $i[0]; $i[1]) else setpath(["e"]; $i[0] \| length == 1) end; if .e then .x else empty end);` | |
+| `truncate_stream/1` | P | `def truncate_stream(stream): . as $n \| null \| stream \| . as $input \| if (.[0] \| length) > $n then setpath([0]; $input[0][$n:]) else empty end;` (`stream` runs on `null`) | |
 | `_assign/2`, `_modify/2` | P | §8.3 | |
 
 ### 9.6 Strings
@@ -681,6 +695,8 @@ So:
 | `tojson/0` | N | canonical text | |
 | `fromjson/0` | N | the JSON reader (§5.3) | non-string: `<T> (<D>) only strings can be parsed`; reader errors |
 | `tonumber/0` | N | numbers unchanged; strings: the whole string must match the numeric text of §5.3 (no whitespace): `"+5.43"` → `5.43`, `".89"` → `0.89`, `"nan"` → NaN, `" 4"` → error | `<T> (<D>) cannot be parsed as a number` |
+| `toboolean/0` | N | booleans unchanged; `"true"` → `true`, `"false"` → `false` | any other value: `<T> (<D>) cannot be parsed as a boolean` |
+| `format/1` | N | the format named by the string `f` (without `@`) applied to the input, as `@f` (§9.9): `[1,"a"] \| format("csv")` → `"1,\"a\""` | `f` not a string: `<T> (<D>) is not a valid format`; another name: `<f> is not a valid format` |
 | `explode/0` | N | array of code points | `explode input must be a string` |
 | `implode/0` | N | string of the code points `trunc(n)`; values outside [0, 0x10FFFF] or in [0xD800, 0xDFFF] become U+FFFD | non-array: `implode input must be an array`; non-number or NaN element: `<T> (<D>) can't be imploded, unicode codepoint needs to be numeric` |
 | `ascii_downcase/0` | N | `A`–`Z` → `a`–`z`, other code points unchanged | `explode input must be a string` |
@@ -690,6 +706,7 @@ So:
 | `ltrimstr/1` | P | `def ltrimstr($x): if startswith($x) then .[($x \| length):] else . end;` | |
 | `rtrimstr/1` | P | `def rtrimstr($x): if endswith($x) then .[:length - ($x \| length)] else . end;` | |
 | `trimstr/1` | P | `def trimstr($x): ltrimstr($x) \| rtrimstr($x);` | |
+| `trim/0`, `ltrim/0`, `rtrim/0` | N | the string without its leading and trailing / leading / trailing whitespace: the code points U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 (Unicode `White_Space`) | `trim input must be a string` (all three) |
 | `split/1` | N | split on each non-overlapping occurrence of the separator, left to right; `""` input → `[]`; `""` separator → one string per code point | `split input and separator must be strings` |
 | `join/1` | P | `def join($x): reduce .[] as $i (null; (if . == null then "" else . + $x end) + ($i \| if . == null then "" elif type == "boolean" or type == "number" then tojson else . end)) // "";` | |
 | `_strindices/1` | N | the offsets (code points) of every occurrence of the needle in the input, overlapping occurrences included, ascending; `""` needle → `[]` | input: `<T> (<D>) cannot be searched, as it is not a string`; needle: `<T> (<D>) is not a string` |
@@ -751,15 +768,20 @@ All natives. One-input functions take a number input (num req). Multi-input func
 | --- | --- |
 | `floor/0`, `ceil/0`, `trunc/0` | IEEE roundings (`ceil(-1.5)` → `-1`) |
 | `round/0` | nearest integer, halves away from zero (`-2.5` → `-3`); a zero result keeps the sign of `x` (`-0.4` → `-0`); ±Infinity and NaN unchanged |
-| `nearbyint/0` | nearest integer, halves to even (`2.5` → `2`); zero sign, infinities and NaN as `round` |
+| `nearbyint/0`, `rint/0` | nearest integer, halves to even (`2.5` → `2`); zero sign, infinities and NaN as `round` |
 | `fabs/0` | absolute value |
 | `sqrt/0` | IEEE correctly rounded square root |
 | `fmod/2` | C `fmod`: exact remainder with the sign of the first argument |
-| `remainder/2` | IEEE remainder: `x − n·y` with `n` the integer nearest `x/y`, halves to even; exact |
+| `remainder/2`, `drem/2` | IEEE remainder: `x − n·y` with `n` the integer nearest `x/y`, halves to even; exact |
 | `fma/3` | `x·y + z` with a single rounding |
 | `fmin/2`, `fmax/2` | if one argument is NaN, the other; else the smaller / larger; if equal (including `0` and `-0`), the first (§13) |
+| `fdim/2` | NaN if an argument is NaN; `x − y` if `x > y`; else `0` |
+| `copysign/2` | `\|x\|` with the sign of `y` (`-0` is negative); a NaN `y` counts as positive (§13) |
+| `nextafter/2`, `nexttoward/2` | NaN if an argument is NaN; `y` if `x == y`; else the double next to `x` in the direction of `y` (from `0` or `-0`, the smallest subnormal with the sign of `y`; from the largest finite double, ±Infinity) |
 | `ldexp/2`, `scalbln/2` | `x · 2^trunc(e)`, correctly rounded (including subnormal results); a NaN `e` gives NaN; an infinite `e` is the limit (`ldexp(1; infinite)` → +Infinity, `ldexp(1; -infinite)` → `0`, `ldexp(0; infinite)` → `0`, `ldexp(infinite; -infinite)` → +Infinity); any `e` beyond ±4000 acts as ±4000, which already overflows or underflows every finite non-zero `x` (§13) |
+| `scalb/2` | NaN if `x` or `e` is NaN, or `e` is finite and not an integer; `e` = +Infinity: `x · e` (`scalb(0; infinite)` → NaN); `e` = −Infinity: `x / +Infinity` (`scalb(infinite; -infinite)` → NaN); else `ldexp(x; e)` |
 | `logb/0` | the unbiased binary exponent of `x` as a number (subnormals included); `0` → −Infinity; ±Infinity → +Infinity; NaN → NaN |
+| `significand/0` | `2 · m` for the `m` of `frexp`: `x · 2^−logb(x)`, between 1 (included) and 2 in magnitude; `0`, `-0`, ±Infinity and NaN unchanged |
 | `frexp/0` | `[m, e]` with `x = m · 2^e` and `0.5 ≤ \|m\| < 1`; `0` → `[0, 0]`; ±Infinity → `[±Infinity, 0]`; NaN → `[NaN, 0]` (C leaves this exponent unspecified; jq 1.8.2 on Windows gives −1) |
 | `modf/0` | `[frac, int]`, both with the sign of `x` (`int = trunc(x)`); ±Infinity → `[±0, ±Infinity]`; NaN → `[NaN, NaN]` |
 
@@ -767,10 +789,11 @@ All natives. One-input functions take a number input (num req). Multi-input func
 
 **Defined by formula** (no standard library equivalent, or one whose accuracy differs between hosts; written so they port digit for digit; `exp`, `sin`, `cos`, `log`, `pow`, `sqrt` below are the library functions above):
 
-`exp2/0`, `expm1/0`, `log1p/0` (`expm1` by Kahan's method, `log1p` by Goldberg's: the rounding error of `exp(x)` or `1 + x` cancels out):
+`exp2/0`, `exp10/0`, `expm1/0`, `log1p/0` (`expm1` by Kahan's method, `log1p` by Goldberg's: the rounding error of `exp(x)` or `1 + x` cancels out):
 
 ```
 exp2(x):  pow(2, x)
+exp10(x): pow(10, x)
 expm1(x): u = exp(x)
           if u == 1: return x
           d = u - 1
@@ -793,7 +816,7 @@ erf(x):  if x is NaN: return NaN
 erfc(x): 1.0 - erf(x)
 ```
 
-`tgamma/0` (Lanczos, g = 7):
+`tgamma/0`, `lgamma/0`, `gamma/0`, `lgamma_r/0` (Lanczos, g = 7):
 
 ```
 tgamma(x): if x <= 0 and floor(x) == x: return +Infinity
@@ -805,12 +828,14 @@ tgamma(x): if x <= 0 and floor(x) == x: return +Infinity
            sum = c[0]; for i in 1..8: sum = sum + c[i] / (x + i)
            t = x + 7 + 0.5
            return sqrt(2 * π) * pow(t, x + 0.5) * exp(-t) * sum
-lgamma(x): log(|tgamma(x)|)
+lgamma(x):   log(|tgamma(x)|)
+gamma(x):    lgamma(x)
+lgamma_r(x): [lgamma(x), -1 if tgamma(x) < 0 else 1]
 ```
 
 `π` is the double nearest π (3.141592653589793).
 
-`j0/0`, `j1/0` (Numerical Recipes rational approximations):
+`j0/0`, `j1/0`, `y0/0`, `y1/0` (Numerical Recipes rational approximations):
 
 ```
 j0(x): a = |x|
@@ -834,12 +859,73 @@ j1(x): s = 1.0; a = x; if a < 0.0: a = -a; s = -1.0
        p = 1.0 + y * (0.183105e-2 + y * (-0.3516396496e-4 + y * (0.2457520174e-5 + y * (-0.240337019e-6))))
        q = 0.04687499995 + y * (-0.2002690873e-3 + y * (0.8449199096e-5 + y * (-0.88228987e-6 + y * 0.105787412e-6)))
        return s * sqrt(0.636619772 / a) * (p * cos(xx) - z * q * sin(xx))
+
+y0(x): if x < 0: return NaN
+       if x == 0: return -Infinity
+       if x < 8.0:
+         y = x * x
+         n = -2957821389.0 + y * (7062834065.0 + y * (-512359803.6 + y * (10879881.29 + y * (-86327.92757 + y * 228.4622733))))
+         d = 40076544269.0 + y * (745249964.8 + y * (7189466.438 + y * (47447.26470 + y * (226.1030244 + y))))
+         return n / d + 0.636619772 * j0(x) * log(x)
+       z = 8.0 / x; y = z * z; xx = x - 0.785398164
+       p = 1.0 + y * (-0.1098628627e-2 + y * (0.2734510407e-4 + y * (-0.2073370639e-5 + y * 0.2093887211e-6)))
+       q = -0.1562499995e-1 + y * (0.1430488765e-3 + y * (-0.6911147651e-5 + y * (0.7621095161e-6 + y * (-0.934945152e-7))))
+       return sqrt(0.636619772 / x) * (p * sin(xx) + z * q * cos(xx))
+
+y1(x): if x < 0: return NaN
+       if x == 0: return -Infinity
+       if x < 8.0:
+         y = x * x
+         n = x * (-0.4900604943e13 + y * (0.1275274390e13 + y * (-0.5153438139e11 + y * (0.7349264551e9 + y * (-0.4237922726e7 + y * 0.8511937935e4)))))
+         d = 0.2499580570e14 + y * (0.4244419664e12 + y * (0.3733650367e10 + y * (0.2245904002e8 + y * (0.1020426050e6 + y * (0.3549632885e3 + y)))))
+         return n / d + 0.636619772 * (j1(x) * log(x) - 1.0 / x)
+       z = 8.0 / x; y = z * z; xx = x - 2.356194491
+       p = 1.0 + y * (0.183105e-2 + y * (-0.3516396496e-4 + y * (0.2457520174e-5 + y * (-0.240337019e-6))))
+       q = 0.04687499995 + y * (-0.2002690873e-3 + y * (0.8449199096e-5 + y * (-0.88228987e-6 + y * 0.105787412e-6)))
+       return sqrt(0.636619772 / x) * (p * sin(xx) + z * q * cos(xx))
+```
+
+`jn/2`, `yn/2` (Bessel functions of integer order `n`, the first argument; `jn` by upward recurrence when `|x| > n`, else by Miller's downward recurrence, as Numerical Recipes `bessj`; `yn` by upward recurrence, as `bessy`):
+
+```
+jn(n, x): if n or x is NaN, or |n| >= 2^31 (Infinity included): return NaN
+          n = trunc(n)
+          if n < 0: return -jn(-n, x) if n is odd else jn(-n, x)
+          if n == 0: return j0(x)
+          if n == 1: return j1(x)
+          if x == 0: return 0
+          a = |x|; t = 2.0 / a
+          if a > n:
+            p = j0(a); r = j1(a)
+            for k in 1..n-1: s = k * t * r - p; p = r; r = s
+          else:
+            m = 2 * floor((n + floor(sqrt(160.0 * n))) / 2)
+            even = false; p = 0.0; r = 0.0; sum = 0.0; b = 1.0
+            for k in m down to 1:
+              s = k * t * b - p; p = b; b = s
+              if |b| > 1e10: b = b * 1e-10; p = p * 1e-10; r = r * 1e-10; sum = sum * 1e-10
+              if even: sum = sum + b
+              even = not even
+              if k == n: r = p
+            r = r / (2.0 * sum - b)
+          return -r if x < 0 and n is odd else r
+
+yn(n, x): if n or x is NaN, or |n| >= 2^31 (Infinity included): return NaN
+          n = trunc(n)
+          if n < 0: return -yn(-n, x) if n is odd else yn(-n, x)
+          if n == 0: return y0(x)
+          if n == 1: return y1(x)
+          if x < 0: return NaN
+          if x == 0: return -Infinity
+          t = 2.0 / x; p = y0(x); r = y1(x)
+          for k in 1..n-1: s = k * t * r - p; p = r; r = s
+          return r
 ```
 
 Operations are evaluated left to right as written, each rounded to double (no fused multiply-add, no extended precision).
 
 > [!NOTE]
-> Non-normative: these formulas are approximations with known weak points, kept as specified. `erf` is accurate to about 1.5e−7 only. `tgamma` overflows to +Infinity above about x = 141 (the true value is finite up to about 171.6), gives +Infinity at the poles (C gives NaN for negative integers) and NaN for +Infinity. `lgamma` is `log|tgamma|`, so it overflows where `tgamma` does, far below the true limit of `lgamma`. `j0` and `j1` give NaN for ±Infinity (C gives 0). `frexp` of ±Infinity and NaN gives the exponent 0, where C leaves it unspecified (jq 1.8.2 on Windows: −1).
+> Non-normative: these formulas are approximations with known weak points, kept as specified. `erf` is accurate to about 1.5e−7 only. `tgamma` overflows to +Infinity above about x = 141 (the true value is finite up to about 171.6), gives +Infinity at the poles (C gives NaN for negative integers) and NaN for +Infinity. `lgamma` is `log|tgamma|`, so it overflows where `tgamma` does, far below the true limit of `lgamma`. `j0`, `j1`, `y0`, `y1`, `jn` and `yn` give NaN for ±Infinity (C gives 0); `j0`, `j1`, `y0` and `y1` are accurate to about 1e−8, and so are `jn` for `|x| > n` and `yn`. `frexp` of ±Infinity and NaN gives the exponent 0, where C leaves it unspecified (jq 1.8.2 on Windows: −1).
 
 `abs/0` is prelude: `def abs: if . < 0 then -. else . end;` (as jq 1.8.2: `-0` stays `-0`, values above all numbers such as strings are returned unchanged, `null` and booleans are below 0 and fail with `cannot be negated`).
 
@@ -951,7 +1037,7 @@ days(y, m, d): y = y - (1 if m <= 2 else 0)
 - `strftime`/`strflocaltime` on a broken-down time first normalize it like `mktime` (with their own error text) and recompute `wday` and `yday`; the given `wday`/`yday` are ignored. A result out of the range of `gmtime` is `error converting number of seconds since epoch to datetime`.
 - **Local time.** The host supplies a zone: `offset(t)` in seconds east of UTC for an instant, and optionally an abbreviation. `localtime(t)` is `gmtime(t + offset(t))` (fraction kept). `strflocaltime` of a broken-down time reads it as local seconds `L` (as `mktime` does) and takes the instant `L − offset(L − offset(L))`, whose offset `%z`, `%Z` and `%s` use (this settles ambiguous and skipped local times without asking the host).
 
-**strftime directives.** Numbers are decimal, zero-padded to the width given (a negative number: `-` then the padded digits). Names are English.
+**strftime directives.** A directive is `%`, optional flags, an optional modifier and a conversion character. Numbers are decimal, padded to the width given, with zeros unless the table says spaces (a negative number: `-` then the padded digits). Names are English.
 
 | Directive | Output |
 | --- | --- |
@@ -959,19 +1045,25 @@ days(y, m, d): y = y - (1 if m <= 2 else 0)
 | `%b`, `%h` / `%B` | `Jan` … `Dec` / `January` … `December` |
 | `%c` | `%a %b %e %H:%M:%S %Y` |
 | `%C` | `floor(year / 100)`, width 2 |
-| `%d` / `%e` | day of month, width 2, zero-padded / space-padded |
-| `%G` | ISO 8601 week-based year, width 4 |
-| `%H` / `%I` | hour 00–23 / 01–12, width 2 |
+| `%d` / `%e` | day of month, width 2 / width 2 padded with spaces |
+| `%D`, `%x` | `%m/%d/%y` |
+| `%F` | `%Y-%m-%d` |
+| `%g` / `%G` | ISO 8601 week-based year mod 100 (non-negative), width 2 / the year, width 4 |
+| `%H` / `%I` | hour 0–23 / 1–12, width 2 |
+| `%k` / `%l` | hour 0–23 / 1–12, width 2 padded with spaces |
 | `%j` | `yday + 1`, width 3 |
 | `%m` | `month + 1`, width 2 |
 | `%M` | minutes, width 2 |
 | `%n` / `%t` | U+000A / U+0009 |
-| `%p` | `AM` (hours < 12) or `PM` |
+| `%p` / `%P` | `AM` / `am` (hours < 12) or `PM` / `pm` |
+| `%r` | `%I:%M:%S %p` |
+| `%R` / `%T`, `%X` | `%H:%M` / `%H:%M:%S` |
 | `%s` | seconds since the epoch of the instant (an integer: `mktime`, minus the offset for local time) |
 | `%S` | `floor(seconds)`, width 2 |
 | `%u` / `%w` | weekday 1–7 (Monday = 1) / 0–6 (Sunday = 0) |
+| `%U` / `%W` | week of the year, weeks starting on Sunday / Monday, the days before the first one in week 0: `floor((yday + 7 − wday) / 7)` / `floor((yday + 7 − (wday + 6) mod 7) / 7)`, width 2 |
 | `%V` | ISO 8601 week number, width 2 |
-| `%x` / `%X` | `%m/%d/` followed by `year mod 100` (non-negative, width 2) / `%H:%M:%S`; there is no `%y` directive |
+| `%y` | `year mod 100` (non-negative), width 2 |
 | `%Y` | year, width 4 |
 | `%z` | `+hhmm` or `-hhmm` (UTC: `+0000`) |
 | `%Z` | UTC: `UTC`; local: the host's abbreviation, else the offset as `+hh` (or `+hhmm` if the minutes are not 0) |
@@ -979,25 +1071,32 @@ days(y, m, d): y = y - (1 if m <= 2 else 0)
 
 ISO week: with `iw = ((wday + 6) mod 7) + 1`, `week = floor((yday + 1 − iw + 10) / 7)`; if `week < 1` it is the last week of `year − 1` (and `%G` is `year − 1`); if `week` exceeds the weeks of `year` it is week 1 of `year + 1`. A year has 53 weeks iff `p(y) = 4` or `p(y − 1) = 3`, with `p(y) = (y + floor(y/4) − floor(y/100) + floor(y/400)) mod 7`.
 
-Another directive: `Unsupported strftime format specifier %<c>`; a final lone `%`: `Invalid format: trailing %` (§13).
+- **Flags** (GNU), any number in any order: `_` pad with spaces, `-` do not pad, `0` pad with zeros, `^` upper case. The last of `_`, `-`, `0` decides how the numbers of a padded directive of the table are padded (`%-d` → `5`, `%_m` → ` 3`, `%0e` → `05`); it has no effect on the directives made of others (`%c %D %F %r %R %T %x %X`), nor on `%s`, `%z`, `%Z`. `^` writes the ASCII letters of the directive's output in upper case (`%^a` → `THU`, `%^c`), except for `%P`.
+- **Modifiers** (the alternative forms of a locale, which jqlite does not have): `E` before `c C x X y Y` and `O` before `d e H I m M S u U V w W y` change nothing (`%Ey` is `%y`).
+- Another directive: `Unsupported strftime format specifier %<s>`, `<s>` being what follows the `%` up to and including the first character that does not fit (`%Q`, `%Ea`, `%#a` gives `%#`; at the end of the format, what was read: `%E`); a lone `%` at the end of the format: `Invalid format: trailing %` (§13).
 
 **strptime directives.** The input is read left to right. A whitespace character in the format matches zero or more whitespace characters of the input; another literal character matches itself exactly. Before a numeric directive, input whitespace is skipped; a numeric directive reads 1 up to *n* digits and checks the range.
 
 | Directive | Reads |
 | --- | --- |
 | `%Y` | year, up to 4 digits, 0–9999 |
+| `%y` | year of the century, up to 2 digits, 0–99: 69–99 are 1969–1999, 0–68 are 2000–2068 |
 | `%m` | month, up to 2 digits, 1–12 (stored − 1) |
 | `%d`, `%e` | day, up to 2 digits, 1–31 |
-| `%H` / `%M` / `%S` | up to 2 digits, 0–23 / 0–59 / 0–60 |
+| `%H`, `%k` / `%M` / `%S` | up to 2 digits, 0–23 / 0–59 / 0–60 |
+| `%I`, `%l` | hour, up to 2 digits, 1–12 (12 is stored as 0) |
+| `%p` | `AM` or `PM`, ASCII case-insensitive |
 | `%j` | day of year, up to 3 digits, 1–366 (stored − 1) |
 | `%a`, `%A` | a weekday name, full or abbreviated, ASCII case-insensitive (full names tried first) |
+| `%u` / `%w` | weekday, 1 digit, 1–7 (7 is Sunday) / 0–6 |
 | `%b`, `%h`, `%B` | a month name, full or abbreviated, likewise |
 | `%z` | `Z`, or `+`/`-` with `hh`, `hhmm` or `hh:mm` (read and ignored) |
 | `%Z` | a run of non-whitespace characters (read and ignored) |
+| `%n`, `%t` | zero or more whitespace characters |
 | `%%` | `%` |
+| `%c`, `%D`, `%F`, `%r`, `%R`, `%T`, `%x`, `%X` | what their strftime expansion reads (`%D`: `%m/%d/%y`) |
 
-After the format, only whitespace may remain; a final lone `%` in the format is a mismatch. Fields not read are `year` 1900, `month` 0, `mday` 0 and 0 for the time. `wday` and `yday` are computed from `year`, `month`, `mday` (`wday = (days(year, month + 1, mday) + 4) mod 7`, `yday = days(year, month + 1, mday) − days(year, 1, 1)`) unless `%a`/`%A` or `%j` read them; `%j` sets `yday` only, never `month` or `mday` (`"2015-063" | strptime("%Y-%j")` → `[2015,0,0,0,0,0,3,62]`; §13). An unknown directive is a mismatch. Any mismatch: `date "<input>" does not match format "<format>"`.
-
+After the format, only whitespace may remain; a final lone `%` in the format is a mismatch. Fields not read are `year` 1900, `month` 0, `mday` 0 and 0 for the time. A `PM` read by `%p` adds 12 to an hour read by `%I` or `%l`; without them `%p` changes nothing. `wday` and `yday` are computed from `year`, `month`, `mday` (`wday = (days(year, month + 1, mday) + 4) mod 7`, `yday = days(year, month + 1, mday) − days(year, 1, 1)`) unless `%a`, `%A`, `%u`, `%w` or `%j` read them; `%j` sets `yday` only, never `month` or `mday` (`"2015-063" | strptime("%Y-%j")` → `[2015,0,0,0,0,0,3,62]`; §13). An unknown directive, flags and modifiers included, is a mismatch. Any mismatch: `date "<input>" does not match format "<format>"`.
 Example: `"2015-03-05T23:51:47Z" | strptime("%Y-%m-%dT%H:%M:%SZ")` → `[2015,2,5,23,51,47,4,63]`.
 
 ## 10. Errors
@@ -1090,12 +1189,13 @@ What the engine needs from its host and gives back (names are the reference's, `
 | In | Meaning |
 | --- | --- |
 | program text | parsed and bound once; reusable and safe to evaluate concurrently with different inputs and variables |
-| input value | converted from the host representation (§4.1 replacement for strings) |
+| input value | converted from the host representation (§4.1 replacement for strings); an evaluation has exactly one. A host API that takes several values (a JSON Lines stream, for example) runs one evaluation on each value, alone: nothing of one evaluation reaches the next |
 | host variables | a map `name → value`; names are identifiers without `$` (`[A-Za-z_][A-Za-z0-9_]*`), `ENV` is not allowed; invalid names are rejected before evaluation |
 | `Environment` | the map for `$ENV` (string → string; object key order as the host gives it); default: the process environment |
 | clock (`TimeProvider`) | optional: `now`, and the local zone (`offset(t)`, optional abbreviation) of `localtime`, `strflocaltime`, `%Z`, `%z`. Without one, `now` is the error `now/0 requires a host clock` and the local zone is UTC with no abbreviation (`localtime` = `gmtime`; `strflocaltime` prints `%z` `+0000` and `%Z` `+00`) |
 | `Resolver` | module resolution (§9.11), optional: *resolve* (path, kind, metadata, importer's identity → identity) and *read* (identity → text) |
 | `MaxDepth` | §11 |
+| `Debug`, `Stderr` | optional handlers: the value `debug` gives (each message of `debug/1`) / the value `stderr` gives; without one, the value is dropped |
 
 | Out | Meaning |
 | --- | --- |
@@ -1120,31 +1220,30 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 | Regex empty matches | the search moves one code point after an empty match: `"é😀é😀b" \| [match(""; "g")] \| length` → `6` | moves one UTF-8 byte, reporting repeated offsets: `14` (offsets `[0,1,1,2,2,2,2,…]`) | offsets are code points everywhere else |
 | Regex `l` flag | accepted, no effect | longest match | no common engine support |
 | Recursion | depth limit (§11), no tail calls | grows the heap, tail calls optimized | host stacks differ (Python 1000 frames) |
-| Special functions | `erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1`, `exp2`, `expm1`, `log1p` by the formulas of §9.8 | libm | JavaScript, Java, Rust lack some; .NET's `expm1`/`log1p` are inaccurate near 0 |
-| Math edge cases | `fmin`/`fmax` of `0` and `-0` give the first argument; `ldexp`/`scalbln` with a NaN exponent give NaN, with an infinite or huge one the limit (`ldexp(1; 1e10)` → +Infinity); `frexp` of ±Infinity/NaN has exponent 0 | libm and C casts: `fmin` gives `-0` and `fmax` `0` for both orders; the exponent is cast to a C `int` (`ldexp(1; nan)`, `ldexp(1; infinite)`, `ldexp(1; 1e10)` → `0`); `frexp` exponent −1 (Windows) | exact and the same in every language |
+| Special functions | `erf`, `erfc`, `tgamma`, `lgamma`, `gamma`, `lgamma_r`, `j0`, `j1`, `jn`, `y0`, `y1`, `yn`, `exp2`, `exp10`, `expm1`, `log1p` by the formulas of §9.8 | libm | JavaScript, Java, Rust lack some; .NET's `expm1`/`log1p` are inaccurate near 0 |
+| Math edge cases | `fmin`/`fmax` of `0` and `-0` give the first argument; `ldexp`/`scalbln` with a NaN exponent give NaN, with an infinite or huge one the limit (`ldexp(1; 1e10)` → +Infinity); `frexp` of ±Infinity/NaN has exponent 0; `copysign` with a NaN `y` gives `\|x\|`; `jn`/`yn` with `\|n\| ≥ 2^31` give NaN | libm and C casts: `fmin` gives `-0` and `fmax` `0` for both orders; the exponent is cast to a C `int` (`ldexp(1; nan)`, `ldexp(1; infinite)`, `ldexp(1; 1e10)` → `0`); `frexp` exponent −1 (Windows); `copysign(1; -nan)` → `-1` (the sign bit of the NaN); the order of `jn`/`yn` is cast to a C `int` | exact and the same in every language; JavaScript cannot tell the sign of a NaN |
 | NaN ordering | `compare` treats NaNs as equal and below all numbers: `[nan < nan, nan <= nan, nan > nan, nan >= nan]` → `[false,true,false,true]`; `unique`/`group_by` merge NaNs | `[true,true,false,false]` | a consistent total order sorts identically everywhere |
 | Unbound `$x` | host variable: runtime error `$x is not defined` | compile error | host variables (`--arg`) without declaring them |
 | Unbound `$x` in a module | the same host variable as in the main program | compile error located in the module (`$zz is not defined at …/freevar.jq, line 1, column 8`) | one rule for programs and modules |
 | Path tracking | structural (§8.1): variables never carry paths; `limit`, `skip`, `last/1`, `first/1` pass paths | by value identity (a variable holding the value at the current path may pass) | no identity in values |
-| Dates | own calendar and directive tables (§9.12), English names, no locale; `gmtime` floors negative fractional seconds; strptime defaults and computed `wday`/`yday`, and `%j` leaves `month` and `mday` at 0 (jq: `"2015-063" \| strptime("%Y-%j")` → `[2015,2,4,…]`); an unknown strftime directive is `Unsupported strftime format specifier %<c>` | C library (jq on Windows: `strftime/1: unknown system failure`) | no libc |
+| Dates | own calendar and directive tables (§9.12), English names, no locale; `gmtime` floors negative fractional seconds; strptime defaults and computed `wday`/`yday`, and `%j` leaves `month` and `mday` at 0 (jq: `"2015-063" \| strptime("%Y-%j")` → `[2015,2,4,…]`); an unknown strftime directive is `Unsupported strftime format specifier %<c>`; the flags `_ - 0` change only the padding of a directive's own numbers (`%_z` → `+0000`); no `#` flag, no field width (`%10Y`), and strptime has no `%C %U %W %V %G %g %s` nor modifiers (§9.12) | C library: glibc writes an unknown directive as it is (`%Q`), pads `%_z` as `+   0`, has `#` and widths; jq on Windows: `strftime/1: unknown system failure` | no libc |
 | `%Z` | `UTC`, the host abbreviation, or `+hh` | C library zone names | portable |
 | `fromjson` error text | `<reason> (while parsing '<text>')`, reason implementation-defined | jq parser messages with line and column | parser-specific |
 | `builtins` | sorted, only this profile's names | unsorted, jq's names | deterministic |
 | Host variable `ENV` | rejected | `$ENV` wins | no ambiguity |
+| `have_decnum`, `have_literal_numbers` | `false` | `true` (the official builds) | numbers are doubles and literals keep no text (Numbers row) |
+| `input_filename`, `input_line_number` | `null`, `0` | the file being read and the number of lines read from it | inputs are values (§12), not files |
+| `debug`, `stderr` | the value goes to the host's handler (§12) | written to standard error: `["DEBUG:",v]` and the compact text of `v` | a library has no process streams |
 | Ill-formed UTF-8 (`@base64d`) | one U+FFFD per maximal subpart (§4.1): `["7aCA","4ICA","9JCAgA==","6WU="] \| map(@base64d \| explode)` → `[[65533,65533,65533],[65533,65533,65533],[65533,65533,65533,65533],[65533,101]]` | one U+FFFD for a whole overlong, surrogate or too-large sequence, and an incomplete sequence at the end swallows the remaining bytes: `[[65533],[65533],[65533],[65533]]` | the standard decoders of five of the six port languages do this; Go needs a short loop |
 | `?//` and the consumer | an error raised downstream of the binding is not handled: `[[1]] \| try ((.[] as [$a] ?// $a \| $a) \| error(tostring)) catch .` → `"1"` | backtracks into the next alternative: `"[1]"` | same principle as `try` (§6.2); jq's behaviour is an artifact of backtracking |
 | `?//` in `reduce`/`foreach` | a retried alternative starts from the state before the source value (§7.8): `[reduce ([1],[5]) as [$a] ?// $a (10; if $a == 1 then error("e") else [., $a] end)]` → `[[[10,[1]],5]]`; `[foreach ([1]) as [$a] ?// $a (10; . + 1; if $a == 1 then ., error("x") else [., $a] end)]` → `[11,[11,[1]]]` | after an `UPDATE` error the next alternative sees the state as `null` (`[[null,[1]],5]`); after an `EXTRACT` error it sees the failed alternative's new state (`[11,[12,[1]]]`); an error downstream of `foreach` also retries | artifacts of jq's bytecode (its state variable is cleared when loaded) |
 | Constant pattern keys | a non-string key computed by an expression (`. as {(1+0): $v}`) is matched at run time with the indexing rules: `Cannot index object with number (1)` on an object | folds constant expressions and rejects them at compile time: `Cannot use number (1) as object key` | no constant folder; literal keys are still rejected statically (§3.2) |
 | Module metadata | literal constants only: `module {a: 1+1};` is `Module metadata must be constant` | folds constant expressions (`{a: 1+1}` accepted), yet rejects `{a: -1}` | no constant folder to specify and port |
 
-**Not in the profile.** jq 1.8 has these; JQSharp does not, so jqlite 1.0 does not (a program using one gets `name/arity is not defined`, or the host-variable error for `$__loc__`):
+**Not in the profile.** Of the builtins of jq 1.8.2 (its `builtins`), jqlite leaves out only these, and a program using one gets `name/arity is not defined`:
 
-- I/O and debugging: `input`, `inputs`, `debug/0`, `debug/1`, `stderr`, `input_filename`, `input_line_number`, `$__loc__`, `halt_error/0`, `get_search_list`, `get_jq_origin`, `get_prog_origin`.
-- Streaming: `tostream`, `fromstream`, `truncate_stream`.
-- Values and strings: `leaf_paths`, `toarray`, `toboolean`, `trim`, `ltrim`, `rtrim`, `have_decnum`, `have_literal_numbers`, `@base32`, `@base32d`.
-- Dates: `date`, `dateadd`, `datesub`; the `strftime`/`strptime` directives outside the tables of §9.12, among them `%y %D %F %T %R %U %W %k %l %P %E… %O…` (an unknown directive is an error in `strftime` and a mismatch in `strptime`).
-- SQL-style: `JOIN/3`, `JOIN/4` (`INDEX`, `IN`, `JOIN/2` are in).
-- Math: `exp10`, `pow10`, `gamma`, `rint`, `significand`, `drem`, `scalb`, `copysign`, `fdim`, `nextafter`, `nexttoward`, `y0`, `y1`, `jn`, `yn`.
+- `get_search_list/0`, `get_jq_origin/0` and `get_prog_origin/0` describe the jq command line (its module search path and directories); module resolution is the host's (§9.11).
+- `input/0` and `inputs/0` read jq's stream of inputs. An evaluation has one input value, and a host that takes several values evaluates each alone (§12). Reading the next value in the middle of an evaluation would make the interpreter wait on the host's source, which cannot be done the same way in every language when that source is asynchronous (JavaScript cannot block on it).
 
 ## 14. Conformance
 

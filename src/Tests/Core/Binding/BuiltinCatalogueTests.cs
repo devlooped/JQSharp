@@ -24,7 +24,7 @@ public partial class BuiltinCatalogueTests
     public void The_prelude_binds_against_the_natives()
     {
         var prelude = Prelude.Instance;
-        Assert.Equal(91, prelude.Definitions.Length);
+        Assert.Equal(102, prelude.Definitions.Length);
         // Nested definitions (recurse's r, walk's w) are functions of the prelude too.
         Assert.True(prelude.Functions.Length > prelude.Definitions.Length);
         Assert.Equal(prelude.Definitions.Length, prelude.Definitions.Select(Signature).Distinct().Count());

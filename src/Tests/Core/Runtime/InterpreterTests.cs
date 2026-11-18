@@ -102,11 +102,11 @@ public class InterpreterTests
     [InlineData("[path(.c | recurse(if . == null then empty else .[0]? end))]", "[[\"c\"],[\"c\",0]]")]
     // The three path errors.
     [InlineData("try path(1) catch .", "\"Invalid path expression with result 1\"")]
-    [InlineData("try path($__loc__ | .a) catch .", "\"Invalid path expression near attempt to access element \\\"a\\\" of null\"")]
+    [InlineData("try path($v | .a) catch .", "\"Invalid path expression near attempt to access element \\\"a\\\" of null\"")]
     [InlineData("try path(.k | ascii_upcase | .[]) catch .", "\"Invalid path expression near attempt to iterate through \\\"X\\\"\"")]
     [InlineData("try path(.k + \"y\") catch .", "\"Invalid path expression with result \\\"xy\\\"\"")]
     public void Paths_are_part_of_evaluation(string program, string expected)
-        => Assert.Equal(expected, Line(program, "{\"a\":{\"b\":0},\"k\":\"x\",\"c\":[1,2]}", new EvaluationOptions { Variables = new Dictionary<string, JqValue> { ["__loc__"] = JqValue.Null } }));
+        => Assert.Equal(expected, Line(program, "{\"a\":{\"b\":0},\"k\":\"x\",\"c\":[1,2]}", new EvaluationOptions { Variables = new Dictionary<string, JqValue> { ["v"] = JqValue.Null } }));
 
     [Theory]
     [InlineData(".a = 1", "{\"a\":1,\"b\":[1,2]}")]

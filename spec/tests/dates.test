@@ -218,3 +218,50 @@ null
 [[2015,nan], [2015,0,1,0,0,infinite]] | map(try strftime("%Y") catch .)
 null
 ["strftime/1 requires parsed datetime inputs","strftime/1 requires parsed datetime inputs"]
+
+# The directives added to strftime (spec 9.12): %y %D %F %T %R %r %U %W %g %k %l %P.
+[.[] | strftime("%y|%D|%F|%T|%R|%r|%U|%W|%g|%k|%l|%P")]
+[0,1425599507,951782400,1104537600,1230508800,1262476800,1609459199,43200,46800]
+["70|01/01/70|1970-01-01|00:00:00|00:00|12:00:00 AM|00|00|70| 0|12|am","15|03/05/15|2015-03-05|23:51:47|23:51|11:51:47 PM|09|09|15|23|11|pm","00|02/29/00|2000-02-29|00:00:00|00:00|12:00:00 AM|09|09|00| 0|12|am","05|01/01/05|2005-01-01|00:00:00|00:00|12:00:00 AM|00|00|04| 0|12|am","08|12/29/08|2008-12-29|00:00:00|00:00|12:00:00 AM|52|52|09| 0|12|am","10|01/03/10|2010-01-03|00:00:00|00:00|12:00:00 AM|01|00|09| 0|12|am","20|12/31/20|2020-12-31|23:59:59|23:59|11:59:59 PM|52|52|20|23|11|pm","70|01/01/70|1970-01-01|12:00:00|12:00|12:00:00 PM|00|00|70|12|12|pm","70|01/01/70|1970-01-01|13:00:00|13:00|01:00:00 PM|00|00|70|13| 1|pm"]
+
+# GNU flags: the last of _ - 0 pads the numbers of a directive, ^ upper-cases (not %P).
+[.[] | strftime("%-d|%_m|%0e|%^a|%^b|%^c|%-j|%_j|%-k|%0k|%_l|%^p|%^P|%-y|%_H|%-%|%^x|%-D|%^-A|%-_d|%_-d|%^B|%-n|%_u")]
+[0,1425599507]
+["1| 1|01|THU|JAN|THU JAN  1 00:00:00 1970|1|  1|0|00|12|AM|am|70| 0|%|01/01/70|01/01/70|THURSDAY| 1|1|JANUARY|\n|4","5| 3|05|THU|MAR|THU MAR  5 23:51:47 2015|64| 64|23|23|11|PM|pm|15|23|%|03/05/15|03/05/15|THURSDAY| 5|5|MARCH|\n|4"]
+
+# The E and O modifiers change nothing.
+[.[] | strftime("%Ec|%EC|%Ex|%EX|%Ey|%EY|%Od|%Oe|%OH|%OI|%Om|%OM|%OS|%Ou|%OU|%OV|%Ow|%OW|%Oy|%-Ey|%^Od")]
+[0,1425599507]
+["Thu Jan  1 00:00:00 1970|19|01/01/70|00:00:00|70|1970|01| 1|00|12|01|00|00|4|00|01|4|00|70|70|01","Thu Mar  5 23:51:47 2015|20|03/05/15|23:51:47|15|2015|05| 5|23|11|03|51|47|4|09|10|4|09|15|15|05"]
+
+# Spec 13 (Dates row): no # flag, no width, a modifier only before its directives, flags do not pad %z;
+# glibc gives ["%Ea","THU","%-","0000001970","%Oa","+   0","+0"].
+[.[] as $f | try (0 | strftime($f)) catch .]
+["%Ea", "%#a", "%-", "%10Y", "%Oa", "%_z", "%-z"]
+["Unsupported strftime format specifier %Ea","Unsupported strftime format specifier %#","Unsupported strftime format specifier %-","Unsupported strftime format specifier %1","Unsupported strftime format specifier %Oa","+0000","+0000"]
+
+# The directives added to strptime: %y %k %I %l %p %n %t and those made of others.
+[.[] | strptime("%y %m %d")]
+["99 1 2","68 1 2","69 1 2","0 1 2","15 3 5"]
+[[1999,0,2,0,0,0,6,1],[2068,0,2,0,0,0,1,1],[1969,0,2,0,0,0,4,1],[2000,0,2,0,0,0,0,1],[2015,2,5,0,0,0,4,63]]
+
+["2015-03-05 23:51:47" | strptime("%F %T"), ("03/05/15 11:51:47 PM" | strptime("%D %r")), ("Thu Mar  5 23:51:47 2015" | strptime("%c")), ("03/05/15 23:51" | strptime("%x %R")), ("03/05/15 23:51:47" | strptime("%x %X"))]
+null
+[[2015,2,5,23,51,47,4,63],[2015,2,5,23,51,47,4,63],[2015,2,5,23,51,47,4,63],[2015,2,5,23,51,0,4,63],[2015,2,5,23,51,47,4,63]]
+
+map(strptime("%Y-%m-%d %I %p"))
+["2015-03-05 12 AM","2015-03-05 12 PM","2015-03-05 1 pm","2015-03-05 11 am","2015-03-05 11 Am"]
+[[2015,2,5,0,0,0,4,63],[2015,2,5,12,0,0,4,63],[2015,2,5,13,0,0,4,63],[2015,2,5,11,0,0,4,63],[2015,2,5,11,0,0,4,63]]
+
+[.[] | try strptime("%Y-%m-%d %I:%M %p") catch .]
+["2015-03-05 13:00 PM","2015-03-05 0:00 AM","2015-03-05 1:00 XM"]
+["date \"2015-03-05 13:00 PM\" does not match format \"%Y-%m-%d %I:%M %p\"","date \"2015-03-05 0:00 AM\" does not match format \"%Y-%m-%d %I:%M %p\"","date \"2015-03-05 1:00 XM\" does not match format \"%Y-%m-%d %I:%M %p\""]
+
+["2015-03-05 7" | strptime("%Y-%m-%d %k"), ("2015-03-05  7 pm" | strptime("%Y-%m-%d %l %p")), ("2015-03-05\n\t23" | strptime("%Y-%m-%d%n%H")), ("2015-03-05 23" | strptime("%Y-%m-%d%t%H"))]
+null
+[[2015,2,5,7,0,0,4,63],[2015,2,5,19,0,0,4,63],[2015,2,5,23,0,0,4,63],[2015,2,5,23,0,0,4,63]]
+
+# %p changes only an hour read by %I or %l.
+"2015-03-05 11 PM" | strptime("%Y-%m-%d %H %p")
+null
+[2015,2,5,11,0,0,4,63]

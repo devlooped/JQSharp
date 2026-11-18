@@ -800,3 +800,56 @@ null
 "object ({\"aaaaaaaaaaaaaaaaaaaaaaa...}) cannot be negated"
 "array ([[[[[[[[[[[[[[[[[[[[[[[[[...]) cannot be negated"
 "array ([{\"a\":[1,2,3,4,5,6,7,8,9,...]) cannot be negated"
+
+# trim, ltrim, rtrim: the Unicode White_Space code points (spec 9.6); U+200B is not one.
+[.[] | trim, ltrim, rtrim]
+["  a b \t\n", "\u00a0\u2003x\u3000", "", "\u200bx\u200b", "\u0085\u1680\u2028\u2029\u202f\u205f\u000b\u000cy"]
+["a b","a b \t\n","  a b","x","x\u3000","\u00a0\u2003x","","","","\u200bx\u200b","\u200bx\u200b","\u200bx\u200b","y","y","\u0085\u1680\u2028\u2029\u202f\u205f\u000b\u000cy"]
+
+[.[] | try trim catch ., try ltrim catch ., try rtrim catch .]
+[1, null]
+["trim input must be a string","trim input must be a string","trim input must be a string","trim input must be a string","trim input must be a string","trim input must be a string"]
+
+map(toboolean)
+["true","false",true,false]
+[true,false,true,false]
+
+[.[] | try toboolean catch .]
+["True", 1, null, " true", "very-long-long-long-long-string"]
+["string (\"True\") cannot be parsed as a boolean","number (1) cannot be parsed as a boolean","null (null) cannot be parsed as a boolean","string (\" true\") cannot be parsed as a boolean","string (\"very-long-long-long-long...\") cannot be parsed as a boolean"]
+
+[format("csv", "tsv", "text", "json", "html", "sh", "base64", "uri")]
+[1,"a b<"]
+["1,\"a b<\"","1\ta b<","[1,\"a b<\"]","[1,\"a b<\"]","[1,&quot;a b&lt;&quot;]","1 'a b<'","WzEsImEgYjwiXQ==","%5B1%2C%22a%20b%3C%22%5D"]
+
+"Zm9v" | format("base64d")
+null
+"foo"
+
+[.[] as $f | try ([1] | format($f)) catch .]
+["@csv", "nope", 1, null]
+["@csv is not a valid format","nope is not a valid format","number (1) is not a valid format","null (null) is not a valid format"]
+
+# debug and stderr give their value to the host (spec 12) and output their input.
+[1 | debug, debug("m", "n"), stderr]
+null
+[1,1,1]
+
+# Spec 13 (Not in the profile): input and inputs are left out.
+%%FAIL
+input
+input/0 is not defined
+
+%%FAIL
+[inputs]
+inputs/0 is not defined
+
+# Spec 13 (have_decnum row): jq 1.8.2 gives [true,true].
+[have_decnum, have_literal_numbers]
+null
+[false,false]
+
+# Spec 13 (input_filename row): jq 1.8.2 reading standard input gives ["<stdin>",0].
+[input_filename, input_line_number]
+null
+[null,0]

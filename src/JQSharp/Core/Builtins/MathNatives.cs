@@ -19,9 +19,11 @@ static class MathNatives
         ("trunc", Math.Truncate),
         ("round", MathExtra.Round),
         ("nearbyint", MathExtra.NearbyInt),
+        ("rint", MathExtra.NearbyInt),
         ("fabs", Math.Abs),
         ("sqrt", Math.Sqrt),
         ("logb", MathExtra.Logb),
+        ("significand", MathExtra.Significand),
         ("acos", Math.Acos),
         ("asin", Math.Asin),
         ("atan", Math.Atan),
@@ -33,6 +35,7 @@ static class MathNatives
         ("cosh", Math.Cosh),
         ("exp", Math.Exp),
         ("exp2", MathExtra.Exp2),
+        ("exp10", MathExtra.Exp10),
         ("expm1", MathExtra.Expm1),
         ("log", Math.Log),
         ("log10", Math.Log10),
@@ -46,21 +49,32 @@ static class MathNatives
         ("erfc", MathExtra.Erfc),
         ("tgamma", MathExtra.TGamma),
         ("lgamma", MathExtra.LGamma),
+        ("gamma", MathExtra.LGamma),
         ("j0", MathExtra.J0),
         ("j1", MathExtra.J1),
+        ("y0", MathExtra.Y0),
+        ("y1", MathExtra.Y1),
     ];
 
     static readonly (string Name, Func<double, double, double> Function)[] binary =
     [
         ("fmod", static (x, y) => x % y),
         ("remainder", MathExtra.Remainder),
+        ("drem", MathExtra.Remainder),
         ("fmin", MathExtra.Min),
         ("fmax", MathExtra.Max),
+        ("fdim", MathExtra.Fdim),
+        ("copysign", MathExtra.CopySign),
+        ("nextafter", MathExtra.NextAfter),
+        ("nexttoward", MathExtra.NextAfter),
         ("ldexp", MathExtra.ScaleB),
         ("scalbln", MathExtra.ScaleB),
+        ("scalb", MathExtra.Scalb),
         ("atan2", Math.Atan2),
         ("pow", Math.Pow),
         ("hypot", double.Hypot),
+        ("jn", MathExtra.Jn),
+        ("yn", MathExtra.Yn),
     ];
 
     public static void Register()
@@ -88,6 +102,13 @@ static class MathNatives
                 return Fail(Errors.NumberRequired(input), out result, out error);
             var (mantissa, exponent) = MathExtra.Frexp(input.AsNumber());
             return Ok(Pair(mantissa, exponent), out result, out error);
+        });
+        Add("lgamma_r", 0, static (_, input, _, out result, out error) =>
+        {
+            if (input.Kind != JqKind.Number)
+                return Fail(Errors.NumberRequired(input), out result, out error);
+            var x = input.AsNumber();
+            return Ok(Pair(MathExtra.LGamma(x), MathExtra.GammaSign(x)), out result, out error);
         });
         Add("modf", 0, static (_, input, _, out result, out error) =>
         {

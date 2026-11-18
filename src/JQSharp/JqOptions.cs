@@ -1,6 +1,8 @@
+using System.Text.Json;
+
 namespace Devlooped;
 
-/// <summary>What an expression takes from its host besides the input and the variables: modules, <c>$ENV</c>, the clock and the depth limit.</summary>
+/// <summary>What an expression takes from its host besides the input and the variables: modules, <c>$ENV</c>, the clock, the depth limit and the handlers of <c>debug</c> and <c>stderr</c>.</summary>
 /// <remarks>Options are read when the expression is parsed (<see cref="Jq.Parse"/>) and apply to every evaluation of it.</remarks>
 public sealed class JqOptions
 {
@@ -21,4 +23,18 @@ public sealed class JqOptions
     /// catchable error <c>Maximum call depth exceeded</c>. Deeper recursion never exhausts the host stack.
     /// </summary>
     public int MaxDepth { get; init; } = 1000;
+
+    /// <summary>
+    /// Receives the value of each <c>debug</c> (its input) and each message of <c>debug(msgs)</c>, as
+    /// is: on the input <c>1</c>, <c>debug, debug("m")</c> gives the handler <c>1</c>, then <c>"m"</c>.
+    /// (The jq command line writes each to its standard error wrapped as <c>["DEBUG:",1]</c>; the
+    /// handler gets the value without the wrapper.) Without one, the values are dropped.
+    /// </summary>
+    public Action<JsonElement>? Debug { get; init; }
+
+    /// <summary>
+    /// Receives the input of each <c>stderr</c>, as is (the jq command line writes it to its standard
+    /// error as compact JSON). Without one, the values are dropped.
+    /// </summary>
+    public Action<JsonElement>? Stderr { get; init; }
 }

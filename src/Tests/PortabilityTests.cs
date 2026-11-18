@@ -60,6 +60,7 @@ public class PortabilityTests
         ["JqException.cs"] = "public API: the error Value",
         ["JqExpression.cs"] = "public API: JsonElement in signatures",
         ["JqFileResolver.cs"] = "public API: JsonElement metadata of the resolver",
+        ["JqOptions.cs"] = "public API: JsonElement values of the debug and stderr handlers",
         ["JqResolver.cs"] = "public API: JsonElement metadata of the resolver",
         ["JqResourceResolver.cs"] = "public API: JsonElement metadata of the resolver",
         ["Host/ResolverSource.cs"] = "hands the resolver's metadata to it as a JsonElement, converted by the adapter",
