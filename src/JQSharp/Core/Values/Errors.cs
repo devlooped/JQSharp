@@ -81,8 +81,6 @@ static class Errors
 
     public static JqValue DepthExceeded => Message("Maximum call depth exceeded");
 
-    /// <summary>A native of the catalogue that this build does not implement yet.</summary>
-    public static JqValue NotImplemented(string name, int arity) => Message($"{name}/{arity} is not implemented");
 
     public static JqValue ModulemetaNotString => Message("modulemeta input module name must be a string");
 

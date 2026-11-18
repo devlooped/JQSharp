@@ -47,13 +47,14 @@ static class DateNatives
             : Fail(Errors.MktimeParsed, out result, out error);
     }
 
-    // mktime of a broken-down time: missing elements are 0, each truncated toward zero.
+    // mktime of a broken-down time: missing elements are 0, each truncated toward zero; an element
+    // that is not a number, or is NaN or infinite, makes the time invalid.
     static bool TrySeconds(JqArray time, out double seconds)
     {
         var fields = new long[6];
         for (var i = 0; i < time.Count && i < 8; i++)
         {
-            if (time[i].Kind != JqKind.Number)
+            if (time[i].Kind != JqKind.Number || !double.IsFinite(time[i].AsNumber()))
             {
                 seconds = 0;
                 return false;

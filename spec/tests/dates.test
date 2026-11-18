@@ -207,3 +207,14 @@ strptime("%e/%d")
 [.[] | strptime("%b %h %B") | .[1]]
 ["jan feb march", "Dec DEC december"]
 [2,11]
+
+# A NaN or infinite element of a broken-down time is not a parsed datetime (spec 9.12). jq 1.8.2 agrees
+# for NaN; for an infinite element it gives [3567554047, "invalid gmtime representation"] for mktime,
+# "2015" for strftime and "2083" for strflocaltime.
+[[2015,nan], [2015,0,1,0,0,infinite], [-infinite]] | map(try mktime catch .)
+null
+["mktime requires parsed datetime inputs","mktime requires parsed datetime inputs","mktime requires parsed datetime inputs"]
+
+[[2015,nan], [2015,0,1,0,0,infinite]] | map(try strftime("%Y") catch .)
+null
+["strftime/1 requires parsed datetime inputs","strftime/1 requires parsed datetime inputs"]

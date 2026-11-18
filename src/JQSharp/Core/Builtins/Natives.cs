@@ -11,9 +11,8 @@ enum NativeGroup
 
 /// <summary>
 /// One native builtin of spec §9: identity, catalogue position, and how it takes its arguments. The
-/// catalogue is plain data so that the resolver can bind calls to an entry before the entry is
-/// implemented; the interpreter finds an implementation by <see cref="Index"/> in NativeTable
-/// (until there is one, a call is the runtime error <c>name/arity is not implemented</c>).
+/// catalogue is plain data, which the resolver binds calls to; the interpreter finds the
+/// implementation by <see cref="Index"/> in NativeTable.
 /// </summary>
 /// <remarks>
 /// By default a native takes value arguments (§9.1): each argument is evaluated on the input and

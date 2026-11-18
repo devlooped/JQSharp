@@ -4,15 +4,9 @@ namespace Devlooped.Tests.Core.Runtime;
 
 public class NativeTableTests
 {
-    // The natives of the catalogue without an implementation yet: step 9 (modules) of the jqlite
-    // plan empties this list.
-    static readonly string[] NotImplemented =
-    [
-    ];
-
+    // A native of the catalogue without an implementation is a defect of the build: the table
+    // refuses to load, and this test names it.
     [Fact]
-    public void Every_native_but_the_listed_ones_is_implemented()
-        => Assert.Equal(
-            NotImplemented.Order(StringComparer.Ordinal),
-            Natives.All.Where(native => !NativeTable.IsImplemented(native)).Select(native => native.ToString()).Order(StringComparer.Ordinal));
+    public void Every_native_of_the_catalogue_is_implemented()
+        => Assert.Empty(Natives.All.Where(native => !NativeTable.IsImplemented(native)).Select(native => native.ToString()));
 }

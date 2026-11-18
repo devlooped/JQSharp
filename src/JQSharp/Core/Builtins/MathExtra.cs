@@ -106,7 +106,22 @@ static class MathExtra
         return (f == 0 && double.IsNegative(x) ? -0.0 : f, t);
     }
 
+    /// <summary>2^x, as the library pow.</summary>
+    /// <remarks>
+    /// <code>
+    /// exp2(x): pow(2, x)
+    /// </code>
+    /// </remarks>
+    public static double Exp2(double x) => Math.Pow(2, x);
+
     /// <summary>log(1 + x), accurate near 0 (Goldberg: the rounding of 1 + x cancels out).</summary>
+    /// <remarks>
+    /// <code>
+    /// log1p(x): u = 1 + x
+    ///           if u == 1 or u == +Infinity: return x
+    ///           return log(u) * x / (u - 1)
+    /// </code>
+    /// </remarks>
     public static double Log1p(double x)
     {
         var u = 1 + x;
@@ -116,6 +131,15 @@ static class MathExtra
     }
 
     /// <summary>exp(x) − 1, accurate near 0 (Kahan: the rounding of exp(x) cancels out).</summary>
+    /// <remarks>
+    /// <code>
+    /// expm1(x): u = exp(x)
+    ///           if u == 1: return x
+    ///           m = u - 1
+    ///           if m == -1 or u == +Infinity: return m
+    ///           return m * x / log(u)
+    /// </code>
+    /// </remarks>
     public static double Expm1(double x)
     {
         var u = Math.Exp(x);

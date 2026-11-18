@@ -57,3 +57,8 @@ null
 [localtime | length, (now | localtime | length)]
 0
 [8,8]
+
+# A NaN or infinite element is not a parsed datetime (spec 9.12); jq 1.8.2 gives "2083" for the infinite one.
+[[2015,nan], [2015,0,1,0,0,infinite]] | map(try strflocaltime("%Y") catch .)
+null
+["strflocaltime/1 requires parsed datetime inputs","strflocaltime/1 requires parsed datetime inputs"]

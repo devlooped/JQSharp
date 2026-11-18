@@ -12,26 +12,34 @@ namespace Devlooped.Core.Builtins;
 /// </summary>
 /// <remarks>
 /// .NET runs the pattern with <see cref="RegexOptions.NonBacktracking"/> (linear time in the input)
-/// and works on UTF-16 units, which the translation accounts for. Compiled patterns are cached per
-/// process in a thread-safe map that is emptied when it reaches <see cref="CacheLimit"/> entries.
+/// and works on UTF-16 units, which the translation accounts for. The one exception is a pattern
+/// with <c>\b</c> or <c>\B</c>: the dialect's word boundaries are ASCII, .NET's are Unicode, and the
+/// ASCII form needs lookaround, which the linear-time engine does not have; such a pattern runs on
+/// the backtracking engine and gives up the linear-time guarantee (it is validated by the dialect
+/// first, so it has no backreferences or other constructs beyond the lookaround of the boundary).
+/// Case-insensitivity is never the engine's: the translation does it. Compiled patterns are cached
+/// per process in a thread-safe map that is emptied when it reaches <see cref="CacheLimit"/> entries.
 /// </remarks>
 static class RegexEngine
 {
     const int CacheLimit = 256;
 
-    static readonly ConcurrentDictionary<(string Pattern, bool IgnoreCase), HostPattern> cache = new();
+    static readonly ConcurrentDictionary<string, HostPattern> cache = new();
 
-    /// <summary>A compiled pattern, or false with the engine's reason.</summary>
-    public static bool TryCompile(string pattern, bool ignoreCase, out HostPattern compiled, out string reason)
+    /// <summary>
+    /// A compiled pattern, or false with the engine's reason; <paramref name="lookaround"/> (a
+    /// property of the pattern, so not part of the cache key) selects the backtracking engine.
+    /// </summary>
+    public static bool TryCompile(string pattern, bool lookaround, out HostPattern compiled, out string reason)
     {
         reason = "";
-        if (cache.TryGetValue((pattern, ignoreCase), out compiled!))
+        if (cache.TryGetValue(pattern, out compiled!))
             return true;
 
         Regex regex;
         try
         {
-            regex = new Regex(pattern, RegexOptions.NonBacktracking | RegexOptions.CultureInvariant | (ignoreCase ? RegexOptions.IgnoreCase : RegexOptions.None));
+            regex = new Regex(pattern, RegexOptions.CultureInvariant | (lookaround ? RegexOptions.None : RegexOptions.NonBacktracking));
         }
         catch (Exception e) when (e is ArgumentException or NotSupportedException)
         {
@@ -44,7 +52,7 @@ static class RegexEngine
         if (cache.Count >= CacheLimit)
             cache.Clear();
         compiled = new HostPattern(regex);
-        cache[(pattern, ignoreCase)] = compiled;
+        cache[pattern] = compiled;
         return true;
     }
 

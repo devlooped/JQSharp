@@ -14,8 +14,10 @@ namespace Devlooped.Core.Builtins;
 /// (a code point above U+FFFF as its surrogate pair in a non-capturing group), <c>.</c>, classes and
 /// <c>\D \W \S</c> as alternatives of a BMP class without surrogates and the surrogate pairs of the
 /// code points above U+FFFF, so that a match never splits a pair; <c>\d \w \s</c> as ASCII classes;
-/// <c>$</c> as <c>\z</c>; named groups as plain groups (engines number them differently). A port
-/// whose engine works on code points writes the classes directly.
+/// <c>$</c> as <c>\z</c>; <c>\b \B</c> as ASCII lookarounds (<see cref="Translation.Lookaround"/>);
+/// named groups as plain groups (engines number them differently). The <c>i</c> flag is done here,
+/// never by the engine: it folds ASCII letters only (<see cref="RangeSet.AddAsciiCases"/>, the one
+/// place of the rule). A port whose engine works on code points writes the classes directly.
 /// </remarks>
 static class RegexSyntax
 {
@@ -24,10 +26,18 @@ static class RegexSyntax
     const string AnyPair = @"[\uD800-\uDBFF][\uDC00-\uDFFF]";
 
     /// <summary>The flags of §9.10 that change the pattern itself.</summary>
-    public readonly record struct Options(bool Extended, bool DotAll);
+    public readonly record struct Options(bool Extended, bool DotAll, bool IgnoreCase);
 
-    /// <summary>A translated pattern: the host pattern and one name (or null) per capturing group.</summary>
-    public sealed record Translation(string Pattern, string?[] Groups);
+    /// <summary>
+    /// A translated pattern: the host pattern, one name (or null) per capturing group, and whether
+    /// it uses lookaround (for \b and \B), which a linear-time engine may not run.
+    /// </summary>
+    public sealed record Translation(string Pattern, string?[] Groups, bool Lookaround);
+
+    // The ASCII word boundaries of §9.10, by the ASCII \w; an engine's own \b may be Unicode.
+    const string Word = "[0-9A-Za-z_]";
+    const string Boundary = $"(?:(?<={Word})(?!{Word})|(?<!{Word})(?={Word}))";
+    const string NotBoundary = $"(?:(?<={Word})(?={Word})|(?<!{Word})(?!{Word}))";
 
     // What precedes a quantifier: only an atom may be repeated.
     enum Previous
@@ -45,7 +55,8 @@ static class RegexSyntax
         var groups = new List<string?>();
         var open = 0;
         var previous = Previous.None;
-        translation = new Translation("", []);
+        var lookaround = false;
+        translation = new Translation("", [], false);
         reason = "";
         for (var i = 0; i < points.Length;)
         {
@@ -59,11 +70,11 @@ static class RegexSyntax
             switch (c)
             {
                 case '\\':
-                    if (!TryEscape(points, ref i, output, ref previous, out reason))
+                    if (!TryEscape(points, ref i, output, options, ref previous, ref lookaround, out reason))
                         return false;
                     continue;
                 case '[':
-                    if (!TryClass(points, ref i, output, out reason))
+                    if (!TryClass(points, ref i, output, options, out reason))
                         return false;
                     previous = Previous.Atom;
                     continue;
@@ -111,7 +122,7 @@ static class RegexSyntax
                 case ']' or '}':
                     return Fail($"unescaped '{(char)c}'", out reason);
                 default:
-                    Literal(output, c);
+                    Literal(output, c, options);
                     previous = Previous.Atom;
                     i++;
                     continue;
@@ -120,12 +131,12 @@ static class RegexSyntax
 
         if (open > 0)
             return Fail("missing close parenthesis", out reason);
-        translation = new Translation(output.ToString(), [.. groups]);
+        translation = new Translation(output.ToString(), [.. groups], lookaround);
         return true;
     }
 
     // \x outside a class: a literal, a shorthand class or an anchor.
-    static bool TryEscape(int[] points, ref int i, StringBuilder output, ref Previous previous, out string reason)
+    static bool TryEscape(int[] points, ref int i, StringBuilder output, Options options, ref Previous previous, ref bool lookaround, out string reason)
     {
         reason = "";
         if (i + 1 == points.Length)
@@ -133,13 +144,9 @@ static class RegexSyntax
         var c = points[i + 1];
         switch (c)
         {
-            case 'b':
-                output.Append(@"\b");
-                previous = Previous.Anchor;
-                i += 2;
-                return true;
-            case 'B':
-                output.Append(@"\B");
+            case 'b' or 'B':
+                output.Append(c == 'b' ? Boundary : NotBoundary);
+                lookaround = true;
                 previous = Previous.Anchor;
                 i += 2;
                 return true;
@@ -154,7 +161,7 @@ static class RegexSyntax
 
         if (!TryEscapedLiteral(points, ref i, out var literal, out reason))
             return false;
-        Literal(output, literal);
+        Literal(output, literal, options);
         previous = Previous.Atom;
         return true;
     }
@@ -300,7 +307,7 @@ static class RegexSyntax
     }
 
     // [...] or [^...]: literals, escapes, ranges of literals and shorthands.
-    static bool TryClass(int[] points, ref int i, StringBuilder output, out string reason)
+    static bool TryClass(int[] points, ref int i, StringBuilder output, Options options, out string reason)
     {
         reason = "";
         var at = i + 1;
@@ -351,6 +358,9 @@ static class RegexSyntax
 
         if (at == first)
             return Fail("empty class", out reason);
+        // The i flag folds before a negation applies: [^a] matches neither a nor A.
+        if (options.IgnoreCase)
+            set.AddAsciiCases();
         Class(output, set, negated);
         i = at + 1;
         return true;
@@ -443,8 +453,18 @@ static class RegexSyntax
         return output.Append(']').ToString();
     }
 
-    static void Literal(StringBuilder output, int c)
+    // A code point; under the i flag an ASCII letter becomes the class of its two cases.
+    static void Literal(StringBuilder output, int c, Options options)
     {
+        if (options.IgnoreCase && c is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z'))
+        {
+            var set = new RangeSet();
+            set.Add(c, c);
+            set.AddAsciiCases();
+            Class(output, set, negated: false);
+            return;
+        }
+
         if (c <= 0xFFFF)
         {
             Unit(output, c);
@@ -576,6 +596,29 @@ static class RegexSyntax
             }
 
             foreach (var (low, high) in c is 'D' or 'W' or 'S' ? set.Complement().Ranges : set.Ranges)
+                Add(low, high);
+        }
+
+        /// <summary>
+        /// The i flag of §9.10: adds the other case of every ASCII letter in the set (A-Z and a-z,
+        /// 32 apart); no other code point folds.
+        /// </summary>
+        public void AddAsciiCases()
+        {
+            var added = new List<(int Low, int High)>();
+            foreach (var (low, high) in Ranges)
+            {
+                var upperLow = Math.Max(low, 'A');
+                var upperHigh = Math.Min(high, 'Z');
+                if (upperLow <= upperHigh)
+                    added.Add((upperLow + 32, upperHigh + 32));
+                var lowerLow = Math.Max(low, 'a');
+                var lowerHigh = Math.Min(high, 'z');
+                if (lowerLow <= lowerHigh)
+                    added.Add((lowerLow - 32, lowerHigh - 32));
+            }
+
+            foreach (var (low, high) in added)
                 Add(low, high);
         }
 

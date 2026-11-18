@@ -21,8 +21,8 @@ delegate Signal? ClosureNative(Interpreter interpreter, Env? env, ImmutableArray
 
 /// <summary>
 /// The implementations of the native catalogue, by <see cref="Native.Index"/>. Each family of
-/// natives registers its entries; an entry of the catalogue without one is the run-time error
-/// <c>name/arity is not implemented</c>.
+/// natives registers its entries; every entry of the catalogue has one, which the table checks
+/// once, when it is built (a missing one is a defect of the build, not a run-time error).
 /// </summary>
 static class NativeTable
 {
@@ -42,11 +42,19 @@ static class NativeTable
         MathNatives.Register();
         DateNatives.Register();
         RegexNatives.Register();
+
+        foreach (var native in Natives.All)
+        {
+            if (!IsImplemented(native))
+                throw new InvalidOperationException($"{native} has no implementation");
+        }
     }
 
-    public static ValueNative? Value(Native native) => values[native.Index];
+    /// <summary>The implementation of a value native (one that does not take closures).</summary>
+    public static ValueNative Value(Native native) => values[native.Index]!;
 
-    public static ClosureNative? Closure(Native native) => closures[native.Index];
+    /// <summary>The implementation of a native that takes closures.</summary>
+    public static ClosureNative Closure(Native native) => closures[native.Index]!;
 
     /// <summary>Whether <paramref name="native"/> has an implementation.</summary>
     public static bool IsImplemented(Native native) => values[native.Index] is not null || closures[native.Index] is not null;

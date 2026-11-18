@@ -81,23 +81,33 @@ public partial class BuiltinCatalogueTests
 
     record SpecLists(HashSet<string> All, HashSet<string> Native, HashSet<string> Prelude, HashSet<string> Modules);
 
-    // Section 9 of spec/jqlite.md: every `name/n` in its text; the library functions of §9.8, listed
-    // by name with "(one input)"; and the functions §9.8 defines by formula as `name(x):`. Table rows
-    // whose K column says N or P give the kind of the signatures of their first cell.
+    // Section 9 of spec/jqlite.md, read only where it declares builtins, so that examples in its
+    // prose cannot add any: the first cell of each table row; the §9.8 library paragraph (its
+    // signatures and its list of names "(one input)"); the lines that start with signatures (the
+    // §9.8 formula headings and abs/0); the functions §9.8 defines as `name(x):`; and the group
+    // sentence of §9.11. Rows whose K column says N or P give the kind; §9.8 is native but abs/0.
     static SpecLists SpecBuiltins()
     {
         var text = File.ReadAllText(SpecFile("jqlite.md")).Replace("\r\n", "\n");
         var section = Section(text, "## 9. ", "## 10. ");
-        var all = Signatures().Matches(section).Select(match => match.Groups[1].Value).ToHashSet();
-
-        var library = LibraryList().Match(section);
+        var math = Section(section, "### 9.8 ", "### 9.9 ");
+        var mathDeclared = Declarations(math);
+        var library = LibraryList().Match(math);
         Assert.True(library.Success, "The library functions of §9.8 were not found");
-        foreach (var name in library.Groups[1].Value.Split(' '))
-            all.Add(name + "/0");
-        foreach (Match formula in Formulas().Matches(Section(section, "### 9.8 ", "### 9.9 ")))
-            all.Add(formula.Groups[1].Value + "/0");
+        foreach (var name in library.Groups[2].Value.Split(' '))
+            mathDeclared.Add(name + "/0");
+        foreach (Match formula in Formulas().Matches(math))
+            mathDeclared.Add(formula.Groups[1].Value + "/0");
 
-        var native = new HashSet<string>();
+        var group = ModuleGroup().Match(Section(section, "### 9.11 ", "### 9.12 "));
+        Assert.True(group.Success, "The group sentence of §9.11 was not found");
+        var modules = Signatures().Matches(group.Value).Select(match => match.Groups[1].Value).ToHashSet();
+
+        var all = Declarations(section);
+        all.UnionWith(mathDeclared);
+        all.UnionWith(modules);
+
+        var native = new HashSet<string>(modules);
         var prelude = new HashSet<string>();
         foreach (Match row in KindRows().Matches(section))
         {
@@ -106,14 +116,22 @@ public partial class BuiltinCatalogueTests
                 kind.Add(signature.Groups[1].Value);
         }
 
-        // §9.8 says "All natives" for its section, except abs/0, which it gives as prelude.
-        foreach (var signature in Signatures().Matches(Section(section, "### 9.8 ", "### 9.9 ")).Select(match => match.Groups[1].Value)
-            .Concat(library.Groups[1].Value.Split(' ').Select(name => name + "/0")))
+        foreach (var signature in mathDeclared)
             (signature == "abs/0" ? prelude : native).Add(signature);
-
-        var modules = Signatures().Matches(Section(section, "### 9.11 ", "### 9.12 ")).Select(match => match.Groups[1].Value).ToHashSet();
-        native.UnionWith(modules);
         return new SpecLists(all, native, prelude, modules);
+    }
+
+    // The signatures in the first cells of table rows, in the library paragraph, and at the start of lines.
+    static HashSet<string> Declarations(string text)
+    {
+        var declared = new HashSet<string>();
+        foreach (Match cell in FirstCells().Matches(text))
+            declared.UnionWith(Signatures().Matches(cell.Groups[1].Value).Select(match => match.Groups[1].Value));
+        foreach (Match library in LibraryList().Matches(text))
+            declared.UnionWith(Signatures().Matches(library.Groups[1].Value).Select(match => match.Groups[1].Value));
+        foreach (Match heading in Headings().Matches(text))
+            declared.UnionWith(Signatures().Matches(heading.Value).Select(match => match.Groups[1].Value));
+        return declared;
     }
 
     static string Section(string text, string start, string end)
@@ -127,8 +145,20 @@ public partial class BuiltinCatalogueTests
     [GeneratedRegex(@"`([A-Za-z_][A-Za-z0-9_]*/[0-9]+)`")]
     private static partial Regex Signatures();
 
-    [GeneratedRegex(@"\*\*Library functions\*\*.*?`([a-z0-9 ]+)` \(one input\)")]
+    // The whole paragraph (group 1) and its list of one-input names (group 2).
+    [GeneratedRegex(@"^\*\*Library functions\*\*(.*?`([a-z0-9 ]+)` \(one input\).*)$", RegexOptions.Multiline)]
     private static partial Regex LibraryList();
+
+    [GeneratedRegex(@"^\| ([^|\n]*) \|", RegexOptions.Multiline)]
+    private static partial Regex FirstCells();
+
+    // One or more signatures at the start of a line, separated by ", ".
+    [GeneratedRegex(@"^`[A-Za-z_][A-Za-z0-9_]*/[0-9]+`(, `[A-Za-z_][A-Za-z0-9_]*/[0-9]+`)*", RegexOptions.Multiline)]
+    private static partial Regex Headings();
+
+    // The first sentence of §9.11, which names the members of the optional group.
+    [GeneratedRegex(@"A port MAY leave out the whole group:[^.]*\.")]
+    private static partial Regex ModuleGroup();
 
     [GeneratedRegex(@"^\s*([a-z][a-z0-9]*)\(x\):", RegexOptions.Multiline)]
     private static partial Regex Formulas();

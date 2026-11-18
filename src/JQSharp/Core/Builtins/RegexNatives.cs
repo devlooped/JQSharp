@@ -81,8 +81,8 @@ static class RegexNatives
             }
         }
 
-        if (!RegexSyntax.TryTranslate(re.AsString(), new RegexSyntax.Options(extended, dotAll), out var translation, out var reason)
-            || !RegexEngine.TryCompile(translation.Pattern, ignoreCase, out var pattern, out reason))
+        if (!RegexSyntax.TryTranslate(re.AsString(), new RegexSyntax.Options(extended, dotAll, ignoreCase), out var translation, out var reason)
+            || !RegexEngine.TryCompile(translation.Pattern, translation.Lookaround, out var pattern, out reason))
             return Error(Errors.RegexFailure(reason), out error);
 
         search = new Search(input.AsString(), pattern, translation.Groups, global, skipEmpty);

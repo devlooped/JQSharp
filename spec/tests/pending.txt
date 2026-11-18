@@ -351,3 +351,21 @@ regex.test	[match("[a-c😀]+"; "g") | .string]	"ab😀cd😁"
 regex.test	[match("\\W"; "g") | .string]	"a😀-"
 regex.test	[match("[^\\d😀]"; "g") | .string]	"1😀a😁"
 regex.test	[test("a b"; "x"), (try test("a\\ b"; "x") catch .[:15])]	"ab"
+
+# Cases added after step 9: argument order of match/test, ASCII \b and i, ldexp exponents
+math.test	[ldexp(1; nan), ldexp(1; infinite), ldexp(1; -infinite), scalbln(0; infinite), ldexp(infinite; -infinite), scalbln(-3; nan)]	null
+regex.test	[test("K"; "i"), test("k"; "i"), test("ß"; "i"), test("SS"; "i")]	"\u212a"
+regex.test	[test("ss"; "i"), test("é"; "i"), test("[a-z]"; "i")]	"É"
+regex.test	[match("a", "b"; "g", "") | [.string, .offset]]	"aab"
+regex.test	[test("a", "b"; null, "i")]	"a"
+regex.test	[test("A", "B"; "x", "i")]	"ab"
+regex.test	[test("\\b"), test("\\B")]	"é"
+regex.test	[match("\\b"; "g") | .offset], [match("\\B"; "g") | .offset]	"aé1_ b"
+regex.test	[match("\\bé"; "g") | .offset]	"aé é"
+regex.test	try test("[\\b]") catch .[:15]	"a"
+regex.test	[sub("(?<l>[a-z])"; "<\(.l)>"; "gi")]	"aB"
+regex.test	[test("é"; "i"), test("É"; "i")]	"É"
+regex.test	[test("s"; "i"), test("k"; "i"), test("S"; "i"), test("K"; "i")]	"\u017f\u212a"
+regex.test	[test("[a-z]"; "i"), test("\\w"; "i")]	"\u212a"
+dates.test	[[2015,nan], [2015,0,1,0,0,infinite], [-infinite]] | map(try mktime catch .)	null
+dates.test	[[2015,nan], [2015,0,1,0,0,infinite]] | map(try strftime("%Y") catch .)	null

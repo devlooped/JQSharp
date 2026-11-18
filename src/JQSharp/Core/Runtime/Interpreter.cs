@@ -1020,16 +1020,10 @@ sealed class Interpreter
     {
         var native = node.Native;
         if (native.TakesClosures)
-        {
-            return NativeTable.Closure(native) is { } function
-                ? function(this, env, node.Arguments, input, path, emit)
-                : Fail(Errors.NotImplemented(native.Name, native.Arity));
-        }
+            return NativeTable.Closure(native)(this, env, node.Arguments, input, path, emit);
 
-        if (NativeTable.Value(native) is not { } valueFunction)
-            return Fail(Errors.NotImplemented(native.Name, native.Arity));
         var arguments = new JqValue[native.Arity];
-        return Combine(valueFunction, node.Arguments, arguments.Length - 1, arguments, env, input, Path.Of(path), emit);
+        return Combine(NativeTable.Value(native), node.Arguments, arguments.Length - 1, arguments, env, input, Path.Of(path), emit);
     }
 
     Signal? Combine(ValueNative function, ImmutableArray<Node> nodes, int i, JqValue[] arguments, Env? env, JqValue input, Path? at, Emit emit)
@@ -1050,8 +1044,7 @@ sealed class Interpreter
         has = false;
         value = default;
         var native = node.Native;
-        if (NativeTable.Value(native) is not { } function)
-            return Fail(Errors.NotImplemented(native.Name, native.Arity));
+        var function = NativeTable.Value(native);
         var arguments = native.Arity == 0 ? [] : new JqValue[native.Arity];
         for (var i = arguments.Length - 1; i >= 0; i--)
         {

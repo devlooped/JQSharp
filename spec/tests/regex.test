@@ -216,13 +216,16 @@ match("(a)*")
 ["\n"]
 [false,true,true]
 
+# The i flag folds ASCII letters only (spec 13 lists the difference: jq 1.8.2 folds the Kelvin
+# sign U+212A to k and gives [true,true,false,false]).
 [test("K"; "i"), test("k"; "i"), test("ß"; "i"), test("SS"; "i")]
-"K"
-[true,true,false,false]
+"\u212a"
+[false,false,false,false]
 
+# Spec 13: no folding of non-ASCII letters; jq 1.8.2 gives [false,true,false].
 [test("ss"; "i"), test("é"; "i"), test("[a-z]"; "i")]
 "É"
-[false,true,false]
+[false,false,false]
 
 [match("[😀-😂]+") | [.offset, .length, .string]]
 "a😁😀b"
@@ -330,10 +333,6 @@ null
 ["a","😀"]
 ["a","\n","😀"]
 
-[test("\\b"), test("\\B")]
-"é"
-[true,false]
-
 [match("a{2}?"; "g") | .length]
 "aaa"
 [2]
@@ -398,3 +397,99 @@ sub("(?<x>a)"; "\(.x)!"; "g")
 [match("a{0,1000}") | .length]
 "aaa"
 [3]
+
+# match/2 and test/2: re varies fastest, then flags (spec 6.3, 9.10).
+[match("a", "b"; "g", "") | [.string, .offset]]
+"aab"
+[["a",0],["a",1],["b",2],["a",0],["b",2]]
+
+[test("a", "b"; null, "i")]
+"a"
+[true,false,true,false]
+
+[test("A", "B"; "x", "i")]
+"ab"
+[false,false,true,true]
+
+# \b and \B are ASCII word boundaries (by \w); spec 13 lists the difference: jq 1.8.2 counts
+# non-ASCII letters as word characters ([true,false]; [0,4,5,6] and [1,2,3]; [3]).
+[test("\\b"), test("\\B")]
+"é"
+[false,true]
+
+[match("\\b"; "g") | .offset], [match("\\B"; "g") | .offset]
+"aé1_ b"
+[0,1,2,4,5,6]
+[3]
+
+[match("\\bé"; "g") | .offset]
+"aé é"
+[1]
+
+[match("\\b\\d+\\b"; "g") | .string]
+"x1 22 3_ 4"
+["22","4"]
+
+[test("^\\b"), test("\\b$"), test("^\\B")]
+"ab"
+[true,true,false]
+
+[test("\\b"), test("\\B")]
+""
+[false,true]
+
+[test("\\bfoo\\b"), test("\\Bfoo")]
+"a foo_bar"
+[false,false]
+
+# Spec 13 (Regex row): \b is not an escape of a class; jq 1.8.2 reads [\b] as a backspace.
+try test("[\\b]") catch .[:15]
+"a"
+"Regex failure: "
+
+# The i flag folds ASCII letters, in literals, escapes, classes, ranges and negated classes.
+[.[] | test("^[^a]$"; "i")]
+["a", "A", "b"]
+[false,false,true]
+
+[.[] | test("^[X-c]$"; "i")]
+["x", "C", "_", "D", "^"]
+[true,true,true,false,true]
+
+[.[] | test("\\x41b"; "i")]
+["ab", "AB", "Ab"]
+[true,true,true]
+
+[match("A"; "gi") | .offset]
+"aAbA"
+[0,1,3]
+
+test("a b # c"; "ix")
+"AB"
+true
+
+[match("a*"; "gin") | .string]
+"bAaB"
+["Aa"]
+
+[.[] | test("^[A-Z0-9]+$"; "i")]
+["Ab9", "aé"]
+[true,false]
+
+[sub("(?<l>[a-z])"; "<\(.l)>"; "gi")]
+"aB"
+["<a><B>"]
+
+# The i flag folds ASCII letters only; spec 13 lists the difference: jq 1.8.2 folds Unicode
+# ([true,true]; [true,true,true,true] for U+017F and the Kelvin sign U+212A; [true,true]).
+[test("é"; "i"), test("É"; "i")]
+"É"
+[false,true]
+
+[test("s"; "i"), test("k"; "i"), test("S"; "i"), test("K"; "i")]
+"\u017f\u212a"
+[false,false,false,false]
+
+[test("[a-z]"; "i"), test("\\w"; "i")]
+"\u212a"
+[false,false]
