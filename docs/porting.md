@@ -12,7 +12,7 @@ What every port shares, unchanged:
 
 ## 1. The map
 
-`src/JQSharp/Core` is the whole engine. Nothing in it uses `System.Text.Json`, LINQ iterators, `yield return`, reflection, culture-sensitive APIs or exceptions as control flow, so each file ports on its own. The public .NET API (`Jq`, `JqExpression`, `JqOptions`, the `JsonElement` adapter) sits outside `Core` and is not ported: each port writes its own host boundary (§8).
+`src/JQSharp/Core` is the whole engine. Nothing in it uses `System.Text.Json`, LINQ iterators, `yield return`, reflection, culture-sensitive APIs or exceptions as control flow, so each file ports on its own. The public .NET API (`Jq`, `JqExpression`, `JqOptions`, the exceptions, the resolvers) and its adapters (`Json/JsonElementAdapter.cs` for values, `Host/ResolverSource.cs` and `Host/TimeProviderClock.cs` for the module source and the clock) sit outside `Core` and are not ported: each port writes its own host boundary (3.8).
 
 ### 1.1 Layers
 

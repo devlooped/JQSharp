@@ -38,12 +38,14 @@ using var doc = JsonDocument.Parse(
     {"name":"Alice","age":30}
     """);
 
-// Returns an IEnumerable<JsonElement> with the matching results
-var results = Jq.Evaluate(".name", doc.RootElement);
+// Returns every result, computed before the list is returned
+IReadOnlyList<JsonElement> results = Jq.Evaluate(".name", doc.RootElement);
 
-foreach (var result in results)
-    Console.WriteLine(result); // "Alice"
+Console.WriteLine(results[0]); // Alice
 ```
+
+Results are `JsonElement`s of their own: they stay valid after the input's document is disposed.
+An empty expression is the identity, `.`.
 
 ### Parse once, evaluate many times
 
@@ -52,21 +54,25 @@ into a reusable `JqExpression`. Parsed expressions are immutable and fully threa
 so the same instance can be evaluated concurrently from multiple threads.
 
 ```csharp
-using System.Text.Json;
-using Devlooped;
+string[] payloads =
+[
+    """{"users":[{"name":"Alice","active":true},{"name":"Bob","active":false}]}""",
+    """{"users":[{"name":"Carol","active":true}]}""",
+];
 
 // Parse once — this is the expensive step
 JqExpression filter = Jq.Parse(".users[] | select(.active) | .name");
 
 // Evaluate cheaply against many inputs
-foreach (var json in GetJsonStream())
+foreach (var json in payloads)
 {
     using var doc = JsonDocument.Parse(json);
     foreach (var name in filter.Evaluate(doc.RootElement))
         Console.WriteLine(name);
 }
+// Alice
+// Carol
 ```
-
 ### Performance vs jq.exe
 The `WhatsApp/Message.jq` filter on one WhatsApp message, against the `jq` executable (run through `Devlooped.JQ`), with and without a cached `JqExpression`:
 
@@ -93,10 +99,33 @@ Programs whose cost must grow in step with their size, each on the input `null` 
 | `[range(4000)] \| .[] \|= . + 1 \| length`           |      1.5 s |          2.0 GB | 588.31 us |  1,287.53 KB |
 | `range(2000000)`, only the first result              |      1.1 s |          1.5 GB |  422.8 ns |      1.53 KB |
 
+### Streaming results
+
+`JqExpression.Evaluate` also takes a callback that receives each result as soon as it is 
+produced; returning `false` stops the evaluation (stopping is not an error). Prefer it when 
+an expression can produce many or endless results, when you only need the first few, or when 
+you want to handle results while the rest are still being computed:
+
+```csharp
+using var doc = JsonDocument.Parse("""{"limit": 1000000}""");
+var multiples = new List<int>();
+
+Jq.Parse("range(.limit) | select(. % 7 == 0)").Evaluate(doc.RootElement, result =>
+{
+    multiples.Add(result.GetInt32());
+    return multiples.Count < 3; // false stops the evaluation
+});
+
+Console.WriteLine(string.Join(", ", multiples)); // 0, 7, 14
+```
+
+If an error ends the evaluation, the callback has already received the results produced before 
+it; the list-returning `Evaluate` throws without returning any.
+
 ### Transforming JSON
 
-jq's full filter language is available, including pipes, array/object construction, 
-built-in functions, conditionals, and reductions:
+The jq filter language is available, including pipes, array/object construction, 
+built-in functions, conditionals, and reductions (see [The jqlite profile](#the-jqlite-profile)):
 
 ```csharp
 using var doc = JsonDocument.Parse(
@@ -195,31 +224,134 @@ Console.WriteLine(results.Single());
 
 ### Error handling
 
-Both `Jq.Parse` and `JqExpression.Evaluate` throw `JqException` on invalid expressions 
-or runtime errors:
+Errors are exceptions deriving from `JqException`:
+
+- `JqParseException`, thrown by `Jq.Parse` (and so by `Jq.Evaluate`) before any evaluation, for a 
+  syntax error or a function, label or module that is not defined, with its `Line` and `Column` 
+  (counting code points);
+- `JqException`, thrown by `Evaluate` for an error no `try` caught: `Value` is the error value, 
+  and `Message` is that value when it is a string, else its JSON text followed by `(not a string)`;
+- `JqHaltException`, thrown by `Evaluate` for `halt_error`, with its `Value` and `ExitCode`. 
+  (`halt` ends the evaluation normally, keeping the results produced before it.)
 
 ```csharp
+using var doc = JsonDocument.Parse("""{"name":"Bob","age":12}""");
+
 try
 {
-    var results = Jq.Evaluate(".foo", doc.RootElement).ToList();
+    Jq.Parse(".name |\n  shout");
+}
+catch (JqParseException ex)
+{
+    Console.WriteLine(ex.Message); // shout/0 is not defined at line 2, column 3
+}
+
+try
+{
+    Jq.Evaluate("""if .age < 18 then error({reason: "minor", age}) else . end""", doc.RootElement);
 }
 catch (JqException ex)
 {
-    Console.WriteLine($"jq error: {ex.Message}");
+    Console.WriteLine(ex.Message);                      // {"reason":"minor","age":12} (not a string)
+    Console.WriteLine(ex.Value?.GetProperty("reason")); // minor
+}
+
+try
+{
+    Jq.Evaluate("""{status: "rejected"} | halt_error(3)""", doc.RootElement);
+}
+catch (JqHaltException ex)
+{
+    Console.WriteLine($"{ex.ExitCode}: {ex.Value}"); // 3: {"status":"rejected"}
 }
 ```
+
+### Options
+
+`Jq.Parse` takes a `JqOptions` with what an expression gets from its host besides its input. 
+Options are read when the expression is parsed and apply to every evaluation of it:
+
+| Option | Default | Used for |
+| --- | --- | --- |
+| `Resolver` | none: no module exists | `import`, `include` and `modulemeta` (see [Modules](#modules)) |
+| `Environment` | the process environment | `$ENV` and `env`, in the dictionary's order |
+| `TimeProvider` | `TimeProvider.System` | `now`, and the local time zone of `localtime`, `strflocaltime`, `%z` and `%Z` |
+| `MaxDepth` | 1000 | the calls of jq-defined functions active at once; beyond it, the catchable error `Maximum call depth exceeded` (deep recursion never overflows the .NET stack) |
+
+```csharp
+using var doc = JsonDocument.Parse("null");
+
+var options = new JqOptions
+{
+    Environment = new Dictionary<string, string> { ["STAGE"] = "prod" },
+    TimeProvider = new FixedTime(
+        new DateTimeOffset(2025, 6, 1, 12, 0, 0, TimeSpan.Zero),
+        TimeZoneInfo.CreateCustomTimeZone("UTC-3", TimeSpan.FromHours(-3), "UTC-3", "UTC-3")),
+    MaxDepth = 200,
+};
+
+var expression = Jq.Parse(
+    """{stage: $ENV.STAGE, utc: (now | todate), local: (now | strflocaltime("%H:%M %z"))}""",
+    options);
+
+Console.WriteLine(expression.Evaluate(doc.RootElement)[0]);
+// {"stage":"prod","utc":"2025-06-01T12:00:00Z","local":"09:00 -0300"}
+
+class FixedTime(DateTimeOffset now, TimeZoneInfo zone) : TimeProvider
+{
+    public override DateTimeOffset GetUtcNow() => now;
+
+    public override TimeZoneInfo LocalTimeZone => zone;
+}
+```
+
+.NET has no time zone abbreviations, so `%Z` in `strflocaltime` prints the offset (`-03`).
+
+### External variables
+
+Pass a dictionary of variables when evaluating to inject values available as `$name`
+in the filter—similar to jq's `--arg` / `--argjson`:
+
+```csharp
+using var doc = JsonDocument.Parse("""{"name":"Alice"}""");
+using var root = JsonDocument.Parse("""{"id":42,"role":"admin"}""");
+
+var variables = new Dictionary<string, JsonElement>
+{
+    ["root"] = root.RootElement, // binds $root
+};
+
+// $root is available as if it had been bound with `as`, but supplied from host code
+var results = Jq.Evaluate(
+    "{name, id: $root.id, role: $root.role}",
+    doc.RootElement,
+    variables);
+
+Console.WriteLine(results.Single()); // {"name":"Alice","id":42,"role":"admin"}
+```
+
+The same dictionary can be passed to `JqExpression.Evaluate` and the `EvaluateAsync` overloads.
+
+- Keys are jq identifiers (`[A-Za-z_][A-Za-z0-9_]*`) without the leading `$`; `ENV` is not 
+  allowed (`$ENV` comes from `JqOptions.Environment`). Any other key throws `ArgumentException` 
+  before the evaluation starts.
+- A `$name` the expression does not bind itself is looked up among these variables when it is 
+  evaluated; a missing one is the run-time error `$name is not defined` (a `JqException`, which 
+  `try` can catch). `as $name` bindings and `$name` parameters shadow a variable of the same name.
 
 ## Streaming JSONL
 
 `Jq.EvaluateAsync` accepts an `IAsyncEnumerable<JsonElement>` input and evaluates the 
 filter against each element as it arrives, making it well-suited for processing 
 [JSONL](https://jsonlines.org) (newline-delimited JSON) files or any other streaming 
-JSON source without buffering the entire dataset in memory.
+JSON source without buffering the entire dataset in memory. The results of one element 
+are computed before they are yielded.
 
 ### Reading a JSONL file
 
-Use `JsonSerializer.DeserializeAsyncEnumerable<JsonElement>` to turn a stream of 
-newline-delimited JSON objects into an `IAsyncEnumerable<JsonElement>`:
+Use `JsonSerializer.DeserializeAsyncEnumerable<JsonElement>` (System.Text.Json 9 or later 
+for `topLevelValues`) to turn a stream of newline-delimited JSON objects into an 
+`IAsyncEnumerable<JsonElement>`:
 
 ```csharp
 using System.Text.Json;
@@ -240,9 +372,12 @@ await foreach (var result in Jq.EvaluateAsync(
     """,
     elements))
     Console.WriteLine(result);
-// "Alice"
-// "Charlie"
+// Alice
+// Charlie
 ```
+
+This overload parses the expression when the enumeration starts, so a `JqParseException` 
+surfaces at the first `await foreach` step.
 
 ### Reusing a parsed expression across multiple streams
 
@@ -265,48 +400,134 @@ foreach (var logFile in Directory.GetFiles("logs", "*.jsonl"))
 }
 ```
 
-### External variables
+Both overloads take optional variables and a `CancellationToken`.
 
-Pass a dictionary of variables when evaluating to inject values available as `$name`
-in the filter—similar to jq's `--arg` / `--argjson`, and resolved dynamically like `$ENV`.
-Dictionary keys must be valid jq identifiers and must **not** include a leading `$`:
+## Modules
+
+`import "path" as name;` and `include "path";` load jq definitions from code modules, and 
+`import "path" as $name;` loads a data module: its JSON values, bound as an array to `$name` 
+(and `$name::name`). Modules are found by the `JqOptions.Resolver`, and read once per module 
+when the expression is parsed; a module that cannot be found is a `JqParseException` 
+(`module not found: path`).
+
+### Files
+
+`JqFileResolver` resolves a path against the directory of the module that names it, or against 
+its base directory for the expression itself, and adds `.jq` (code) or `.json` (data) when the 
+path has no extension:
 
 ```csharp
-using var doc = JsonDocument.Parse("""{"name":"Alice"}""");
-using var root = JsonDocument.Parse("""{"id":42,"role":"admin"}""");
+// filters/common.jq:  def cents: . * 100 | round / 100;
+// filters/rates.json: {"usd": 1, "eur": 0.92}
+var options = new JqOptions { Resolver = new JqFileResolver("filters") };
 
-var variables = new Dictionary<string, JsonElement>
-{
-    ["root"] = root.RootElement, // binds $root
-};
+var toEuros = Jq.Parse(
+    """
+    include "common"; import "rates" as $rates;
+    .amount * $rates[0].eur | cents
+    """,
+    options);
 
-// $root is available as if it had been bound with `as`, but supplied from host code
-var results = Jq.Evaluate(
-    "{name, id: $root.id, role: $root.role}",
-    doc.RootElement,
-    variables);
-
-Console.WriteLine(results.Single()); // {"name":"Alice","id":42,"role":"admin"}
+using var doc = JsonDocument.Parse("""{"amount": 12.345}""");
+Console.WriteLine(toEuros.Evaluate(doc.RootElement)[0]); // 11.36
 ```
 
-The same dictionary can be passed to `JqExpression.Evaluate` and the `EvaluateAsync`
-overloads. Missing variables throw at evaluation time (`$name is not defined`).
+### Embedded resources
 
-## jq Compatibility
+`JqResourceResolver` reads the embedded resources of an assembly: the resource name is the 
+prefix, then the path with `/` and `\` turned into dots, then `.jq` or `.json` unless the path 
+already ends with it. A directive inside a module is relative to that module's name without 
+its last segment:
 
-JQSharp targets the [jq 1.8](https://jqlang.org/manual/v1.8/) specification and passes 
-the official jq test suite for the supported feature set. 
+```csharp
+// Embedded as MyApp.Filters.utils.jq:      include "sub/helper"; def shout: twice | ascii_upcase;
+// Embedded as MyApp.Filters.sub.helper.jq: def twice: . + " " + .;
+var options = new JqOptions { Resolver = new JqResourceResolver(typeof(Program).Assembly, "MyApp.Filters") };
 
-Supported features include:
+using var doc = JsonDocument.Parse("\"hey\"");
+Console.WriteLine(Jq.Parse("""include "utils"; shout""", options).Evaluate(doc.RootElement)[0]); // HEY HEY
+```
 
-- Field access, array/object iteration and slicing
-- Pipe (`|`), comma (`,`), and parentheses for grouping
-- Array and object constructors (`[]`, `{}`)
-- All built-in functions (`map`, `select`, `group_by`, `to_entries`, `from_entries`, `env`, `limit`, `until`, `recurse`, `paths`, `walk`, `ascii`, `format`, `strftime`, `debug`, …)
-- String interpolation (`"\(.foo)"`) and format strings (`@base64`, `@uri`, `@csv`, `@tsv`, `@html`, `@json`, `@text`, `@sh`)
-- Variables (`as $x`), destructuring, external variable bindings at evaluation time, and user-defined functions (`def f(x): …`)
-- `reduce`, `foreach`, `label-break`, `try-catch`, `?//` alternative operator
-- Optional operator (`?`), path expressions, update (`|=`) and assignment operators
+### Your own resolver
+
+Derive from `JqResolver` to keep modules anywhere else. `GetCanonicalPath` maps a path, as 
+written in the directive, to the module's identity, or to `null` when there is no such module; 
+it also receives the kind (`JqModuleKind.Code` or `Data`), the directive's metadata and the 
+identity of the importing module (`null` for the expression itself). `Open` reads the module 
+of an identity it returned. The same identity means the same module. `modulemeta` calls the 
+resolver at evaluation time, possibly from several threads at once.
+
+```csharp
+var options = new JqOptions
+{
+    Resolver = new DictionaryResolver(new Dictionary<string, string>
+    {
+        ["greet.jq"] = """def greet: "hello " + .;""",
+    }),
+};
+
+using var doc = JsonDocument.Parse("\"world\"");
+Console.WriteLine(Jq.Parse("""import "greet" as g; g::greet""", options).Evaluate(doc.RootElement)[0]); // hello world
+
+class DictionaryResolver(IReadOnlyDictionary<string, string> modules) : JqResolver
+{
+    public override string? GetCanonicalPath(string path, JqModuleKind kind, JsonElement? metadata, string? fromPath)
+    {
+        var name = path + (kind == JqModuleKind.Code ? ".jq" : ".json");
+        return modules.ContainsKey(name) ? name : null;
+    }
+
+    public override TextReader Open(string canonicalPath) => new StringReader(modules[canonicalPath]);
+}
+```
+
+## The jqlite profile
+
+JQSharp is the reference implementation of **jqlite**, the profile of [jq 1.8](https://jqlang.org/manual/v1.8/) 
+specified in [`spec/jqlite.md`](https://github.com/devlooped/JQSharp/blob/main/spec/jqlite.md). The 
+builtins written in jq ([`spec/prelude.jq`](https://github.com/devlooped/JQSharp/blob/main/spec/prelude.jq)) 
+and the conformance tests ([`spec/tests`](https://github.com/devlooped/JQSharp/tree/main/spec/tests)) 
+are shared by every implementation, and the engine is written to be ported to other languages 
+([`docs/porting.md`](https://github.com/devlooped/JQSharp/blob/main/docs/porting.md)).
+
+The profile has the jq language: paths, pipes, generators, array and object construction, 
+string interpolation, variables and destructuring (including `?//`), `def`, `reduce`, `foreach`, 
+`label`/`break`, `try`/`catch` and `?`, path expressions and every assignment operator, and modules. 
+Its [builtins](https://github.com/devlooped/JQSharp/blob/main/spec/jqlite.md#9-builtins) cover types and 
+selection, objects, arrays and collections, paths, strings, formats (`@base64`, `@uri`, `@csv`, 
+`@tsv`, `@html`, `@json`, `@text`, `@sh`), dates, math and regular expressions.
+
+jq programs behave as in jq 1.8, except for the [differences](https://github.com/devlooped/JQSharp/blob/main/spec/jqlite.md#13-differences-from-jq-18) 
+that make the profile portable. Those you are most likely to notice:
+
+- Numbers are doubles, written in one canonical form (`1.0` is `1`; `1e-7`, `1e+21`, `-0`); NaN is 
+  written as `null` and infinities as ±`1.7976931348623157e+308`.
+- Regular expressions use a common dialect: no lookaround, backreferences or inline flags; `\d`, `\w`, 
+  `\s` and `\b` are ASCII; the `i` flag folds ASCII letters only.
+- An unbound `$name` is a host variable (see [External variables](#external-variables)), not a parse error.
+- Recursion depth is limited by `MaxDepth`, with no tail calls.
+- Dates use their own English tables, with no locale.
+- Not in the profile: I/O and debugging (`input`, `inputs`, `debug`, `stderr`, `input_filename`, 
+  `$__loc__`), streaming (`tostream`, `fromstream`, `truncate_stream`), and a few others such as 
+  `trim`, `@base32`, `leaf_paths` and some math and date functions.
+
+## Upgrading from 1.x
+
+- `Jq.Evaluate` and `JqExpression.Evaluate` return an `IReadOnlyList<JsonElement>`; the new 
+  callback overload streams results.
+- `Jq.Parse(expression, resolver)` is now `Jq.Parse(expression, new JqOptions { Resolver = resolver })`.
+- `JqParseException` and `JqHaltException` derive from `JqException`, which is no longer sealed.
+- An empty expression means `.`.
+- Unknown functions, labels and modules fail at `Jq.Parse` rather than when evaluated.
+- `JqResolver` has a new contract (`GetCanonicalPath` and `Open`), and data imports bind an array.
+- Output numbers are written in the canonical form described in [The jqlite profile](#the-jqlite-profile).
+- Lone surrogates in strings become U+FFFD.
+- `$ENV` and `env` come from `JqOptions.Environment`, and the clock and time zone from `JqOptions.TimeProvider`.
+- Deep recursion fails with `Maximum call depth exceeded` (`JqOptions.MaxDepth`) instead of a stack overflow.
+- Semantic fixes: lexical scoping of functions and variables, the precedence of `as` and `//`, 
+  `try` keeping the outputs produced before an error, object construction over generators, 
+  short-circuit `and`/`or`, stable sorts, and string slices by code point.
+- Regular expressions follow the dialect described in [The jqlite profile](#the-jqlite-profile).
 
 <!-- #content -->
 
