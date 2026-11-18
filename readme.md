@@ -68,20 +68,30 @@ foreach (var json in GetJsonStream())
 ```
 
 ### Performance vs jq.exe
+The `WhatsApp/Message.jq` filter on one WhatsApp message, against the `jq` executable (run through `Devlooped.JQ`), with and without a cached `JqExpression`:
 
 ```
-BenchmarkDotNet v0.15.8, Windows 11 (10.0.26200.8037/25H2/2025Update/HudsonValley2)
+BenchmarkDotNet v0.15.8, Windows 11 (10.0.26300.9711)
 AMD Ryzen AI 9 HX 370 w/ Radeon 890M 2.00GHz, 1 CPU, 24 logical and 12 physical cores
-.NET SDK 10.0.104
-  [Host]     : .NET 8.0.25 (8.0.25, 8.0.2526.11203), X64 RyuJIT x86-64-v4
-  DefaultJob : .NET 8.0.25 (8.0.25, 8.0.2526.11203), X64 RyuJIT x86-64-v4
+.NET SDK 11.0.100-rc.3.26522.148
+  [Host]     : .NET 8.0.34 (8.0.34, 8.0.3426.52217), X64 RyuJIT x86-64-v4
+  DefaultJob : .NET 8.0.34 (8.0.34, 8.0.3426.52217), X64 RyuJIT x86-64-v4
 ```
 
-| Method                  | Mean         | Error      | StdDev     | Ratio | RatioSD | Gen0    | Gen1   | Allocated | Alloc Ratio |
-|-------------------------|-------------:|-----------:|-----------:|------:|--------:|--------:|-------:|----------:|------------:|
-| jq executable           | 20,774.05 us | 415.148 us | 838.619 us | 1.002 |    0.06 |       - |      - | 122.23 KB |        1.00 |
-| JQSharp no caching      |    149.67 us |   2.370 us |   2.911 us | 0.007 |    0.00 | 41.0156 | 8.3008 | 336.23 KB |        2.75 |
-| JQSharp w/query caching |     15.52 us |   0.061 us |   0.057 us | 0.001 |    0.00 |  6.7444 | 0.3357 |  55.34 KB |        0.45 |
+| Method                  | Mean         | Error      | StdDev       | Ratio | RatioSD | Gen0    | Gen1   | Allocated | Alloc Ratio |
+|-------------------------|-------------:|-----------:|-------------:|------:|--------:|--------:|-------:|----------:|------------:|
+| jq executable           | 27,689.45 us | 548.792 us | 1,017.221 us | 1.001 |    0.05 |       - |      - | 122.15 KB |        1.00 |
+| JQSharp no caching      |    148.33 us |   2.953 us |     7.674 us | 0.005 |    0.00 | 30.1514 | 5.4932 | 246.83 KB |        2.02 |
+| JQSharp w/query caching |     12.46 us |   0.249 us |     0.601 us | 0.000 |    0.00 |  1.9684 | 0.0458 |  16.15 KB |        0.13 |
+
+Programs whose cost must grow in step with their size, each on the input `null` with a cached expression. "1.x" is the previous engine, measured as one warm run each (not with BenchmarkDotNet), so compare orders of magnitude, not digits:
+
+| Program                                              | Mean (1.x) | Allocated (1.x) |      Mean |    Allocated |
+|------------------------------------------------------|-----------:|----------------:|----------:|-------------:|
+| `[range(100000)] \| map(. + 1) \| add`               |      0.5 s |          577 MB |  22.33 ms | 26,167.56 KB |
+| `reduce range(10000) as $i ([]; . + [$i]) \| length` |      3.1 s |          3.0 GB |   1.68 ms |  3,589.61 KB |
+| `[range(4000)] \| .[] \|= . + 1 \| length`           |      1.5 s |          2.0 GB | 588.31 us |  1,287.53 KB |
+| `range(2000000)`, only the first result              |      1.1 s |          1.5 GB |  422.8 ns |      1.53 KB |
 
 ### Transforming JSON
 
