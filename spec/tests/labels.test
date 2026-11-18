@@ -41,3 +41,16 @@ label $out | foreach .[] as $x (0; . + $x; if . > 3 then ., break $out else . en
 [label $f | def g: break $f; (label $f | 1, g, 2), 3]
 null
 [1]
+
+# Laziness: a consumer that stops stops its producers.
+first(range(10; infinite))
+null
+10
+
+[limit(3; repeat(1))]
+null
+[1,1,1]
+
+[label $f | 1, break $f, error("unreached")]
+null
+[1]

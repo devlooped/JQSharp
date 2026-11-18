@@ -10,12 +10,18 @@ enum NativeGroup
 }
 
 /// <summary>
-/// One native builtin of spec §9: identity and catalogue position only. The catalogue is plain
-/// data so that the resolver can bind calls to an entry before the entry is implemented; the
-/// interpreter finds an implementation by <see cref="Index"/> (until there is one, a call is the
-/// runtime error <c>name/arity is not implemented</c>).
+/// One native builtin of spec §9: identity, catalogue position, and how it takes its arguments. The
+/// catalogue is plain data so that the resolver can bind calls to an entry before the entry is
+/// implemented; the interpreter finds an implementation by <see cref="Index"/> in NativeTable
+/// (until there is one, a call is the runtime error <c>name/arity is not implemented</c>).
 /// </summary>
-sealed record Native(string Name, int Arity, NativeGroup Group, int Index)
+/// <remarks>
+/// By default a native takes value arguments (§9.1): each argument is evaluated on the input and
+/// the native gives one output, or an error, per combination. <see cref="TakesClosures"/> marks
+/// the entries of §9 that say otherwise: they receive their arguments unevaluated and decide what
+/// to evaluate, in which mode, and how many outputs to give.
+/// </remarks>
+sealed record Native(string Name, int Arity, NativeGroup Group, int Index, bool TakesClosures)
 {
     /// <summary>Internal builtins (a name starting with <c>_</c>) are callable but not listed by <c>builtins</c> (§9.1).</summary>
     public bool IsInternal => Name.StartsWith('_');
@@ -55,6 +61,11 @@ static class Natives
     [
         // §9.11 Modules
         "modulemeta/0",
+    ],
+    [
+        // §9.2, §9.4, §9.5, §9.6: no output, a signal, generators, path-capable, many outputs.
+        "empty/0", "halt/0", "halt_error/1", "last/1", "range/2", "limit/2", "skip/2", "while/2", "until/2", "repeat/1",
+        "path/1", "getpath/1", "match/2",
     ]);
 
     static readonly Dictionary<string, Native> byKey = Index(All);
@@ -64,20 +75,21 @@ static class Natives
 
     static string Key(string name, int arity) => $"{name}/{arity}";
 
-    static ImmutableArray<Native> Build(string[] core, string[] modules)
+    static ImmutableArray<Native> Build(string[] core, string[] modules, string[] closures)
     {
         var natives = ImmutableArray.CreateBuilder<Native>(core.Length + modules.Length);
-        Add(natives, core, NativeGroup.Core);
-        Add(natives, modules, NativeGroup.Modules);
+        Add(natives, core, NativeGroup.Core, closures);
+        Add(natives, modules, NativeGroup.Modules, closures);
         return natives.MoveToImmutable();
     }
 
-    static void Add(ImmutableArray<Native>.Builder natives, string[] signatures, NativeGroup group)
+    static void Add(ImmutableArray<Native>.Builder natives, string[] signatures, NativeGroup group, string[] closures)
     {
         foreach (var signature in signatures)
         {
             var slash = signature.IndexOf('/');
-            natives.Add(new Native(signature[..slash], int.Parse(signature[(slash + 1)..]), group, natives.Count));
+            var takesClosures = Array.IndexOf(closures, signature) >= 0;
+            natives.Add(new Native(signature[..slash], int.Parse(signature[(slash + 1)..]), group, natives.Count, takesClosures));
         }
     }
 

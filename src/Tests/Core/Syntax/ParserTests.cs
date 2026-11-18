@@ -133,8 +133,8 @@ public class ParserTests
     public void Definitions_and_labels_are_not_operands(string source, string expected) => Assert.Equal(expected, Error(source));
 
     [Theory]
-    [InlineData("def f(a; $b): [a, $b, b]; f(1; 2)", "(def f(a;$b) (as b $b (array (, (, a $b) b)))) (f 1 2)")]
-    [InlineData("def f($a; $b): $a + $b; 1", "(def f($a;$b) (as a $a (as b $b (+ $a $b)))) 1")]
+    [InlineData("def f(a; $b): [a, $b, b]; f(1; 2)", "(def f(a;$b) (array (, (, a $b) b))) (f 1 2)")]
+    [InlineData("def f($a; $b): $a + $b; 1", "(def f($a;$b) (+ $a $b)) 1")]
     [InlineData("def f(x): x; f(.)", "(def f(x) x) (f .)")]
     [InlineData("def true: 1; true", "(def true 1) true")]
     [InlineData("def f::g: 1; f::g", "(def f::g 1) f::g")]
@@ -354,7 +354,7 @@ public class ParserTests
             out var program, out var error), error?.Message);
         Assert.Equal(
             "(module {\"a\":1,\"b\":[1,\"x\",null,true,{\"c\":false}],\"if\":{}}) (import \"m\" m {\"search\":\"./\"}) (import \"d\" $d) "
-            + "(include \"i\") (include \"j\" {\"k\":[]}) (def f 1) (def g($x) (as x $x $x))",
+            + "(include \"i\") (include \"j\" {\"k\":[]}) (def f 1) (def g($x) $x)",
             Print(program));
         Assert.Null(program.Body);
         Assert.Equal(new Position(2, 1), program.Imports[0].Position);

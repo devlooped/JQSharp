@@ -28,7 +28,7 @@ public class ResolverTests
     // Name and arity together identify a function.
     [InlineData("def f: 1; def f(a): 2; f, f(3)", "(def f/0#0 1) (def f/1#1 2) (, f/0#0^0 (f/1#1^0 3))")]
     // Local definitions are visible in their scope only.
-    [InlineData("def f: 1; [f, (def f: 2; f), f]", "(def f/0#0 1) (def f/0#1 2) (array (, (, f/0#0^0 f/0#1^0) f/0#0^0))")]
+    [InlineData("def f: 1; [f, (def f: 2; f), f]", "(def f/0#0 1) (def f/0#1 2) (array (, f/0#0^0 f/0#1^0 f/0#0^0))")]
     // A call of an enclosing function from a nested one, across the parameters' frame.
     [InlineData("def f(g): def h: f(g); h; f(.)", "(def f/1#0 h/0#1^0) (def h/0#1 (f/1#0^1 param^0.0)) (f/1#0^0 .)")]
     public void Functions_bind_to_the_innermost_visible_definition(string program, string bound)
@@ -49,6 +49,11 @@ public class ResolverTests
     [InlineData("def f(g): def g: 1; g; f(2)", "(def f/1#0 g/0#1^0) (def g/0#1 1) (f/1#0^0 2)")]
     // def f($a) is def f(a): a as $a | …: both the filter and the variable are visible.
     [InlineData("def f($a): $a, a; f(1)", "(def f/1#0 (as param^0.0 $0 (, $0.0 param^1.0))) (f/1#0^0 1)")]
+    [InlineData("def f($a; $b): $a, $b; f(1; 2)", "(def f/2#0 (as param^0.0 $0 (as param^1.1 $0 (, $1.0 $0.0)))) (f/2#0^0 1 2)")]
+    // The binding of $a names its parameter by position; the filter a is the last parameter of that name (spec §7.7).
+    [InlineData("def f(a; $a): [a, $a]; f(1; 2)", "(def f/2#0 (as param^0.1 $0 (array (, param^1.1 $0.0)))) (f/2#0^0 1 2)")]
+    [InlineData("def f($a; a): [a, $a]; f(1; 2)", "(def f/2#0 (as param^0.0 $0 (array (, param^1.1 $0.0)))) (f/2#0^0 1 2)")]
+    [InlineData("def f(x): def x: 5; x; f(1)", "(def f/1#0 x/0#1^0) (def x/0#1 5) (f/1#0^0 1)")]
     // Qualified names are ordinary names when defined (jq 1.8.2).
     [InlineData("def f(a::b): a::b; f(3)", "(def f/1#0 param^0.0) (f/1#0^0 3)")]
     [InlineData("def f::g: 1; f::g", "(def f::g/0#0 1) f::g/0#0^0")]
@@ -57,7 +62,7 @@ public class ResolverTests
 
     [Theory]
     // A break refers to the label visible where it is written, also inside a function: the spec's example.
-    [InlineData("[label $f | def g: break $f; (label $f | 1, g, 2), 3]", "(def g/0#0 (break ^0)) (array (label (, (label (, (, 1 g/0#0^1) 2)) 3)))")]
+    [InlineData("[label $f | def g: break $f; (label $f | 1, g, 2), 3]", "(def g/0#0 (break ^0)) (array (label (, (label (, 1 g/0#0^1 2)) 3)))")]
     [InlineData("label $a | label $b | break $a, break $b", "(label (label (, (break ^1) (break ^0))))")]
     [InlineData("label $a | 1 as $x | break $a", "(label (as 1 $0 (break ^1)))")]
     // Labels and variables are separate name spaces.
@@ -76,6 +81,9 @@ public class ResolverTests
     [InlineData(". as [$a, $a] | $a", "(as . [$_ $0] $0.0)")]
     [InlineData(". as {$a, b: $a} | $a", "(as . {(\"a\" $0 _) (\"b\" _ $_)} $0.0)")]
     [InlineData(". as [$a, [$a]] | $a", "(as . [$_ [$0]] $0.0)")]
+    // With ?// every occurrence stores and the last in matching order stays (spec §7.5).
+    [InlineData(". as {$a, b: $a} ?// $c | $a", "(as . (?// {(\"a\" $0 _) (\"b\" _ $0)} $1) $0.0)")]
+    [InlineData(". as {x: $c} ?// [$a, $a] | $a", "(as . (?// {(\"x\" _ $0)} [$1 $1]) $0.1)")]
     // Key expressions see the scope outside the binding, not the pattern's variables (jq 1.8.2).
     [InlineData("\"b\" as $x | . as {a: $x, ($x): $y} | $y", "(as \"b\" $0 (as . {(\"a\" _ $0) ($0.0 _ $1)} $0.1))")]
     [InlineData(". as {a: $x, ($x): $y} | $y", "(as . {(\"a\" _ $0) ($$x _ $1)} $0.1)")]
@@ -88,7 +96,7 @@ public class ResolverTests
 
     [Theory]
     // An unbound simple $name is a host variable, numbered by first appearance.
-    [InlineData("$foo, $bar, $foo", "(, (, $$foo $$bar) $$foo)")]
+    [InlineData("$foo, $bar, $foo", "(, $$foo $$bar $$foo)")]
     [InlineData("$__loc__", "$$__loc__")]
     [InlineData("$ENV", "$ENV")]
     [InlineData("1 as $ENV | $ENV", "(as 1 $0 $0.0)")]
@@ -126,7 +134,7 @@ public class ResolverTests
     [Fact]
     public void Every_construct_binds_its_children()
         => Assert.Equal(
-            "(as . $0 (array (, (, (, (, (, (object (\"a\" $0.0) (\"b\" _) ($0.0 1)) (str @base64 \"x\" $0.0 \"\")) (slice (index . $0.0) $0.0 _)) (if $0.0 (try $0.0 $0.0) (// (or (and $0.0 $0.0) (neg $0.0)) @csv))) (iter $0.0)) (try (index . \"a\")))))",
+            "(as . $0 (array (, (object (\"a\" $0.0) (\"b\" _) ($0.0 1)) (str @base64 \"x\" $0.0 \"\") (slice (index . $0.0) $0.0 _) (if $0.0 (try $0.0 $0.0) (// (or (and $0.0 $0.0) (neg $0.0)) @csv)) (iter $0.0) (try (index . \"a\")))))",
             Bind(". as $x | [{a: $x, b, ($x): 1}, @base64 \"x\\($x)\", .[$x][$x:], if $x then try $x catch $x else $x and $x or -$x // @csv end, $x[], .a?]"));
 
     [Fact]

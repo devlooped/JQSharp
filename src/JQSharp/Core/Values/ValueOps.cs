@@ -234,7 +234,7 @@ static class ValueOps
             }
         }
 
-        return Fail(ValueErrors.CannotBe(a, b, ValueErrors.Added), out result, out error);
+        return Fail(Errors.CannotBe(a, b, Errors.Added), out result, out error);
     }
 
     /// <summary>jq's <c>-</c>: numbers subtract; arrays drop every element equal to one of the right-hand array.</summary>
@@ -266,7 +266,7 @@ static class ValueOps
             return true;
         }
 
-        return Fail(ValueErrors.CannotBe(a, b, ValueErrors.Subtracted), out result, out error);
+        return Fail(Errors.CannotBe(a, b, Errors.Subtracted), out result, out error);
     }
 
     /// <summary>jq's unary <c>-</c>: IEEE negation of a number (<c>0 | -.</c> is -0).</summary>
@@ -274,7 +274,7 @@ static class ValueOps
     {
         error = default;
         if (value.Kind != JqKind.Number)
-            return Fail(ValueErrors.CannotNegate(value), out result, out error);
+            return Fail(Errors.CannotNegate(value), out result, out error);
         result = JqValue.FromNumber(-value.AsNumber());
         return true;
     }
@@ -307,7 +307,7 @@ static class ValueOps
             return true;
         }
 
-        return Fail(ValueErrors.CannotBe(a, b, ValueErrors.Multiplied), out result, out error);
+        return Fail(Errors.CannotBe(a, b, Errors.Multiplied), out result, out error);
     }
 
     // s * n: null for a NaN or negative n; otherwise s repeated trunc(n) times ("" below 1).
@@ -329,7 +329,7 @@ static class ValueOps
 
         // The spec's limit is 2^31 - 1 UTF-8 bytes; .NET's string length limit may be hit first.
         if ((long)Encoding.UTF8.GetByteCount(text) * count > int.MaxValue || (long)text.Length * count > MaxStringLength)
-            return Fail(ValueErrors.RepeatTooLong, out result, out error);
+            return Fail(Errors.RepeatTooLong, out result, out error);
 
         var builder = new StringBuilder(text.Length * count);
         for (var i = 0; i < count; i++)
@@ -363,7 +363,7 @@ static class ValueOps
         {
             var divisor = b.AsNumber();
             if (divisor == 0)
-                return Fail(ValueErrors.DivisorIsZero(a, b, ValueErrors.Divided), out result, out error);
+                return Fail(Errors.DivisorIsZero(a, b, Errors.Divided), out result, out error);
             result = JqValue.FromNumber(a.AsNumber() / divisor);
             return true;
         }
@@ -374,7 +374,7 @@ static class ValueOps
             return true;
         }
 
-        return Fail(ValueErrors.CannotBe(a, b, ValueErrors.Divided), out result, out error);
+        return Fail(Errors.CannotBe(a, b, Errors.Divided), out result, out error);
     }
 
     /// <summary>
@@ -418,7 +418,7 @@ static class ValueOps
     {
         error = default;
         if (a.Kind != JqKind.Number || b.Kind != JqKind.Number)
-            return Fail(ValueErrors.CannotBe(a, b, ValueErrors.Remainder), out result, out error);
+            return Fail(Errors.CannotBe(a, b, Errors.Remainder), out result, out error);
 
         var x = a.AsNumber();
         var y = b.AsNumber();
@@ -430,7 +430,7 @@ static class ValueOps
 
         var divisor = ToInteger(y);
         if (divisor == 0)
-            return Fail(ValueErrors.DivisorIsZero(a, b, ValueErrors.Remainder), out result, out error);
+            return Fail(Errors.DivisorIsZero(a, b, Errors.Remainder), out result, out error);
 
         // -1 divides everything, and long.MinValue % -1 overflows.
         result = JqValue.FromNumber(divisor == -1 ? 0 : ToInteger(x) % divisor);
@@ -440,6 +440,64 @@ static class ValueOps
     // Truncation toward zero, clamped to [-2^63, 2^63 - 1] (±Infinity clamp to the ends).
     static long ToInteger(double value)
         => value <= long.MinValue ? long.MinValue : value >= long.MaxValue ? long.MaxValue : (long)value;
+
+    /// <summary>
+    /// <c>.[key]</c> (§7.6): an object by a string (absent: null), an array by a number (NaN and out
+    /// of range: null; negative counts from the end) or by an array (the indices where it occurs), an
+    /// array or a string by a slice object, null by a string, a number or an object (null);
+    /// anything else is <c>Cannot index T with T (D)</c>.
+    /// </summary>
+    public static bool TryIndex(JqValue target, JqValue key, out JqValue result, out JqValue error)
+    {
+        error = default;
+        var kind = target.Kind;
+        switch (key.Kind)
+        {
+            case JqKind.String when kind == JqKind.Object:
+                result = target.AsObject().TryGetValue(key.AsString(), out var value) ? value : JqValue.Null;
+                return true;
+            case JqKind.Number when kind == JqKind.Array:
+                result = Element(target.AsArray(), key.AsNumber());
+                return true;
+            case JqKind.Array when kind == JqKind.Array:
+                result = JqValue.FromArray(Indices(target.AsArray(), key.AsArray()));
+                return true;
+            case JqKind.Object when kind is JqKind.Array or JqKind.String or JqKind.Null:
+                return TryIndexSlice(target, key, out result, out error);
+            case JqKind.String or JqKind.Number when kind == JqKind.Null:
+                result = JqValue.Null;
+                return true;
+            default:
+                return Fail(Errors.CannotIndex(target, key), out result, out error);
+        }
+    }
+
+    // .[n] on an array: NaN and out of range give null, a negative index counts from the end.
+    static JqValue Element(JqArray array, double index)
+    {
+        if (double.IsNaN(index))
+            return JqValue.Null;
+        var i = Math.Truncate(index);
+        if (i < 0)
+            i += array.Count;
+        return i >= 0 && i < array.Count ? array[(int)i] : JqValue.Null;
+    }
+
+    // The positions at which needle occurs in items as a contiguous sub-array; none for an empty needle.
+    static JqArray Indices(JqArray items, JqArray needle)
+    {
+        var found = new List<JqValue>();
+        for (var start = 0; needle.Count > 0 && start + needle.Count <= items.Count; start++)
+        {
+            var i = 0;
+            while (i < needle.Count && AreEqual(items[start + i], needle[i]))
+                i++;
+            if (i == needle.Count)
+                found.Add(JqValue.FromNumber(start));
+        }
+
+        return JqArray.FromOwned([.. found]);
+    }
 
     /// <summary>
     /// <c>.[start:end]</c> (§7.6) on an array, a string (by code point) or null (gives null). A
@@ -452,7 +510,7 @@ static class ValueOps
         {
             // The key in the message is the slice object that `.[s:e]` stands for.
             var key = JqObject.Empty.Set("start", start).Set("end", end);
-            return Fail(ValueErrors.CannotIndex(input, JqValue.FromObject(key)), out result, out error);
+            return Fail(Errors.CannotIndex(input, JqValue.FromObject(key)), out result, out error);
         }
 
         return TrySliceBounds(input, start, end, out result, out error);
@@ -470,30 +528,55 @@ static class ValueOps
         if (kind == JqKind.Null)
             return TrySliceBounds(input, default, default, out result, out error);
         if (kind is not JqKind.Array and not JqKind.String)
-            return Fail(ValueErrors.CannotIndex(input, key), out result, out error);
+            return Fail(Errors.CannotIndex(input, key), out result, out error);
 
         var slice = key.AsObject();
         if (!slice.TryGetValue("start", out var start) || !slice.TryGetValue("end", out var end))
-            return Fail(ValueErrors.SliceIndicesNotIntegers, out result, out error);
+            return Fail(Errors.SliceIndicesNotIntegers, out result, out error);
         return TrySliceBounds(input, start, end, out result, out error);
     }
 
     // Slices an array, a string or null (gives null).
     static bool TrySliceBounds(JqValue input, JqValue start, JqValue end, out JqValue result, out JqValue error)
     {
-        error = default;
         var kind = input.Kind;
         if (kind == JqKind.Null)
         {
+            error = default;
             result = JqValue.Null;
             return true;
         }
 
-        if (start.Kind is not JqKind.Null and not JqKind.Number || end.Kind is not JqKind.Null and not JqKind.Number)
-            return Fail(ValueErrors.SliceIndicesNotIntegers, out result, out error);
-
         var text = kind == JqKind.String ? input.AsString() : null;
         var length = text is null ? input.AsArray().Count : CodePoints.Length(text);
+        if (!TrySliceRange(length, start, end, out var first, out var last, out error))
+        {
+            result = default;
+            return false;
+        }
+
+        result = text is null
+            ? JqValue.FromArray(input.AsArray().Slice(first, last))
+            : JqValue.FromString(CodePoints.Substring(text, first, last));
+        return true;
+    }
+
+    /// <summary>
+    /// The positions [<paramref name="first"/>, <paramref name="last"/>) that the bounds of a slice
+    /// select in a sequence of <paramref name="length"/> items (§7.6): null or NaN start is 0, null or
+    /// NaN end the length, negative bounds count from the end, both are clamped, the start rounds
+    /// down and the end up. Bounds that are not numbers or null: <c>Array/string slice indices must be integers</c>.
+    /// </summary>
+    public static bool TrySliceRange(int length, JqValue start, JqValue end, out int first, out int last, out JqValue error)
+    {
+        first = last = 0;
+        error = default;
+        if (start.Kind is not JqKind.Null and not JqKind.Number || end.Kind is not JqKind.Null and not JqKind.Number)
+        {
+            error = Errors.SliceIndicesNotIntegers;
+            return false;
+        }
+
         var from = start.Kind == JqKind.Null ? 0 : start.AsNumber();
         var to = end.Kind == JqKind.Null ? length : end.AsNumber();
         if (double.IsNaN(from))
@@ -504,12 +587,8 @@ static class ValueOps
             from += length;
         if (to < 0)
             to += length;
-        var first = (int)Math.Floor(Math.Clamp(from, 0, length));
-        var last = (int)Math.Ceiling(Math.Clamp(to, first, length));
-
-        result = text is null
-            ? JqValue.FromArray(input.AsArray().Slice(first, last))
-            : JqValue.FromString(CodePoints.Substring(text, first, last));
+        first = (int)Math.Floor(Math.Clamp(from, 0, length));
+        last = (int)Math.Ceiling(Math.Clamp(to, first, length));
         return true;
     }
 
@@ -518,7 +597,7 @@ static class ValueOps
     {
         error = default;
         if (input.Kind != JqKind.String)
-            return Fail(ValueErrors.ExplodeNotString, out result, out error);
+            return Fail(Errors.ExplodeNotString, out result, out error);
         result = JqValue.FromArray(CodePoints.Explode(input.AsString()));
         return true;
     }
@@ -532,7 +611,7 @@ static class ValueOps
     {
         error = default;
         if (input.Kind != JqKind.Array)
-            return Fail(ValueErrors.ImplodeNotArray, out result, out error);
+            return Fail(Errors.ImplodeNotArray, out result, out error);
 
         var codes = input.AsArray();
         var builder = new StringBuilder(codes.Count);
@@ -540,7 +619,7 @@ static class ValueOps
         {
             var code = codes[i];
             if (code.Kind != JqKind.Number || double.IsNaN(code.AsNumber()))
-                return Fail(ValueErrors.CodepointNotNumeric(code), out result, out error);
+                return Fail(Errors.CodepointNotNumeric(code), out result, out error);
             var number = Math.Truncate(code.AsNumber());
             var scalar = number >= 0 && number <= CodePoints.Max && CodePoints.IsScalar((int)number);
             CodePoints.Append(builder, scalar ? (int)number : CodePoints.Replacement);

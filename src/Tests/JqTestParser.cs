@@ -21,7 +21,8 @@ public static class JqTestParser
         if (!File.Exists(filePath))
             throw new FileNotFoundException($"Test file was not found: '{filePath}'.", filePath);
 
-        var lines = File.ReadAllLines(filePath);
+        // Lines end at LF (a CR before it is part of the line ending); a lone CR is part of the line.
+        var lines = File.ReadAllText(filePath).Split('\n').Select(static line => line.EndsWith('\r') ? line[..^1] : line).ToArray();
         var cases = new List<JqTestCase>();
         var index = 0;
 

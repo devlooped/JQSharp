@@ -19,6 +19,10 @@ namespace Devlooped.Core.Binding;
 //   the callee runs in the caller's environment with Hops frames removed, plus its parameters.
 // Host variables are the one late-bound name (spec §7.5): each has an index in
 // BoundProgram.HostVariables, so the host's values can be looked up once per evaluation.
+//
+// Every node also says whether it yields at most one output (AtMostOne), computed from its
+// children when it is built: the interpreter evaluates such nodes directly to a value, without
+// callbacks (Interpreter.EvalOne).
 
 enum NodeKind
 {
@@ -53,86 +57,148 @@ enum NodeKind
     Break,
 }
 
-abstract record Node(NodeKind Kind);
+/// <summary>A bound node; <see cref="AtMostOne"/>: it yields zero or one output whatever its input and environment.</summary>
+abstract record Node(NodeKind Kind, bool AtMostOne)
+{
+    protected static bool All(ImmutableArray<Node> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (!node.AtMostOne)
+                return false;
+        }
 
-sealed record Identity() : Node(NodeKind.Identity);
+        return true;
+    }
 
-sealed record Literal(JqValue Value) : Node(NodeKind.Literal);
+    protected static bool One(Node? node) => node is null || node.AtMostOne;
+}
+
+sealed record Identity() : Node(NodeKind.Identity, true);
+
+sealed record Literal(JqValue Value) : Node(NodeKind.Literal, true);
 
 /// <summary>An interpolated string; see <see cref="Syntax.Template"/>.</summary>
-sealed record Template(string? Format, ImmutableArray<string> Texts, ImmutableArray<Node> Parts) : Node(NodeKind.Template);
+sealed record Template(string? Format, ImmutableArray<string> Texts, ImmutableArray<Node> Parts) : Node(NodeKind.Template, All(Parts));
 
-sealed record Format(string Name) : Node(NodeKind.Format);
+sealed record Format(string Name) : Node(NodeKind.Format, true);
 
-sealed record Index(Node Target, Node Key) : Node(NodeKind.Index);
+sealed record Index(Node Target, Node Key) : Node(NodeKind.Index, Target.AtMostOne && Key.AtMostOne);
 
-sealed record Slice(Node Target, Node? From, Node? To) : Node(NodeKind.Slice);
+sealed record Slice(Node Target, Node? From, Node? To) : Node(NodeKind.Slice, Target.AtMostOne && One(From) && One(To));
 
-sealed record Iterate(Node Target) : Node(NodeKind.Iterate);
+sealed record Iterate(Node Target) : Node(NodeKind.Iterate, false);
 
 /// <summary>A lexical variable: slot <see cref="Slot"/> of the frame <see cref="Hops"/> frames out.</summary>
-sealed record Variable(int Hops, int Slot) : Node(NodeKind.Variable);
+sealed record Variable(int Hops, int Slot) : Node(NodeKind.Variable, true);
 
 /// <summary>A <c>$name</c> without lexical binding: entry <see cref="Index"/> of <see cref="BoundProgram.HostVariables"/>.</summary>
-sealed record HostVariable(string Name, int Index) : Node(NodeKind.HostVariable);
+sealed record HostVariable(string Name, int Index) : Node(NodeKind.HostVariable, true);
 
 /// <summary><c>$ENV</c> where no binding shadows it.</summary>
-sealed record EnvVariable() : Node(NodeKind.EnvVariable);
+sealed record EnvVariable() : Node(NodeKind.EnvVariable, true);
 
 /// <summary>A call of <see cref="BoundProgram.Functions"/>[<see cref="Function"/>], defined <see cref="Hops"/> frames out.</summary>
-sealed record CallFunction(int Function, int Hops, ImmutableArray<Node> Arguments) : Node(NodeKind.CallFunction);
+sealed record CallFunction(int Function, int Hops, ImmutableArray<Node> Arguments) : Node(NodeKind.CallFunction, false);
 
 /// <summary>A call of a closure parameter: slot <see cref="Slot"/> of the call frame <see cref="Hops"/> frames out.</summary>
-sealed record CallParameter(int Hops, int Slot) : Node(NodeKind.CallParameter);
+sealed record CallParameter(int Hops, int Slot) : Node(NodeKind.CallParameter, false);
 
 /// <summary>A call of a native; the arguments are closures over the caller's environment.</summary>
-sealed record CallNative(Native Native, ImmutableArray<Node> Arguments) : Node(NodeKind.CallNative);
+sealed record CallNative(Native Native, ImmutableArray<Node> Arguments) : Node(NodeKind.CallNative, !Native.TakesClosures && All(Arguments));
 
-sealed record Pipe(Node Left, Node Right) : Node(NodeKind.Pipe);
+sealed record Pipe(Node Left, Node Right) : Node(NodeKind.Pipe, Left.AtMostOne && Right.AtMostOne);
 
-sealed record Comma(Node Left, Node Right) : Node(NodeKind.Comma);
+/// <summary><c>a, b, c</c>: a left-nested chain of commas is one node, so that evaluating it does not recurse per term.</summary>
+sealed record Comma(ImmutableArray<Node> Items) : Node(NodeKind.Comma, false);
 
-sealed record Binary(Syntax.BinaryOp Op, Node Left, Node Right) : Node(NodeKind.Binary);
+sealed record Binary(Syntax.BinaryOp Op, Node Left, Node Right) : Node(NodeKind.Binary, Left.AtMostOne && Right.AtMostOne);
 
-sealed record And(Node Left, Node Right) : Node(NodeKind.And);
+sealed record And(Node Left, Node Right) : Node(NodeKind.And, Left.AtMostOne && Right.AtMostOne);
 
-sealed record Or(Node Left, Node Right) : Node(NodeKind.Or);
+sealed record Or(Node Left, Node Right) : Node(NodeKind.Or, Left.AtMostOne && Right.AtMostOne);
 
-sealed record Alternative(Node Left, Node Right) : Node(NodeKind.Alternative);
+sealed record Alternative(Node Left, Node Right) : Node(NodeKind.Alternative, Left.AtMostOne && Right.AtMostOne);
 
-sealed record Negate(Node Operand) : Node(NodeKind.Negate);
+sealed record Negate(Node Operand) : Node(NodeKind.Negate, Operand.AtMostOne);
 
-sealed record ArrayExpr(Node? Body) : Node(NodeKind.ArrayExpr);
+sealed record ArrayExpr(Node? Body) : Node(NodeKind.ArrayExpr, true);
 
-sealed record ObjectExpr(ImmutableArray<ObjectEntry> Entries) : Node(NodeKind.ObjectExpr);
+sealed record ObjectExpr(ImmutableArray<ObjectEntry> Entries) : Node(NodeKind.ObjectExpr, AllEntries(Entries))
+{
+    static bool AllEntries(ImmutableArray<ObjectEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (!entry.Key.AtMostOne || !One(entry.Value))
+                return false;
+        }
+
+        return true;
+    }
+}
 
 /// <summary>See <see cref="Syntax.ObjectEntry"/>: a null value is the input indexed by each output of the key.</summary>
 sealed record ObjectEntry(Node Key, Node? Value);
 
-sealed record If(Node Condition, Node Then, Node Else) : Node(NodeKind.If);
+sealed record If(Node Condition, Node Then, Node Else) : Node(NodeKind.If, Condition.AtMostOne && Then.AtMostOne && Else.AtMostOne);
 
-sealed record Try(Node Body, Node? Handler) : Node(NodeKind.Try);
+sealed record Try(Node Body, Node? Handler) : Node(NodeKind.Try, Body.AtMostOne && One(Handler));
 
 /// <summary><see cref="Update"/> runs with the binder's frame pushed; <see cref="Init"/> without it.</summary>
-sealed record Reduce(Node Source, Binder Binder, Node Init, Node Update) : Node(NodeKind.Reduce);
+sealed record Reduce(Node Source, Binder Binder, Node Init, Node Update) : Node(NodeKind.Reduce, Init.AtMostOne);
 
 /// <summary><see cref="Update"/> and <see cref="Extract"/> run with the binder's frame pushed.</summary>
-sealed record Foreach(Node Source, Binder Binder, Node Init, Node Update, Node Extract) : Node(NodeKind.Foreach);
+sealed record Foreach(Node Source, Binder Binder, Node Init, Node Update, Node Extract) : Node(NodeKind.Foreach, false);
 
 /// <summary><c>Source as Patterns | Body</c>: <see cref="Body"/> runs with the binder's frame pushed.</summary>
-sealed record Bind(Node Source, Binder Binder, Node Body) : Node(NodeKind.Bind);
+sealed record Bind(Node Source, Binder Binder, Node Body) : Node(NodeKind.Bind, Source.AtMostOne && Binder.KeysAtMostOne && Body.AtMostOne);
 
 /// <summary><see cref="Body"/> runs with a frame holding a new label instance.</summary>
-sealed record Label(Node Body) : Node(NodeKind.Label);
+sealed record Label(Node Body) : Node(NodeKind.Label, Body.AtMostOne);
 
 /// <summary>Breaks to the label instance of the frame <see cref="Hops"/> frames out.</summary>
-sealed record Break(int Hops) : Node(NodeKind.Break);
+sealed record Break(int Hops) : Node(NodeKind.Break, true);
 
 /// <summary>
 /// The patterns of one binding (several are the <c>?//</c> alternatives) and the size of the frame
 /// they fill: one slot per distinct variable name of all of them, null until a pattern binds it.
 /// </summary>
-sealed record Binder(ImmutableArray<Pattern> Patterns, int Slots);
+sealed record Binder(ImmutableArray<Pattern> Patterns, int Slots)
+{
+    /// <summary>Every key expression of the patterns yields at most one output, so a value binds at most once per pattern.</summary>
+    public bool KeysAtMostOne { get; } = AllKeys(Patterns);
+
+    static bool AllKeys(ImmutableArray<Pattern> patterns)
+    {
+        foreach (var pattern in patterns)
+        {
+            if (!KeysOf(pattern))
+                return false;
+        }
+
+        return true;
+    }
+
+    static bool KeysOf(Pattern pattern)
+    {
+        switch (pattern)
+        {
+            case ArrayPattern array:
+                return AllKeys(array.Elements);
+            case ObjectPattern obj:
+                foreach (var entry in obj.Entries)
+                {
+                    if (!entry.Key.AtMostOne || (entry.Value is not null && !KeysOf(entry.Value)))
+                        return false;
+                }
+
+                return true;
+            default:
+                return true;
+        }
+    }
+}
 
 enum PatternKind
 {
@@ -144,9 +210,9 @@ enum PatternKind
 abstract record Pattern(PatternKind Kind);
 
 /// <summary>
-/// Stores the value in <see cref="Slot"/>; -1 discards it. Within one pattern, the first occurrence of
-/// a name in destructuring order (array elements from the last, object entries from the first) owns
-/// the slot and later ones discard their value, as jq 1.8.2 (<c>[1,2] | . as [$a, $a] | $a</c> is 2).
+/// Stores the value in <see cref="Slot"/>; -1 discards it. Patterns are matched in order (array
+/// elements from the last, object entries from the first), so a slot written twice keeps the later
+/// value; the resolver gives -1 to the repetitions that must not win (spec §7.5).
 /// </summary>
 sealed record VariablePattern(int Slot) : Pattern(PatternKind.Variable);
 

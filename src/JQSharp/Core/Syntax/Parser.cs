@@ -16,7 +16,6 @@ namespace Devlooped.Core.Syntax;
 /// <item><c>.name</c>, <c>."s"</c>, <c>T.name</c>, <c>T."s"</c> are <see cref="Index"/> with a literal or template key.</item>
 /// <item><c>elif</c> nests <see cref="If"/>; a missing <c>else</c> is <c>.</c>; a <c>foreach</c> without extract has <c>.</c>.</item>
 /// <item><c>{$x}</c> is <c>{"x": $x}</c>. The string shorthands (<c>{a}</c>, <c>{"s"}</c>, <c>{@f "s"}</c>) keep a null value, see <see cref="ObjectEntry"/>.</item>
-/// <item><c>def f($a; g): B;</c> is <c>def f(a; g): a as $a | B;</c>.</item>
 /// <item><c>L = R</c> is <c>_assign(L; R)</c>, <c>L |= R</c> is <c>_modify(L; R)</c>, <c>L op= R</c> is
 /// <c>R as $v | _modify(L; . op $v)</c> (<c>//=</c> likewise with <c>//</c>), where <c>$v</c> is
 /// <see cref="UpdateVariable"/>, a name no program can write.</item>
@@ -308,7 +307,7 @@ sealed class Parser
         if (body is null || !Expect(TokenKind.Semicolon, "';'"))
             return null;
         depth--;
-        return MakeDefinition(name, parameters, body, keyword);
+        return new Definition(name, [.. parameters], body, Pos(keyword));
     }
 
     // ('(' Param (';' Param)* ')')?      Param = IDENT | VAR
@@ -328,19 +327,6 @@ sealed class Parser
         while (current.Kind == TokenKind.Semicolon);
 
         return Expect(TokenKind.RightParen, "')'") ? parameters : null;
-    }
-
-    // def f($a): B  =>  def f(a): a as $a | B
-    static Definition MakeDefinition(string name, List<Param> parameters, Node body, Token keyword)
-    {
-        for (var i = parameters.Count - 1; i >= 0; i--)
-        {
-            var parameter = parameters[i];
-            if (parameter.IsVariable)
-                body = new Bind(new Call(parameter.Name, [], parameter.Position), [new VariablePattern(parameter.Name, parameter.Position)], body, parameter.Position);
-        }
-
-        return new Definition(name, [.. parameters], body, Pos(keyword));
     }
 
     // Pipe = Item (',' Item)* ('|' Pipe)?, where an Item is

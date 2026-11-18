@@ -83,7 +83,7 @@ static class BoundPrinter
             CallParameter parameter => $"param^{parameter.Hops}.{parameter.Slot}",
             CallNative call => call.Arguments.Length == 0 ? $"native:{call.Native}" : $"(native:{call.Native}{All(call.Arguments)})",
             Devlooped.Core.Binding.Pipe pipe => $"(| {P(pipe.Left)} {P(pipe.Right)})",
-            Comma comma => $"(, {P(comma.Left)} {P(comma.Right)})",
+            Comma comma => $"(,{All(comma.Items)})",
             Binary binary => $"({Symbol(binary.Op)} {P(binary.Left)} {P(binary.Right)})",
             And and => $"(and {P(and.Left)} {P(and.Right)})",
             Or or => $"(or {P(or.Left)} {P(or.Right)})",

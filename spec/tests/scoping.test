@@ -10,3 +10,25 @@ null
 def f($d): map(if type == "array" then f($d + 1) else $d end); f(0)
 [[1],2]
 [[1],0]
+
+# Parameters: p shadows only p/0, a definition in the body shadows the parameter, and a $p
+# parameter binds its own argument while the filter p is the last parameter of that name.
+def x(a): 7; def f(x): x(0); f(1)
+null
+7
+
+def f(x): def x: 5; x; f(1)
+null
+5
+
+def f(a; $a): [a, $a]; f(1;2)
+null
+[2,2]
+
+def f($a; a): [a, $a]; f(1;2)
+null
+[2,1]
+
+1 as $x | [$x, ($x | . + 1) as $x | $x, $x]
+null
+[1,2,2]

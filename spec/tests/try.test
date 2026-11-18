@@ -56,3 +56,24 @@ null
 try ("{" | fromjson) catch "caught"
 null
 "caught"
+
+# Errors of the consumer are not errors of the producer (spec §6.2).
+"x" | try ((try . catch "too much") | error) catch "right"
+null
+"right"
+
+[try ((try (1,2) catch "inner") | if . == 2 then error("consumer") else . end) catch ("outer: " + .)]
+null
+[1,"outer: consumer"]
+
+[.[] | try if . == 2 then error("e") else . end catch "c"]
+[1,2,3]
+[1,"c",3]
+
+try [(1, error("x")) // 3] catch .
+null
+"x"
+
+[(null, false) // 3]
+null
+[3]
