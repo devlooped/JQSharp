@@ -11,18 +11,28 @@ public static class Jq
     static readonly JqOptions defaults = new();
 
     /// <summary>
+    /// Parses and binds <paramref name="expression"/> with the default options (no modules) into
+    /// an expression to evaluate any number of times, concurrently if need be. An empty
+    /// expression is <c>.</c>.
+    /// </summary>
+    /// <param name="expression">The jq expression.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="expression"/> is <see langword="null"/>.</exception>
+    /// <exception cref="JqParseException">A syntax or binding error (an unknown function or label, an <c>import</c> or <c>include</c>), with its line and column.</exception>
+    public static JqExpression Parse(string expression) => Parse(expression, defaults);
+
+    /// <summary>
     /// Parses and binds <paramref name="expression"/>, loading its modules through the options'
     /// resolver, into an expression to evaluate any number of times, concurrently if need be.
     /// An empty expression is <c>.</c>.
     /// </summary>
     /// <param name="expression">The jq expression.</param>
-    /// <param name="options">Modules, <c>$ENV</c>, clock and depth limit for every evaluation of it; the defaults when <see langword="null"/>.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="expression"/> is <see langword="null"/>.</exception>
+    /// <param name="options">Modules, <c>$ENV</c>, clock and depth limit for every evaluation of it.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="expression"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="JqParseException">A syntax or binding error (an unknown function, label or module, a cycle of imports), with its line and column.</exception>
-    public static JqExpression Parse(string expression, JqOptions? options = null)
+    public static JqExpression Parse(string expression, JqOptions options)
     {
         ArgumentNullException.ThrowIfNull(expression);
-        options ??= defaults;
+        ArgumentNullException.ThrowIfNull(options);
         var modules = options.Resolver is { } resolver ? new ResolverSource(resolver) : null;
         if (!Resolver.TryCompile(expression, out var program, out var error, modules: modules))
         {
@@ -36,14 +46,17 @@ public static class Jq
     /// <summary>
     /// Parses and binds <paramref name="expression"/>, loading its modules through
     /// <paramref name="resolver"/>, with the default options otherwise: the same as
-    /// <see cref="Parse(string, JqOptions?)"/> with <c>new JqOptions { Resolver = resolver }</c>.
+    /// <see cref="Parse(string, JqOptions)"/> with <c>new JqOptions { Resolver = resolver }</c>.
     /// </summary>
     /// <param name="expression">The jq expression.</param>
-    /// <param name="resolver">Finds and reads the modules of <c>import</c> and <c>include</c>; none when <see langword="null"/>.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="expression"/> is <see langword="null"/>.</exception>
+    /// <param name="resolver">Finds and reads the modules of <c>import</c> and <c>include</c>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="expression"/> or <paramref name="resolver"/> is <see langword="null"/>.</exception>
     /// <exception cref="JqParseException">A syntax or binding error (an unknown function, label or module, a cycle of imports), with its line and column.</exception>
-    public static JqExpression Parse(string expression, JqResolver? resolver)
-        => Parse(expression, new JqOptions { Resolver = resolver });
+    public static JqExpression Parse(string expression, JqResolver resolver)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        return Parse(expression, new JqOptions { Resolver = resolver });
+    }
 
     /// <summary>Parses <paramref name="expression"/> with the default options and evaluates it on <paramref name="input"/>, returning all its results.</summary>
     /// <param name="expression">The jq expression.</param>

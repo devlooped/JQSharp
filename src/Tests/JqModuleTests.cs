@@ -5,7 +5,7 @@ namespace JQLite.Tests;
 
 /// <summary>
 /// The public resolvers (<see cref="JqFileResolver"/>, <see cref="JqResourceResolver"/>, a custom
-/// <see cref="JqResolver"/>) through <see cref="Jq.Parse(string, JqOptions?)"/>. What modules mean is the corpus's
+/// <see cref="JqResolver"/>) through <see cref="Jq.Parse(string, JqOptions)"/>. What modules mean is the corpus's
 /// (spec/tests/modules.test).
 /// </summary>
 public sealed class JqModuleTests : IDisposable

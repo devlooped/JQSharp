@@ -26,6 +26,13 @@ public class JqExpressionTests
         => Assert.Throws<ArgumentNullException>(() => Jq.Parse(null!));
 
     [Fact]
+    public void Parse_throws_for_null_options_or_resolver()
+    {
+        Assert.Throws<ArgumentNullException>(() => Jq.Parse(".", (JqOptions)null!));
+        Assert.Throws<ArgumentNullException>(() => Jq.Parse(".", (JqResolver)null!));
+    }
+
+    [Fact]
     public void Parse_throws_for_invalid_expression()
         => Assert.Throws<JqParseException>(() => Jq.Parse("[invalid!!!"));
 

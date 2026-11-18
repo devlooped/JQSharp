@@ -9,7 +9,7 @@ using JQLite.Json;
 namespace JQLite;
 
 /// <summary>
-/// A jq expression parsed and bound once by <see cref="Jq.Parse(string, JqOptions?)"/>, to evaluate on any number of inputs.
+/// A jq expression parsed and bound once by <see cref="Jq.Parse(string, JqOptions)"/>, to evaluate on any number of inputs.
 /// </summary>
 /// <remarks>
 /// Immutable and safe to evaluate concurrently from many threads, each evaluation with its own input

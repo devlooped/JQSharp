@@ -30,7 +30,7 @@ public class JqDepthTests
     }
 
     static JqExpression Parse(string program, int? maxDepth)
-        => Jq.Parse(program, maxDepth is { } depth ? new JqOptions { MaxDepth = depth } : null);
+        => maxDepth is { } depth ? Jq.Parse(program, new JqOptions { MaxDepth = depth }) : Jq.Parse(program);
 
     static T OnSmallStack<T>(Func<T> run)
     {
