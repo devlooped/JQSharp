@@ -122,14 +122,28 @@ public class ResolverTests
     // The parser's own calls resolve the same way: .. is recurse/0, |= is _modify/2, op= binds $*update.
     [InlineData("..", "prelude:recurse/0^0")]
     [InlineData("def recurse: 1; ..", "(def recurse/0#0 1) recurse/0#0^0")]
-    [InlineData(".a |= 1", "(prelude:_modify/2^0 (index . \"a\") 1)")]
-    [InlineData(".a = 1", "(prelude:_assign/2^0 (index . \"a\") 1)")]
-    [InlineData(".a += 1", "(as 1 $0 (prelude:_modify/2^1 (index . \"a\") (+ . $0.0)))")]
+    // _modify and _assign are prelude builtins with a native override (Native.OverridesPrelude).
+    [InlineData(".a |= 1", "(native:_modify/2 (index . \"a\") 1)")]
+    [InlineData(".a = 1", "(native:_assign/2 (index . \"a\") 1)")]
+    [InlineData(".a += 1", "(as 1 $0 (native:_modify/2 (index . \"a\") (+ . $0.0)))")]
     [InlineData("def _modify(a; b): 42; .a |= 1", "(def _modify/2#0 42) (_modify/2#0^0 (index . \"a\") 1)")]
     // A definition named like a literal does not change the literal (spec §2).
     [InlineData("def true: 1; true", "(def true/0#0 1) true")]
     public void Calls_resolve_to_user_then_prelude_then_native(string program, string bound)
         => Assert.Equal(bound, Bind(program));
+
+    [Fact]
+    public void Without_overrides_builtins_bind_to_the_prelude()
+    {
+        Assert.True(Resolver.TryCompile(".a |= 1, (.b = 2), map_values(.)", out var program, out _, nativeOverrides: false));
+        Assert.Equal("(, (prelude:_modify/2^0 (index . \"a\") 1) (prelude:_assign/2^0 (index . \"b\") 2) (prelude:map_values/1^0 .))", Print(program));
+
+        // Inside the prelude too: map_values calls _modify.
+        var mapValues = Prelude.Instance.Functions[Prelude.Instance.Find("map_values", 1)!.Value].Body;
+        Assert.Equal(NodeKind.CallNative, mapValues.Kind);
+        mapValues = Prelude.WithoutOverrides.Functions[Prelude.WithoutOverrides.Find("map_values", 1)!.Value].Body;
+        Assert.Equal(NodeKind.CallFunction, mapValues.Kind);
+    }
 
     [Fact]
     public void Every_construct_binds_its_children()

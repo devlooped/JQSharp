@@ -81,3 +81,17 @@ null
 reduce .[] as [$a, $b] (0; . + $a * $b)
 [[1,2],[3,4]]
 14
+
+# ?// in reduce and foreach (spec §7.8, §7.9; §13 lists the difference from jq): a retried
+# alternative starts from the state before the source value; foreach outputs already produced stay.
+[reduce ([1],[5]) as [$a] ?// $a (10; if $a == 1 then error("e") else [., $a] end)]
+null
+[[[10,[1]],5]]
+
+[foreach ([1]) as [$a] ?// $a (10; . + 1; if $a == 1 then ., error("x") else [., $a] end)]
+null
+[11,[11,[1]]]
+
+try (reduce ([1],[2]) as [$a] ?// $a (0; if $a == 1 then error("e") else . + $a end)) catch .
+null
+"number (0) and array ([1]) cannot be added"

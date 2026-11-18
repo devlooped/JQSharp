@@ -13,7 +13,13 @@ sealed class Prelude
     /// <summary>The name of the embedded resource that holds <c>spec/prelude.jq</c> (see JQSharp.csproj).</summary>
     public const string ResourceName = "jqlite.prelude.jq";
 
+    /// <summary>The prelude, with the native overrides of its builtins (Native.OverridesPrelude).</summary>
     public static Prelude Instance { get; } = Load(ReadSource());
+
+    static readonly Lazy<Prelude> withoutOverrides = new(() => Load(ReadSource(), nativeOverrides: false));
+
+    /// <summary>The prelude exactly as written, every builtin bound to its definition: to check that the overrides change nothing.</summary>
+    public static Prelude WithoutOverrides => withoutOverrides.Value;
 
     readonly Dictionary<string, int> visible = [];
 
@@ -37,10 +43,10 @@ sealed class Prelude
     static string Key(string name, int arity) => $"{name}/{arity}";
 
     /// <summary>Parses and binds a prelude source. The embedded prelude must bind: a failure is a defect of the build, not of a program.</summary>
-    internal static Prelude Load(string source)
+    internal static Prelude Load(string source, bool nativeOverrides = true)
     {
         if (!Parser.TryParseModule(source, out var module, out var error)
-            || !Resolver.TryBindPrelude(module, out var functions, out var definitions, out error))
+            || !Resolver.TryBindPrelude(module, nativeOverrides, out var functions, out var definitions, out error))
             throw new InvalidOperationException($"The prelude does not bind: {error.Message} at {error.Line}:{error.Column}");
         return new Prelude(functions, definitions);
     }

@@ -49,7 +49,14 @@ public partial class ConformanceTests
     [Theory]
     [MemberData(nameof(Cases))]
     public void Core_corpus_case(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
-        => Check("pending-core.txt", PendingCore.Value, file, line, program, input, RunCore(program, input, expected, shouldFail, expectedError));
+        => Check("pending-core.txt", PendingCore.Value, file, line, program, input, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: true));
+
+    // The same with every prelude builtin bound to its definition: the natives that override some
+    // (Native.OverridesPrelude) must change nothing.
+    [Theory]
+    [MemberData(nameof(Cases))]
+    public void Core_corpus_case_without_native_overrides(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
+        => Check("pending-core.txt", PendingCore.Value, file, line, program, input, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: false));
 
     static void Check(string list, HashSet<string> pending, string file, int line, string program, string input, string? failure)
     {
@@ -105,9 +112,9 @@ public partial class ConformanceTests
         return Compare(expected, actual);
     }
 
-    static string? RunCore(string program, string input, string expected, bool shouldFail, string? expectedError)
+    static string? RunCore(string program, string input, string expected, bool shouldFail, string? expectedError, bool nativeOverrides)
     {
-        if (!Resolver.TryCompile(program, out var bound, out var error))
+        if (!Resolver.TryCompile(program, out var bound, out var error, nativeOverrides))
             return shouldFail ? MissingFixedText(expectedError, error.Message) : $"{error.Message} at {error.Line}:{error.Column}";
         if (shouldFail)
             return "the program parses and binds but must not";

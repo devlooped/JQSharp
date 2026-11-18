@@ -26,6 +26,13 @@ sealed record Native(string Name, int Arity, NativeGroup Group, int Index, bool 
     /// <summary>Internal builtins (a name starting with <c>_</c>) are callable but not listed by <c>builtins</c> (§9.1).</summary>
     public bool IsInternal => Name.StartsWith('_');
 
+    /// <summary>
+    /// A native implementation of a builtin that §9 defines in the prelude, for speed (§9.1 allows
+    /// it when results, errors and paths are identical): calls that would bind to the prelude
+    /// definition bind to the native instead (Resolver). It is not one of the natives of §9.
+    /// </summary>
+    public bool OverridesPrelude { get; init; }
+
     public override string ToString() => $"{Name}/{Arity}";
 }
 
@@ -35,7 +42,7 @@ sealed record Native(string Name, int Arity, NativeGroup Group, int Index, bool 
 /// </summary>
 static class Natives
 {
-    public static readonly ImmutableArray<Native> All = Build(
+    public static readonly ImmutableArray<Native> All = WithOverrides(["_modify/2", "_assign/2"], Build(
     [
         // §9.2 Core
         "empty/0", "error/0", "type/0", "length/0", "utf8bytelength/0", "builtins/0", "halt/0", "halt_error/1", "last/1",
@@ -66,14 +73,30 @@ static class Natives
         // §9.2, §9.4, §9.5, §9.6: no output, a signal, generators, path-capable, many outputs.
         "empty/0", "halt/0", "halt_error/1", "last/1", "range/2", "limit/2", "skip/2", "while/2", "until/2", "repeat/1",
         "path/1", "getpath/1", "match/2",
-    ]);
+    ]));
 
     static readonly Dictionary<string, Native> byKey = Index(All);
 
     /// <summary>The native <paramref name="name"/>/<paramref name="arity"/>, or null.</summary>
     public static Native? Find(string name, int arity) => byKey.GetValueOrDefault(Key(name, arity));
 
+    /// <summary>The native that overrides the prelude builtin <paramref name="name"/>/<paramref name="arity"/>, or null.</summary>
+    public static Native? Override(string name, int arity) => Find(name, arity) is { OverridesPrelude: true } native ? native : null;
+
     static string Key(string name, int arity) => $"{name}/{arity}";
+
+    // The overrides of prelude builtins, after the natives of §9; they take closures.
+    static ImmutableArray<Native> WithOverrides(string[] overrides, ImmutableArray<Native> natives)
+    {
+        var all = natives.ToBuilder();
+        foreach (var signature in overrides)
+        {
+            var slash = signature.IndexOf('/');
+            all.Add(new Native(signature[..slash], int.Parse(signature[(slash + 1)..]), NativeGroup.Core, all.Count, TakesClosures: true) { OverridesPrelude = true });
+        }
+
+        return all.ToImmutable();
+    }
 
     static ImmutableArray<Native> Build(string[] core, string[] modules, string[] closures)
     {

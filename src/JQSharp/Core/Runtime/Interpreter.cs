@@ -42,8 +42,9 @@ delegate Signal? Emit(JqValue value, Path? path);
 /// yields at most one value, a branch of <c>if</c>, the body of a binding or of a function, a
 /// closure, the last item of a comma), so tail positions and calls in them do not recurse; left-deep
 /// chains of operators and indexes are walked with scratch stacks. What still recurses (nesting,
-/// generators feeding generators) is guarded once, in <see cref="HasStack"/>, which turns a nearly
-/// exhausted host stack into the catchable depth error of §11.
+/// non-tail calls, generators feeding generators) checks the host stack where an evaluation starts
+/// and where an output is pushed, and continues on a fresh stack when it runs short (StackGuard),
+/// so the only recursion limit a program meets is MaxDepth (§11).
 /// </para>
 /// <para>
 /// .NET only: the recursive methods are marked AggressiveOptimization. Tiered compilation runs a
@@ -109,8 +110,8 @@ sealed class Interpreter
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public Signal? Eval(Node node, Env? env, JqValue input, Path? path, Emit emit)
     {
-        if (!HasStack())
-            return Fail(Errors.DepthExceeded);
+        if (!StackGuard.HasStack())
+            return EvalOnFreshStack(node, env, input, path, emit);
 
         // Function calls entered by this frame (tail calls): they stay active, counting in the depth
         // of §11, while their outputs are consumed, that is until this frame returns.
@@ -235,9 +236,9 @@ sealed class Interpreter
         switch (node.Kind)
         {
             case NodeKind.Pipe:
-                return Eval(((Pipe)node).Left, env, input, path, (value, at) => Eval(((Pipe)node).Right, env, value, at, emit));
+                return EvalPipe((Pipe)node, env, input, path, emit);
             case NodeKind.If:
-                return Eval(((If)node).Condition, env, input, null, (condition, _) => Eval(condition.IsTruthy ? ((If)node).Then : ((If)node).Else, env, input, path, emit));
+                return EvalIf((If)node, env, input, path, emit);
             case NodeKind.Bind:
                 return EvalBind((Bind)node, env, input, path, emit);
             case NodeKind.Iterate:
@@ -269,6 +270,13 @@ sealed class Interpreter
         }
     }
 
+    // Lambdas are in methods of their own: a method whose lambda captures its parameters allocates the closure on every call.
+    Signal? EvalPipe(Pipe node, Env? env, JqValue input, Path? path, Emit emit)
+        => Eval(node.Left, env, input, path, (value, at) => Eval(node.Right, env, value, at, emit));
+
+    Signal? EvalIf(If node, Env? env, JqValue input, Path? path, Emit emit)
+        => Eval(node.Condition, env, input, null, (condition, _) => Eval(condition.IsTruthy ? node.Then : node.Else, env, input, path, emit));
+
     Signal? EvalNegate(Negate node, Env? env, JqValue input, Path? path, Emit emit)
     {
         var at = Path.Of(path);
@@ -283,11 +291,11 @@ sealed class Interpreter
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public Signal? EvalOne(Node node, Env? env, JqValue input, Path? path, out bool has, out JqValue value, out Path? at)
     {
+        if (!StackGuard.HasStack())
+            return EvalOneOnFreshStack(node, env, input, path, out has, out value, out at);
         has = false;
         value = default;
         at = null;
-        if (!HasStack())
-            return Fail(Errors.DepthExceeded);
 
         Signal? signal;
         while (true)
@@ -433,17 +441,29 @@ sealed class Interpreter
     /// here as much as at the start of an evaluation.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public static Signal? Output(Emit emit, JqValue value, Path? at) => HasStack() ? emit(value, at) : Fail(Errors.DepthExceeded);
+    public static Signal? Output(Emit emit, JqValue value, Path? at) => StackGuard.HasStack() ? emit(value, at) : OutputOnFreshStack(emit, value, at);
+
+    // The continuations of Eval and EvalOne on a fresh stack (StackGuard), in methods of their own so
+    // that the closure is allocated only when the stack is short. Recursion only grows through
+    // function calls, which the depth counter stops at MaxDepth, so the number of hops is bounded.
+    Signal? EvalOnFreshStack(Node node, Env? env, JqValue input, Path? path, Emit emit)
+        => StackGuard.OnFreshStack(() => Eval(node, env, input, path, emit));
+
+    static Signal? OutputOnFreshStack(Emit emit, JqValue value, Path? at) => StackGuard.OnFreshStack(() => emit(value, at));
+
+    Signal? EvalOneOnFreshStack(Node node, Env? env, JqValue input, Path? path, out bool has, out JqValue value, out Path? at)
+    {
+        var capture = new Capture();
+        var signal = StackGuard.OnFreshStack(() => EvalOne(node, env, input, path, out capture.Has, out capture.Value, out capture.At));
+        (has, value, at) = (capture.Has, capture.Value, capture.At);
+        return signal;
+    }
 
     /// <summary>The next label instance, unique within this evaluation.</summary>
     public long NewLabel() => ++labels;
 
     /// <summary>An error signal.</summary>
     public static Signal Fail(JqValue error) => Signal.Error(error);
-
-    // The one host-specific guard of the interpreter: when the host stack is nearly exhausted, the
-    // evaluation fails with the depth error of §11 instead of crashing the process.
-    static bool HasStack() => RuntimeHelpers.TryEnsureSufficientExecutionStack();
 
     static Signal? One(JqValue output, Path? path, out bool has, out JqValue value, out Path? at)
     {
@@ -567,16 +587,19 @@ sealed class Interpreter
     {
         var at = Path.Of(path);
         if (!node.Right.AtMostOne)
-            return Eval(node.Right, env, input, null, (right, _) => EvalLeft(node, right, env, input, at, emit));
+            return EvalRights(node, env, input, at, emit);
         var signal = EvalOne(node.Right, env, input, null, out var has, out var value, out _);
         return signal is null && has ? EvalLeft(node, value, env, input, at, emit) : signal;
     }
+
+    Signal? EvalRights(Binary node, Env? env, JqValue input, Path? at, Emit emit)
+        => Eval(node.Right, env, input, null, (right, _) => EvalLeft(node, right, env, input, at, emit));
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     Signal? EvalLeft(Binary node, JqValue right, Env? env, JqValue input, Path? at, Emit emit)
         => Eval(node.Left, env, input, null, (left, _) => !TryApply(node.Op, left, right, out var result, out var error)
             ? Signal.Error(error)
-            : HasStack() ? emit(result, at) : Fail(Errors.DepthExceeded));
+            : Output(emit, result, at));
 
     /// <summary>The arithmetic operators and comparisons of §4.</summary>
     public static bool TryApply(Syntax.BinaryOp op, JqValue left, JqValue right, out JqValue result, out JqValue error)
@@ -802,13 +825,17 @@ sealed class Interpreter
     /// the environment with the new frame, once per binding (several when a key has several
     /// outputs). With <c>?//</c> alternatives (§7.5), when matching fails or the body raises its own
     /// error (not one of <paramref name="consumer"/>), the next pattern is tried with the same value,
-    /// all variables null again; errors with the last pattern propagate.
+    /// all variables null again, after restoring what <paramref name="save"/> saved before the first
+    /// (the state of reduce and foreach); errors with the last pattern propagate.
     /// </summary>
-    Signal? BindEach(Binder binder, JqValue value, Env? env, Func<Env, Signal?> body, Consumer? consumer)
+    Signal? BindEach(Binder binder, JqValue value, Env? env, Func<Env, Signal?> body, Consumer? consumer, Func<Action>? save = null)
     {
         var patterns = binder.Patterns;
+        var restore = save?.Invoke();
         for (var i = 0; ; i++)
         {
+            if (i > 0)
+                restore?.Invoke();
             var slots = new JqValue[binder.Slots];
             Signal? signal;
             if (binder.KeysAtMostOne)
@@ -868,14 +895,10 @@ sealed class Interpreter
         }
     }
 
-    // The value of a key of an object pattern: the key must be a string.
+    // The value of a key of an object pattern: v[k] with the indexing rules of §7.6, whatever the
+    // kind of the key (§7.5; only literal keys are checked, statically).
     static Signal? MatchKey(JqValue value, JqValue key, out JqValue member)
-    {
-        member = default;
-        if (key.Kind != JqKind.String)
-            return Fail(Errors.CannotUseAsKey(key));
-        return ValueOps.TryIndex(value, key, out member, out var error) ? null : Signal.Error(error);
-    }
+        => ValueOps.TryIndex(value, key, out member, out var error) ? null : Signal.Error(error);
 
     // Destructures value when a key may yield several outputs: next runs once per complete binding.
     Signal? Match(Pattern pattern, JqValue value, JqValue[] slots, Env? env, Func<Signal?> next)
@@ -919,31 +942,29 @@ sealed class Interpreter
     }
 
     // reduce SRC as P (INIT; UPDATE) (§7.8): one reduction per initial value; the state is the last
-    // output of UPDATE, or null. In path mode the state carries its path.
-    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    // output of UPDATE, or null. In path mode the state carries its path. With ?// alternatives, a
+    // retried alternative starts from the state before the source value.
     Signal? EvalReduce(Reduce node, Env? env, JqValue input, Path? path, Emit emit)
         => ForEach(node.Init, env, input, path, (initial, initialAt) =>
         {
-            var state = initial;
-            var stateAt = initialAt;
+            var state = new State(initial, initialAt);
             var signal = Eval(node.Source, env, input, null, (source, _) => BindEach(node.Binder, source, env, frame =>
             {
                 if (node.Update.AtMostOne)
                 {
-                    var failed = EvalOne(node.Update, frame, state, stateAt, out var has, out var next, out var nextAt);
-                    if (failed is not null)
-                        return failed;
-                    (state, stateAt) = has ? (next, nextAt) : (JqValue.Null, Path.Of(path));
-                    return null;
+                    var failed = EvalOne(node.Update, frame, state.Value, state.At, out var has, out var next, out var nextAt);
+                    if (failed is null)
+                        state.Set(has ? next : JqValue.Null, has ? nextAt : Path.Of(path));
+                    return failed;
                 }
 
                 var last = new Capture();
-                var stop = Eval(node.Update, frame, state, stateAt, last.Emit);
+                var stop = Eval(node.Update, frame, state.Value, state.At, last.Emit);
                 if (stop is null)
-                    (state, stateAt) = last.Has ? (last.Value, last.At) : (JqValue.Null, Path.Of(path));
+                    state.Set(last.Has ? last.Value : JqValue.Null, last.Has ? last.At : Path.Of(path));
                 return stop;
-            }, null));
-            return signal ?? Output(emit, state, stateAt);
+            }, null, Restart(node.Binder, state)));
+            return signal ?? Output(emit, state.Value, state.At);
         });
 
     // foreach SRC as P (INIT; UPDATE; EXTRACT) (§7.9).
@@ -953,24 +974,42 @@ sealed class Interpreter
         var output = consumer is null ? emit : consumer.Emit;
         return ForEach(node.Init, env, input, path, (initial, initialAt) =>
         {
-            var state = initial;
-            var stateAt = initialAt;
+            var state = new State(initial, initialAt);
             return Eval(node.Source, env, input, null, (source, _) => BindEach(node.Binder, source, env, frame =>
             {
                 var updated = false;
-                var signal = Eval(node.Update, frame, state, stateAt, (next, nextAt) =>
+                var signal = Eval(node.Update, frame, state.Value, state.At, (next, nextAt) =>
                 {
                     updated = true;
-                    state = next;
-                    stateAt = nextAt;
+                    state.Set(next, nextAt);
                     return Eval(node.Extract, frame, next, nextAt, output);
                 });
                 if (signal is null && !updated)
-                    (state, stateAt) = (JqValue.Null, Path.Of(path));
+                    state.Set(JqValue.Null, Path.Of(path));
                 return signal;
-            }, consumer));
+            }, consumer, Restart(node.Binder, state)));
         });
     }
+
+    // The state of a reduce or foreach, with its path.
+    sealed class State(JqValue value, Path? at)
+    {
+        public JqValue Value { get; private set; } = value;
+
+        public Path? At { get; private set; } = at;
+
+        public void Set(JqValue value, Path? at) => (Value, At) = (value, at);
+
+        // Takes the state back to what it is now.
+        public Action Saved()
+        {
+            var (value, at) = (Value, At);
+            return () => Set(value, at);
+        }
+    }
+
+    // With ?// alternatives: what restores the state before a source value, for a retried alternative (§7.8).
+    static Func<Action>? Restart(Binder binder, State state) => binder.Patterns.Length > 1 ? state.Saved : null;
 
     // A native: a closure native decides everything; a value native is called once per combination
     // of its arguments' outputs, the last argument outermost (§6.3, §9.1).

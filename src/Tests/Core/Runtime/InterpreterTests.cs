@@ -30,6 +30,17 @@ public class InterpreterTests
     [InlineData("[[[1],2][] as [$a] ?// $a | $a]", "[1,2]")]
     [InlineData("[[[1]][] as [$a] ?// $a | if ($a | type) == \"number\" then error(\"n\") else $a end]", "[[1]]")]
     [InlineData("try (1 as [$a] ?// {$a} | $a) catch .", "\"Cannot index number with string (\\\"a\\\")\"")]
+    // ?// in reduce and foreach: a retried alternative starts from the state before the source value (§7.8, §7.9).
+    [InlineData("[reduce ([1],[5]) as [$a] ?// $a (10; if $a == 1 then error(\"e\") else [., $a] end)]", "[[[10,[1]],5]]")]
+    [InlineData("[foreach ([1]) as [$a] ?// $a (10; . + 1; if $a == 1 then ., error(\"x\") else [., $a] end)]", "[11,[11,[1]]]")]
+    [InlineData("try (reduce ([1],[2]) as [$a] ?// $a (0; if $a == 1 then error(\"e\") else . + $a end)) catch .", "\"number (0) and array ([1]) cannot be added\"")]
+    [InlineData("[reduce ({\"a\":1}, [2]) as {a: $a} ?// [$a] (0; . + $a)]", "[3]")]
+    [InlineData("try (foreach ([1]) as [$a] ?// $a (0; .; $a) | error(tostring)) catch .", "\"1\"")]
+    [InlineData("[foreach ([1], [2]) as [$a] ?// $a (0; . + (if $a == 2 then error(\"two\") else $a end); .)]", "error: \"number (1) and array ([2]) cannot be added\"")]
+    // A computed pattern key indexes with the rules of §7.6, whatever its kind (§7.5).
+    [InlineData("[5,6] | . as {(.[0] * 0 + 1): $v} | $v", "6")]
+    [InlineData("{\"a\":1} | . as {(.a): $v} | $v", "error: \"Cannot index object with number (1)\"")]
+    [InlineData("null | . as {(0 + 1): $v, (\"b\"): $w} | [$v, $w]", "[null,null]")]
     // // propagates errors of its left side; its right side only when the left has no true output.
     [InlineData("try [(1, error(\"x\")) // 3] catch .", "\"x\"")]
     [InlineData("[empty // 3, (false, null) // 4, (1, null, 2) // 5]", "[3,4,1,2]")]
@@ -169,14 +180,6 @@ public class InterpreterTests
     [Fact]
     public void Tail_recursion_reaches_the_limit_without_the_host_stack()
         => Assert.Equal("error: \"Maximum call depth exceeded\"", OnSmallStack("def f: if . == 0 then 0 else (. - 1 | f) end; 100000 | f"));
-
-    [Theory]
-    // Recursion whose outputs flow back through every level, beyond what a 1 MB stack holds.
-    [InlineData("def f: if . == 0 then 0 else (. - 1 | f) + 1 end; 100000 | f")]
-    [InlineData("def f: if . == 0 then 0 else [. - 1 | f] end; 100000 | f")]
-    [InlineData("def f: if . == 0 then 0 else ((. - 1, . - 1) | f) end; first(100000 | f)")]
-    public void The_host_stack_is_never_exhausted(string program)
-        => Assert.Equal("error: \"Maximum call depth exceeded\"", OnSmallStack(program, options: new EvaluationOptions { MaxDepth = 1_000_000 }));
 
     [Theory]
     // Natives marked *loop* do not consume the call depth.

@@ -54,6 +54,9 @@ sealed class JqArray
     /// <summary>Creates an array over <paramref name="items"/> without copying: the caller gives up the array and never writes it again.</summary>
     public static JqArray FromOwned(JqValue[] items) => items.Length == 0 ? Empty : new(new Buffer(items, items.Length), 0, items.Length);
 
+    /// <summary>Creates an array over the first <paramref name="count"/> items without copying; the rest of the storage is room to append.</summary>
+    internal static JqArray FromOwned(JqValue[] items, int count) => count == 0 ? Empty : new(new Buffer(items, count), 0, count);
+
     public int Count => count;
 
     /// <summary>The element at <paramref name="index"/>, 0 &lt;= index &lt; Count.</summary>
