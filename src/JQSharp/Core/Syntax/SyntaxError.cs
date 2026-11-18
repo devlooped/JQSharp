@@ -19,7 +19,7 @@ static class SyntaxMessages
     public const string ImportPathNotConstant = "Import path must be constant";
 
     /// <summary><c>Cannot use number (1) as object key</c>.</summary>
-    public static string InvalidObjectKey(JqValue key) => $"Cannot use {ValueErrors.Describe(key)} as object key";
+    public static string InvalidObjectKey(JqValue key) => Errors.CannotUseAsKey(key).AsString();
 
     // Fixed by spec §11.
     public const string TooDeeplyNested = "Program too deeply nested";

@@ -1,0 +1,126 @@
+# Cases of spec/tests/*.test that the new core (src/JQSharp/Core) fails, grouped by cause.
+#
+# One case per line: the file name, the program and the input line, separated by tabs
+# (a %%FAIL case has no input). ConformanceTests fails when a listed case passes, when an
+# unlisted case fails, and when a line here matches no case. Steps 7 to 9 of the jqlite plan
+# shrink the list; step 10 deletes it with pending.txt.
+
+# step 7: formats
+formats.test	"" | @base64	null
+formats.test	"" | @base64d	null
+formats.test	"<>&'\"" | @html	null
+formats.test	"O'Hara's Ale" | @sh	null
+formats.test	"This is a message" | @base64	null
+formats.test	"This works if x < y" | @html	null
+formats.test	"VGhpcyBpcyBhIG1lc3NhZ2U=" | @base64d	null
+formats.test	"abc-_.~" | @uri	null
+formats.test	"hello world" | @uri | @urid	null
+formats.test	"hello" | @base64 | @base64d	null
+formats.test	"safe text" | @html	null
+formats.test	"test" | @sh	null
+formats.test	"what is jq?" | @uri	null
+formats.test	"what%20is%20jq%3F" | @urid	null
+formats.test	42 | @html	null
+formats.test	42 | @uri	null
+formats.test	@html "<b>\(.)</b>"	"<script>"
+formats.test	@html "a<b>\(.)</b>"	"x"
+formats.test	@sh "echo \(.)"	"hello"
+formats.test	@uri "https://example.com/search?q=\(.)"	"hello world"
+formats.test	["a","b c"] | @sh	null
+formats.test	["a","b","c"] | @tsv	null
+formats.test	["a\"b"] | @csv	null
+formats.test	[1,"hello\tworld"] | @tsv	null
+formats.test	[1,"two",null,true] | @csv	null
+formats.test	try ("not an array" | @csv) catch .	null
+formats.test	try ("not an array" | @tsv) catch .	null
+
+# step 7: native not implemented: contains/1
+collections.test	contains({"foo":"baz"})	{"foo":"foobar"}
+collections.test	contains({"foo":"foo"})	{"foo":"foobar"}
+collections.test	inside({"foo":"foobar"})	{"foo":"foo"}
+
+# step 8: regex (test/2, match/2)
+regex.test	[match("o";"g")]	"foobar"
+regex.test	[scan("([a-z])(\\d+)";"ig")]	"A1b22"
+regex.test	[scan("\\d+")]	"abc123def456"
+regex.test	[splits("\\s+")]	"foo bar"
+regex.test	[splits("foo";"i")]	"FOOfoo"
+regex.test	capture("(?<a>\\w+)-(?<b>\\w+)")	"foo-bar"
+regex.test	capture("(?<a>foo)-(?<b>bar)";"i")	"FOO-bar"
+regex.test	gsub("(?<x>[a-z])(?<n>\\d)"; .n + "-" + .x)	"a1 b2"
+regex.test	gsub("o";"0")	"foo"
+regex.test	gsub("o";"0";"i")	"FoO"
+regex.test	match("(o+)")	"foobar"
+regex.test	match("z")	"foo"
+regex.test	split("\\s+";"")	"a  b  c"
+regex.test	sub("(?<x>\\w+)"; .x)	"foo"
+regex.test	sub("o";"0")	"foo"
+regex.test	sub("o";"0";"i")	"FoO"
+regex.test	test("foo")	"foobar"
+regex.test	test("foo";"i")	"FoObAr"
+regex.test	try (test("a")) catch .	123
+
+# step 8: dates
+dates.test	fromdate	"2015-03-05T23:51:47Z"
+dates.test	gmtime	0
+dates.test	gmtime	1425599507
+dates.test	gmtime | mktime	1425599507
+dates.test	localtime | length	0
+dates.test	mktime	[2015,2,5,23,51,47,4,63]
+dates.test	now > 1000000000	null
+dates.test	now | type	null
+dates.test	strflocaltime("%Y-%m-%d") | length	1425599507
+dates.test	strftime("%Y-%m-%d")	1425599507
+dates.test	strftime("%Y-%m-%dT%H:%M:%SZ")	1425599507
+dates.test	strptime("%Y-%m-%dT%H:%M:%SZ")	"2015-03-05T23:51:47Z"
+dates.test	strptime("%Y-%m-%dT%H:%M:%SZ") | mktime	"2015-03-05T23:51:47Z"
+dates.test	todate	1425599507
+
+# step 8: math
+math.test	acos	1
+math.test	acos	2
+math.test	acosh	1
+math.test	asin	0
+math.test	asin	2
+math.test	asinh	0
+math.test	atan	0
+math.test	atan2(0;1)	null
+math.test	atan2(1;0) * 1e9 | round	null
+math.test	atanh	0
+math.test	cbrt * 1e9 | round	27
+math.test	ceil	-1.5
+math.test	ceil	1.5
+math.test	cos	0
+math.test	cosh	0
+math.test	exp	0
+math.test	exp2	3
+math.test	expm1	0
+math.test	fabs	-5
+math.test	fabs	5
+math.test	floor	-1.5
+math.test	floor	1.5
+math.test	fma(2;3;4)	null
+math.test	fmax(3;5)	null
+math.test	fmin(3;5)	null
+math.test	fmod(7;3)	null
+math.test	hypot(3;4)	null
+math.test	ldexp(1;3)	null
+math.test	log	-1
+math.test	log	1
+math.test	log10	1000
+math.test	log1p	0
+math.test	log2	8
+math.test	nearbyint	2.5
+math.test	pow(10;0)	null
+math.test	pow(2;3)	null
+math.test	remainder(7;3)	null
+math.test	round	-2.5
+math.test	round	2.5
+math.test	scalbln(1;3)	null
+math.test	sin	0
+math.test	sinh	0
+math.test	sqrt	2
+math.test	sqrt	4
+math.test	tanh	0
+math.test	trunc	-1.7
+math.test	trunc	1.7

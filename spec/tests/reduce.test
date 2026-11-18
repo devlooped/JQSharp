@@ -64,3 +64,20 @@ foreach .[] as $x (0; . + $x; if . % 2 == 0 then . else empty end)
 reduce (1,2,3) as $x (0; empty)
 null
 null
+
+# The state is the last output of the update; foreach extracts after each output of the update.
+reduce (1,2) as $x (0; ., 10)
+null
+10
+
+[foreach (1,2) as $x (0; (. + 1, . + 10); .)]
+null
+[1,10,11,20]
+
+[foreach (1,2) as $x (0; empty; .)]
+null
+[]
+
+reduce .[] as [$a, $b] (0; . + $a * $b)
+[[1,2],[3,4]]
+14

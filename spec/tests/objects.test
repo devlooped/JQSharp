@@ -80,3 +80,8 @@ null
 null
 {"a":1}
 {"a":2}
+
+# A trailing comma in an object construction.
+{a: 1,}
+null
+{"a":1}

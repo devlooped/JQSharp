@@ -141,7 +141,7 @@ null
 # From the evidence of the jqlite plan.
 try ([1114112] | implode) catch .
 null
-"�"
+"\ufffd"
 
 # From the evidence of the jqlite plan.
 "é<" | tojson

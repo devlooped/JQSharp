@@ -175,7 +175,7 @@ sealed class Resolver
                 Visit(task.Node!);
                 break;
             case Step.Build:
-                results.Add(Build(task.Node!));
+                results.Add(Build(task.Node!, task.A));
                 break;
             case Step.BuildCall:
                 results.Add(new CallFunction(task.A, task.B, PopAll(((S.Call)task.Node!).Arguments.Length)));
@@ -193,7 +193,7 @@ sealed class Resolver
                 Define(task.Definition!, task.A == 1);
                 break;
             case Step.EndFunction:
-                functions[task.A] = new Function(task.Definition!.Name, task.Definition.Params.Length, Pop());
+                functions[task.A] = new Function(task.Definition!.Name, task.Definition.Params.Length, BindParameters(task.Definition, Pop()));
                 break;
             default:
                 scope.RemoveRange(task.A, scope.Count - task.A);
@@ -233,7 +233,7 @@ sealed class Resolver
                 Push(Step.Build, node, pipe.Right, pipe.Left);
                 break;
             case S.Comma comma:
-                Push(Step.Build, node, comma.Right, comma.Left);
+                VisitComma(comma);
                 break;
             case S.Binary binary:
                 Push(Step.Build, node, binary.Right, binary.Left);
@@ -314,8 +314,26 @@ sealed class Resolver
         }
     }
 
-    // Pops the bound children of node, last first, and builds its bound node.
-    Node Build(S.Node node)
+    // A left-nested chain of commas becomes one node with the items in order.
+    void VisitComma(S.Comma comma)
+    {
+        var items = new List<S.Node>();
+        while (true)
+        {
+            items.Add(comma.Right);
+            if (comma.Left is not S.Comma left)
+                break;
+            comma = left;
+        }
+
+        items.Add(comma.Left);
+        items.Reverse();
+        tasks.Add(new Task(Step.Build, comma, A: items.Count));
+        PushAll([.. items]);
+    }
+
+    // Pops the bound children of node, last first, and builds its bound node; count is the number of items of a comma.
+    Node Build(S.Node node, int count)
     {
         switch (node)
         {
@@ -328,10 +346,7 @@ sealed class Resolver
                 }
 
             case S.Comma:
-                {
-                    var right = Pop();
-                    return new Comma(Pop(), right);
-                }
+                return new Comma(PopAll(count));
 
             case S.Binary binary:
                 {
@@ -439,12 +454,38 @@ sealed class Resolver
         Leave();
         tasks.Add(new Task(Step.EndFunction, Definition: definition, A: index));
         Push(definition.Body);
-        if (definition.Params.Length > 0)
+        if (definition.Params.Length == 0)
+            return;
+        depth++;
+        for (var slot = 0; slot < definition.Params.Length; slot++)
+            scope.Add(new Entry(EntryKind.Parameter, definition.Params[slot].Name, 0, depth, slot));
+        // Each $name parameter then has a frame of its own, first parameter outermost (BindParameters).
+        foreach (var parameter in definition.Params)
         {
-            depth++;
-            for (var slot = 0; slot < definition.Params.Length; slot++)
-                scope.Add(new Entry(EntryKind.Parameter, definition.Params[slot].Name, 0, depth, slot));
+            if (parameter.IsVariable)
+            {
+                depth++;
+                scope.Add(new Entry(EntryKind.Variable, parameter.Name, 0, depth, 0));
+            }
         }
+    }
+
+    static readonly Binder parameterBinder = new([new VariablePattern(0)], 1);
+
+    // def f($a; $b): B is def f(a; b): a as $a | b as $b | B, except that each binding names its
+    // parameter by position: the k-th $ parameter's frame is k frames inside the parameters' frame.
+    static Node BindParameters(S.Definition definition, Node body)
+    {
+        var variables = 0;
+        foreach (var parameter in definition.Params)
+            variables += parameter.IsVariable ? 1 : 0;
+        for (var slot = definition.Params.Length - 1; slot >= 0; slot--)
+        {
+            if (definition.Params[slot].IsVariable)
+                body = new Bind(new CallParameter(--variables, slot), parameterBinder, body);
+        }
+
+        return body;
     }
 
     Node? BindVariable(S.Variable variable)
@@ -547,7 +588,9 @@ sealed class Resolver
     }
 
     // Builds the ?// alternatives of a binding from its bound keys (the last results, in the order
-    // of CollectKeys). Every distinct variable name of all the alternatives gets a slot.
+    // of CollectKeys). Every distinct variable name of all the alternatives gets a slot. A name
+    // repeated in one pattern (§7.5): without ?// its first occurrence in matching order gives the
+    // value, so later ones discard theirs; with ?// every occurrence stores and the last one stays.
     void MakeBinder(S.Node node)
     {
         var patterns = node switch
@@ -562,13 +605,10 @@ sealed class Resolver
             keys += CountKeys(pattern);
         var next = results.Count - keys;
         var names = new List<string>();
-        var seen = new HashSet<string>();
+        var seen = patterns.Length == 1 ? new HashSet<string>() : null;
         var bound = ImmutableArray.CreateBuilder<Pattern>(patterns.Length);
         foreach (var pattern in patterns)
-        {
-            seen.Clear();
             bound.Add(BindPattern(pattern, names, seen, ref next));
-        }
 
         results.RemoveRange(results.Count - keys, keys);
         binders.Add((new Binder(bound.MoveToImmutable(), names.Count), names));
@@ -581,9 +621,8 @@ sealed class Resolver
         return keys.Count;
     }
 
-    // Visits elements and entries in the order of CollectKeys, which is destructuring order (spec
-    // §7.5): the first occurrence of a repeated name in it owns the slot.
-    Pattern BindPattern(S.Pattern pattern, List<string> names, HashSet<string> seen, ref int next)
+    // Visits elements and entries in the order of CollectKeys, which is matching order (spec §7.5).
+    Pattern BindPattern(S.Pattern pattern, List<string> names, HashSet<string>? seen, ref int next)
     {
         switch (pattern)
         {
@@ -614,10 +653,10 @@ sealed class Resolver
         }
     }
 
-    // The slot of a variable in names, or -1 when the name already occurs earlier in the same pattern (seen).
-    static int Slot(string name, List<string> names, HashSet<string> seen)
+    // The slot of a variable in names, or -1 when seen (first occurrence wins) already has the name.
+    static int Slot(string name, List<string> names, HashSet<string>? seen)
     {
-        if (!seen.Add(name))
+        if (seen is not null && !seen.Add(name))
             return -1;
         var slot = names.IndexOf(name);
         if (slot < 0)

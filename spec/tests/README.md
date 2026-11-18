@@ -5,7 +5,9 @@ in C# and every port) must pass. The format is the one of jq's own `tests/jq.tes
 
 ## File format
 
-The file is read line by line. Blank lines and lines starting with `#` separate cases.
+The file is UTF-8, read line by line. A line ends at LF (U+000A); a CR just before the LF is part of
+the line ending, and a lone CR is part of the line (`syntax.test` has a program with one). Blank
+lines and lines starting with `#` separate cases.
 
 A normal case is a group of consecutive lines:
 
@@ -19,7 +21,7 @@ null
 [1,"x"]
 ```
 
-A case that starts with a `%%FAIL` line is a program that must not parse (a compile error):
+A case that starts with a `%%FAIL` line is a program that must fail to parse or to bind (spec §10.2):
 
 ```
 %%FAIL
@@ -27,21 +29,27 @@ A case that starts with a `%%FAIL` line is a program that must not parse (a comp
 $*label-foo is not defined
 ```
 
-The lines after the program are the jq 1.8 error message, and the error of the implementation
-must contain them. With `%%FAIL IGNORE MSG` only the failure is checked, not the message.
+The lines after the program are the error message. A line that is one of the fixed texts of spec
+§10.2 (`f/1 is not defined`, `$*label-foo is not defined`, `Cannot use number (0) as object key`,
+…) must be contained in the implementation's message; other lines are jq's own wording and are not
+compared. With `%%FAIL IGNORE MSG` no line is compared.
 
 ## Running a case
 
-- Parse the input line as JSON, run the program on it, and collect every output.
-- An uncaught error fails the case. Cases that test an error catch it in the program
-  (`try ... catch .`), so the message is an ordinary output.
+- Parse the input line as JSON (the reader of spec §5.3), run the program on it with no host
+  variables, an empty `$ENV` and the default depth limit, and collect every output.
+- The program must end normally or by `halt`. An uncaught error or `halt_error` fails the case;
+  cases that test an error catch it in the program (`try ... catch .`), so the message is an
+  ordinary output.
 - The case passes when there are as many outputs as expected lines and each output equals its line.
 
 ## Comparison rule
 
-Each expected line is parsed as JSON and compared *structurally* with the output:
+Each output is written as canonical text (spec §5.1) and read back, so NaN compares as `null` and
+±Infinity as ±1.7976931348623157e+308, the way jq prints them. Each expected line is parsed as JSON
+and compared *structurally* with it:
 
-- numbers as IEEE-754 doubles (`1`, `1.0` and `1e0` are equal);
+- numbers as IEEE-754 doubles (`1`, `1.0` and `1e0` are equal, and so are `-0` and `0`);
 - strings by code points;
 - arrays element by element, in order;
 - objects with the same keys **in the same order** (insertion order), each value equal.
@@ -55,8 +63,9 @@ Expected outputs do not depend on the machine (environment variables, current ti
 
 - `localtime.test` runs with the host time zone fixed at UTC+02:00, with no daylight saving time.
 
-## pending.txt
+## pending.txt and pending-core.txt
 
-`pending.txt` lists the cases the current engine of JQSharp fails, one per line: file name, program
-and input, separated by tabs. It belongs to the C# runner (`src/Tests/ConformanceTests.cs`), not to
-the corpus: a port starts from an empty list.
+`pending.txt` lists the cases the current engine of JQSharp fails, and `pending-core.txt` those the
+new core (`src/JQSharp/Core`) fails, grouped by cause; one per line: file name, program and input,
+separated by tabs. They belong to the C# runner (`src/Tests/ConformanceTests.cs`), not to the
+corpus: a port starts from an empty list.

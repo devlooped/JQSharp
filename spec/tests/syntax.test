@@ -11,3 +11,8 @@ null
 
 %%FAIL IGNORE MSG
 [invalid!!!
+
+# Only U+000A ends a line: a lone U+000D does not end a comment (the program line holds a raw CR).
+1 # c+ 1
+null
+1

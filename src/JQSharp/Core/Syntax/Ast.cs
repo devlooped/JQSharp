@@ -151,9 +151,10 @@ sealed record Label(string Name, Node Body, Position Position) : Node(NodeKind.L
 sealed record Break(string Name, Position Position) : Node(NodeKind.Break, Position);
 
 /// <summary>
-/// <c>def Name(Params): Body;</c>. Every parameter is a filter parameter when evaluated: for a
-/// <c>$name</c> parameter (<see cref="Param.IsVariable"/>) the parser has already wrapped the body
-/// in <c>name as $name | …</c> (§3.3), first parameter outermost.
+/// <c>def Name(Params): Body;</c>. Every parameter is a filter parameter; a <c>$name</c> parameter
+/// (<see cref="Param.IsVariable"/>) also binds <c>$name</c> to each output of its own argument,
+/// first parameter outermost (§3.3). The resolver does that binding by position, since a name may
+/// repeat: in <c>def f($a; a)</c> the filter <c>a</c> is the second parameter and <c>$a</c> the first.
 /// </summary>
 sealed record Definition(string Name, ImmutableArray<Param> Params, Node Body, Position Position);
 

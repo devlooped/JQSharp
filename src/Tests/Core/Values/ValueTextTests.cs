@@ -248,7 +248,7 @@ public class ValueTextTests
     [InlineData("\"a😀😀😀😀😀😀😀\"", "\"a😀😀😀😀😀...")]
     public void Error_dump(string json, string expected)
     {
-        var dump = ValueErrors.Dump(V(json));
+        var dump = Errors.Dump(V(json));
         Assert.Equal(expected, dump);
         Assert.True(Encoding.UTF8.GetByteCount(dump) <= 29 || dump.EndsWith("...") && Encoding.UTF8.GetByteCount(dump) <= 28);
     }

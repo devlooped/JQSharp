@@ -369,21 +369,21 @@ static class ValueText
                 pos = 1;
             SkipSpace();
             if (pos == text.Length)
-                return FailWithoutPosition(ValueErrors.ExpectedValue);
+                return FailWithoutPosition(Errors.ExpectedValue);
 
             var stack = new List<Frame>();
             while (true)
             {
                 // A value starts at pos (white space skipped).
                 if (pos == text.Length)
-                    return Fail(ValueErrors.UnfinishedAtEof);
+                    return Fail(Errors.UnfinishedAtEof);
 
                 JqValue current;
                 var c = text[pos];
                 if (c is '[' or '{')
                 {
                     if (stack.Count == MaxDepth)
-                        return Fail(ValueErrors.DepthLimit, pos + 1);
+                        return Fail(Errors.DepthLimit, pos + 1);
                     pos++;
                     SkipSpace();
                     var frame = new Frame(c == '{');
@@ -410,12 +410,12 @@ static class ValueText
                 else if (c is ']' or '}')
                 {
                     if (stack.Count == 0)
-                        return Fail(ValueErrors.Unmatched(c), pos + 1);
-                    return Fail(stack[^1].IsObject ? ValueErrors.KeyValuePairs : ValueErrors.ExpectedArrayElement, pos + 1);
+                        return Fail(Errors.Unmatched(c), pos + 1);
+                    return Fail(stack[^1].IsObject ? Errors.KeyValuePairs : Errors.ExpectedArrayElement, pos + 1);
                 }
                 else if (c is ',' or ':')
                 {
-                    return Fail(ValueErrors.ExpectedValueBefore(c), pos + 1);
+                    return Fail(Errors.ExpectedValueBefore(c), pos + 1);
                 }
                 else if (!ReadLiteral(out current))
                 {
@@ -429,7 +429,7 @@ static class ValueText
                     if (stack.Count == 0)
                     {
                         if (pos != text.Length)
-                            return FailWithoutPosition(ValueErrors.ExtraValues);
+                            return FailWithoutPosition(Errors.ExtraValues);
                         result = current;
                         return true;
                     }
@@ -437,7 +437,7 @@ static class ValueText
                     var top = stack[^1];
                     top.Add(current);
                     if (pos == text.Length)
-                        return Fail(ValueErrors.UnfinishedAtEof);
+                        return Fail(Errors.UnfinishedAtEof);
 
                     var d = text[pos++];
                     if (d == (top.IsObject ? '}' : ']'))
@@ -448,7 +448,7 @@ static class ValueText
                     }
 
                     if (d != ',')
-                        return Fail(d is ']' or '}' ? ValueErrors.Unmatched(d) : ValueErrors.ExpectedSeparator, pos);
+                        return Fail(d is ']' or '}' ? Errors.Unmatched(d) : Errors.ExpectedSeparator, pos);
 
                     SkipSpace();
                     if (top.IsObject && !ReadKey(top))
@@ -462,17 +462,17 @@ static class ValueText
         bool ReadKey(Frame frame)
         {
             if (pos == text.Length)
-                return Fail(ValueErrors.UnfinishedAtEof);
+                return Fail(Errors.UnfinishedAtEof);
             if (text[pos] != '"')
-                return Fail(ValueErrors.KeysMustBeStrings, pos + 1);
+                return Fail(Errors.KeysMustBeStrings, pos + 1);
             pos++;
             if (!ReadString(out var key))
                 return false;
             SkipSpace();
             if (pos == text.Length)
-                return Fail(ValueErrors.UnfinishedAtEof);
+                return Fail(Errors.UnfinishedAtEof);
             if (text[pos] != ':')
-                return Fail(ValueErrors.KeyValuePairs, pos + 1);
+                return Fail(Errors.KeyValuePairs, pos + 1);
             pos++;
             SkipSpace();
             frame.Key = CodePoints.Sanitize(key);
@@ -489,7 +489,7 @@ static class ValueText
             while (true)
             {
                 if (pos == text.Length)
-                    return Fail(ValueErrors.UnfinishedAtEof);
+                    return Fail(Errors.UnfinishedAtEof);
                 var c = text[pos];
                 if (c == '"')
                 {
@@ -500,7 +500,7 @@ static class ValueText
                 }
 
                 if (c < 0x20)
-                    return Fail(ValueErrors.ControlCharacter, pos + 1);
+                    return Fail(Errors.ControlCharacter, pos + 1);
 
                 if (c != '\\')
                 {
@@ -511,7 +511,7 @@ static class ValueText
                 builder.Append(text, run, pos - run);
                 pos++;
                 if (pos == text.Length)
-                    return Fail(ValueErrors.UnfinishedAtEof);
+                    return Fail(Errors.UnfinishedAtEof);
                 var e = text[pos++];
                 switch (e)
                 {
@@ -538,17 +538,17 @@ static class ValueText
                         for (var i = 0; i < 4; i++)
                         {
                             if (pos == text.Length)
-                                return Fail(ValueErrors.UnfinishedAtEof);
+                                return Fail(Errors.UnfinishedAtEof);
                             var digit = HexValue(text[pos++]);
                             if (digit < 0)
-                                return Fail(ValueErrors.InvalidUnicodeEscape, pos);
+                                return Fail(Errors.InvalidUnicodeEscape, pos);
                             unit = unit * 16 + digit;
                         }
 
                         builder.Append((char)unit);
                         break;
                     default:
-                        return Fail(ValueErrors.InvalidEscape, pos);
+                        return Fail(Errors.InvalidEscape, pos);
                 }
 
                 run = pos;
@@ -576,7 +576,7 @@ static class ValueText
             }
 
             if (!TryParseNumber(token, out var number))
-                return Fail(char.IsAsciiLetter(token[0]) ? ValueErrors.InvalidLiteral : ValueErrors.InvalidNumericLiteral, pos);
+                return Fail(char.IsAsciiLetter(token[0]) ? Errors.InvalidLiteral : Errors.InvalidNumericLiteral, pos);
             value = JqValue.FromNumber(number);
             return true;
         }
@@ -614,12 +614,12 @@ static class ValueText
                 }
             }
 
-            return FailWithoutPosition(ValueErrors.AtPosition(message, line, consumed - lineStart));
+            return FailWithoutPosition(Errors.AtPosition(message, line, consumed - lineStart));
         }
 
         bool FailWithoutPosition(string reason)
         {
-            failure = ValueErrors.WhileParsing(reason, text);
+            failure = Errors.WhileParsing(reason, text);
             return false;
         }
     }
