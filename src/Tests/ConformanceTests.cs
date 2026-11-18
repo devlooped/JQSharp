@@ -25,6 +25,9 @@ public partial class ConformanceTests
     // core's date natives come with step 8.
     static readonly HashSet<string> SkippedFiles = ["localtime.test"];
 
+    // The module files of modules.test, for the core (spec §14.2).
+    static readonly DirectoryModules CorpusModules = new(Path.Combine(SpecDirectory, "modules"));
+
     static readonly Lazy<HashSet<string>> Pending = new(() => LoadPending("pending.txt"));
     static readonly Lazy<HashSet<string>> PendingCore = new(() => LoadPending("pending-core.txt"));
 
@@ -44,7 +47,13 @@ public partial class ConformanceTests
     [Theory]
     [MemberData(nameof(Cases))]
     public void Corpus_case(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
-        => Check("pending.txt", Pending.Value, file, line, program, input, Run(program, input, expected, shouldFail, expectedError));
+    {
+        // The current engine's resolvers do not follow the module rule of README.md; its module
+        // tests stay in JqModuleTests until step 10.
+        if (file == "modules.test")
+            return;
+        Check("pending.txt", Pending.Value, file, line, program, input, Run(program, input, expected, shouldFail, expectedError));
+    }
 
     [Theory]
     [MemberData(nameof(Cases))]
@@ -114,7 +123,7 @@ public partial class ConformanceTests
 
     static string? RunCore(string program, string input, string expected, bool shouldFail, string? expectedError, bool nativeOverrides)
     {
-        if (!Resolver.TryCompile(program, out var bound, out var error, nativeOverrides))
+        if (!Resolver.TryCompile(program, out var bound, out var error, nativeOverrides, CorpusModules))
             return shouldFail ? MissingFixedText(expectedError, error.Message) : $"{error.Message} at {error.Line}:{error.Column}";
         if (shouldFail)
             return "the program parses and binds but must not";

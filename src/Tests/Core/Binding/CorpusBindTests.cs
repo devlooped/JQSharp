@@ -11,9 +11,8 @@ public class CorpusBindTests
 {
     static readonly string SpecDirectory = Path.Combine(AppContext.BaseDirectory, "spec", "tests");
 
-    // Programs that do not bind until the modules group exists (step 9). None today: the module
-    // tests stay in C# because the one-line format cannot carry module sources.
-    static readonly HashSet<string> NeedModules = [];
+    // The module files of modules.test (spec/tests/README.md).
+    static readonly DirectoryModules Modules = new(Path.Combine(SpecDirectory, "modules"));
 
     public static IEnumerable<object[]> Files()
         => Directory.GetFiles(SpecDirectory, "*.test").Order(StringComparer.Ordinal).Select(file => new object[] { Path.GetFileName(file) });
@@ -25,8 +24,6 @@ public class CorpusBindTests
         var failures = new List<string>();
         foreach (var test in JqTestParser.ParseFile(Path.Combine(SpecDirectory, file)))
         {
-            if (NeedModules.Contains(test.Program))
-                continue;
             if (!Parser.TryParse(test.Program, out var program, out var error))
             {
                 if (!test.ShouldFail)
@@ -34,7 +31,7 @@ public class CorpusBindTests
                 continue;
             }
 
-            var binds = Resolver.TryBind(program, out _, out error);
+            var binds = Resolver.TryBind(program, out _, out error, modules: Modules);
             if (test.ShouldFail && binds)
                 failures.Add($"{file}:{test.LineNumber}: '{test.Program}' binds but is a %%FAIL case");
             else if (!test.ShouldFail && !binds)

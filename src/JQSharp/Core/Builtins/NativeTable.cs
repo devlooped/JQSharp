@@ -37,6 +37,7 @@ static class NativeTable
         CollectionNatives.Register();
         StringNatives.Register();
         AssignNatives.Register();
+        ModuleNatives.Register();
         Containment.Register();
     }
 

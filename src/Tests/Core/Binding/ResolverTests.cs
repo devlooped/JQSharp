@@ -193,8 +193,9 @@ public class ResolverTests
     [InlineData(". as {(foo): $x} | $x", "foo/0 is not defined @1:8")]
     [InlineData("reduce . as $x (0; foo)", "foo/0 is not defined @1:20")]
     [InlineData("foreach . as $x (0; .; foo)", "foo/0 is not defined @1:24")]
-    [InlineData("import \"a\" as a; 1", "import/include are not supported yet @1:1")]
-    [InlineData("include \"a\"; 1", "import/include are not supported yet @1:1")]
+    // Without a module source no module exists.
+    [InlineData("import \"a\" as a; 1", "module not found: a @1:1")]
+    [InlineData("1 as $x | include \"a\"; 1", "Unexpected 'include' @1:11")]
     public void Unknown_names_are_binding_errors(string program, string error)
         => Assert.Equal(error, Error(program));
 

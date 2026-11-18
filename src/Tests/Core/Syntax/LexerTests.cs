@@ -68,10 +68,11 @@ public class LexerTests
     }
 
     [Fact]
-    public void A_qualified_name_has_one_double_colon_at_most()
+    public void A_qualified_name_may_have_several_double_colons()
     {
-        Assert.Equal("Ident Colon Colon Ident", Kinds("a::b::c"));
-        Assert.Equal("a::b : : c", Texts("a::b::c"));
+        Assert.Equal("Ident", Kinds("a::b::c"));
+        Assert.Equal("a::b::c", Texts("a::b::c"));
+        Assert.Equal("Variable", Kinds("$a::b::c"));
         Assert.Equal("a : :", Texts("a::"));
         Assert.Equal("Field Colon Colon Ident", Kinds(".a::b"));
     }

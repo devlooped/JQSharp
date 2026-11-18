@@ -81,6 +81,9 @@ sealed class Interpreter
         Clock = options.Clock;
     }
 
+    /// <summary>The program being evaluated.</summary>
+    public BoundProgram Program => program;
+
     /// <summary>The host's clock, for the date builtins.</summary>
     public IClock? Clock { get; }
 

@@ -2,8 +2,12 @@ using Devlooped.Core.Values;
 
 namespace Devlooped.Core.Syntax;
 
-/// <summary>The one error a lexing or parsing run returns: a message and the 1-based position of the token where it was detected.</summary>
-sealed record SyntaxError(string Message, int Line, int Column);
+/// <summary>
+/// The one error a lexing, parsing or binding run returns: a message and the 1-based position of the
+/// token where it was detected, in the main program or, when <see cref="Module"/> is set, in the
+/// module of that identity (§9.11).
+/// </summary>
+sealed record SyntaxError(string Message, int Line, int Column, string? Module = null);
 
 /// <summary>
 /// Every message text of the syntax layer, in one place. The texts of spec §10.2 are fixed; the

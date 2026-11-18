@@ -15,7 +15,6 @@ public class NativeTableTests
         "acos/0", "asin/0", "atan/0", "acosh/0", "asinh/0", "atanh/0", "cbrt/0", "cos/0", "cosh/0", "exp/0", "exp2/0",
         "expm1/0", "log/0", "log10/0", "log1p/0", "log2/0", "sin/0", "sinh/0", "tan/0", "tanh/0", "atan2/2", "pow/2", "hypot/2",
         "erf/0", "erfc/0", "tgamma/0", "lgamma/0", "j0/0", "j1/0",
-        "modulemeta/0",
     ];
 
     [Fact]

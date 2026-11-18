@@ -330,13 +330,14 @@ sealed class Lexer
         return true;
     }
 
-    // [A-Za-z_][A-Za-z0-9_]*, and when qualified, an optional "::" and a second such name.
+    // [A-Za-z_][A-Za-z0-9_]*, and when qualified, any number of "::" each followed by such a name
+    // (jq 1.8.2 accepts a::b::c as one name: an import alias may itself be qualified).
     string ReadIdentifier(bool qualified)
     {
         var start = index;
         while (IsIdentPart(At(index)))
             Advance();
-        if (qualified && At(index) == ':' && At(index + 1) == ':' && IsIdentStart(At(index + 2)))
+        while (qualified && At(index) == ':' && At(index + 1) == ':' && IsIdentStart(At(index + 2)))
         {
             Advance();
             Advance();

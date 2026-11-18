@@ -320,7 +320,14 @@ static class ValueText
     /// <c>Expected JSON value</c> and <c>Unexpected extra JSON values</c>, as in jq).
     /// </summary>
     public static bool TryParse(string text, out JqValue value, out JqValue error)
-        => new JsonReader(text).Read(out value, out error);
+        => new JsonReader(text, sequence: false).Read(out value, out error);
+
+    /// <summary>
+    /// Reads a sequence of JSON values separated by white space (a data module, §9.11) as one
+    /// array; no value at all is the empty array. Errors as <see cref="TryParse"/>.
+    /// </summary>
+    public static bool TryParseSequence(string text, out JqValue values, out JqValue error)
+        => new JsonReader(text, sequence: true).Read(out values, out error);
 
     /// <summary>
     /// A JSON reader without recursion (an explicit stack), so deep input cannot exhaust the host
@@ -328,7 +335,7 @@ static class ValueText
     /// <c>[]{},:</c>; a raw control character inside a string is an error, and every lone
     /// surrogate (escaped or raw) becomes U+FFFD.
     /// </summary>
-    sealed class JsonReader(string text)
+    sealed class JsonReader(string text, bool sequence)
     {
         const int MaxDepth = 10000;
 
@@ -352,6 +359,8 @@ static class ValueText
 
         int pos;
         JqValue failure;
+        // The values read so far, when reading a sequence.
+        readonly List<JqValue>? values = sequence ? [] : null;
 
         public bool Read(out JqValue value, out JqValue error)
         {
@@ -369,6 +378,12 @@ static class ValueText
             if (text.Length > 0 && text[0] == (char)0xFEFF) // a byte order mark
                 pos = 1;
             SkipSpace();
+            if (pos == text.Length && values is not null)
+            {
+                result = JqValue.FromArray(JqArray.Empty);
+                return true;
+            }
+
             if (pos == text.Length)
                 return FailWithoutPosition(Errors.ExpectedValue);
 
@@ -427,6 +442,16 @@ static class ValueText
                 while (true)
                 {
                     SkipSpace();
+                    if (stack.Count == 0 && values is not null)
+                    {
+                        // A sequence goes on with the next value, if any.
+                        values.Add(current);
+                        if (pos < text.Length)
+                            break;
+                        result = JqValue.FromArray(JqArray.FromOwned([.. values]));
+                        return true;
+                    }
+
                     if (stack.Count == 0)
                     {
                         if (pos != text.Length)
