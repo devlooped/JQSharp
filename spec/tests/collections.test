@@ -1,0 +1,240 @@
+# collections.test - Array and generator builtins: sorting, grouping, `add`, `any`/`all`, `first`/`last`, `range`, SQL-style `INDEX`/`IN`/`JOIN`.
+# Format and comparison rule: see README.md.
+
+INDEX(range(5)|[., "foo\(.)"]; .[0])
+null
+{"0":[0,"foo0"],"1":[1,"foo1"],"2":[2,"foo2"],"3":[3,"foo3"],"4":[4,"foo4"]}
+
+[{"name":"foo","val":1},{"name":"bar","val":2}] | INDEX(.name)
+null
+{"foo":{"name":"foo","val":1},"bar":{"name":"bar","val":2}}
+
+JOIN({"0":[0,"abc"],"1":[1,"bcd"],"2":[2,"def"],"3":[3,"efg"],"4":[4,"fgh"]}; .[0]|tostring)
+[[5,"foo"],[3,"bar"],[1,"foobar"]]
+[[[5,"foo"],null],[[3,"bar"],[3,"efg"]],[[1,"foobar"],[1,"bcd"]]]
+
+range(5;10)|IN(range(10))
+null
+true
+true
+true
+true
+true
+
+range(5;13)|IN(range(0;10;3))
+null
+false
+true
+false
+false
+true
+false
+false
+false
+
+range(10;12)|IN(range(10))
+null
+false
+false
+
+IN(range(10;20); range(10))
+null
+false
+
+IN(range(5;20); range(10))
+null
+true
+
+sort
+[3,1,2]
+[1,2,3]
+
+reverse
+[3,1,2]
+[2,1,3]
+
+unique
+[3,1,2,1]
+[1,2,3]
+
+flatten
+[[1,2],[3]]
+[1,2,3]
+
+flatten
+[1,[2,[3]]]
+[1,2,3]
+
+add
+[1,2,3]
+6
+
+add
+["a","b"]
+"ab"
+
+add
+[]
+null
+
+add
+[[1],[2]]
+[1,2]
+
+any
+[true,false]
+true
+
+any
+[false,null]
+false
+
+any
+[]
+false
+
+all
+[true,true]
+true
+
+all
+[1,false]
+false
+
+all
+[]
+true
+
+min
+[3,1,2]
+1
+
+max
+[3,1,2]
+3
+
+transpose
+[[1,2],[3,4]]
+[[1,3],[2,4]]
+
+transpose
+[[1,2],[3]]
+[[1,3],[2,null]]
+
+[combinations]
+[[1,2],[3,4]]
+[[1,3],[1,4],[2,3],[2,4]]
+
+first
+[1,2,3]
+1
+
+last
+[1,2,3]
+3
+
+first
+[]
+null
+
+last
+[]
+null
+
+select(.x > 0)
+{"x":1}
+{"x":1}
+
+select(.x > 0)
+{"x":-1}
+
+contains({"foo":"foo"})
+{"foo":"foobar"}
+true
+
+contains({"foo":"baz"})
+{"foo":"foobar"}
+false
+
+inside({"foo":"foobar"})
+{"foo":"foo"}
+true
+
+isempty(empty)
+null
+true
+
+isempty(1,2,3)
+null
+false
+
+any(. == true)
+[true,false,true]
+true
+
+any(. == true)
+[false,false]
+false
+
+all(. > 0)
+[1,2,3]
+true
+
+all(. > 0)
+[1,-1,3]
+false
+
+any(range(5); . >= 2)
+null
+true
+
+all(range(5); . >= 0)
+null
+true
+
+map(. + 1)
+[1,2,3]
+[2,3,4]
+
+map(select(. > 2))
+[1,2,3,4]
+[3,4]
+
+[range(3)]
+null
+[0,1,2]
+
+[range(1;4)]
+null
+[1,2,3]
+
+sort_by(.x)
+[{"x":2},{"x":1}]
+[{"x":1},{"x":2}]
+
+recurse
+{"a":{"b":1}}
+{"a":{"b":1}}
+{"b":1}
+1
+
+# From the evidence of the jqlite plan.
+[range(40) | {a: (. % 3), b: .}] | sort_by(.a) | map(.b)
+null
+[0,3,6,9,12,15,18,21,24,27,30,33,36,39,1,4,7,10,13,16,19,22,25,28,31,34,37,2,5,8,11,14,17,20,23,26,29,32,35,38]
+
+# From the evidence of the jqlite plan.
+[range(40) | {a: (. % 3), b: .}] | group_by(.a) | map(map(.b))
+null
+[[0,3,6,9,12,15,18,21,24,27,30,33,36,39],[1,4,7,10,13,16,19,22,25,28,31,34,37],[2,5,8,11,14,17,20,23,26,29,32,35,38]]
+
+# From the evidence of the jqlite plan.
+[range(40) | {a: (. % 3), b: .}] | unique_by(.a) | map(.b)
+null
+[0,1,2]
+
+# From the evidence of the jqlite plan.
+[range(40) | {a: (. % 3), b: .}] | min_by(.a), max_by(.a)
+null
+{"a":0,"b":0}
+{"a":2,"b":38}

@@ -1,0 +1,112 @@
+# types.test - Types and type selectors, `length`, `env`/`$ENV`, `builtins`, `halt`.
+# Format and comparison rule: see README.md.
+
+type
+null
+"null"
+
+type
+42
+"number"
+
+type
+"hello"
+"string"
+
+type
+true
+"boolean"
+
+type
+[1,2,3]
+"array"
+
+type
+{"a":1}
+"object"
+
+length
+[1,2,3]
+3
+
+length
+"hello"
+5
+
+length
+{"a":1,"b":2}
+2
+
+length
+null
+0
+
+length
+42
+42
+
+length
+-5
+5
+
+length
+3.5
+3.5
+
+try (length) catch .
+true
+"boolean (true) has no length"
+
+[.[] | arrays]
+[1,"a",[],{},null,true]
+[[]]
+
+[.[] | objects]
+[1,"a",[],{},null,true]
+[{}]
+
+[.[] | strings]
+[1,"a",[],{},null,true]
+["a"]
+
+[.[] | numbers]
+[1,"a",[],{},null,true]
+[1]
+
+[.[] | booleans]
+[1,"a",[],{},null,true]
+[true]
+
+[.[] | nulls]
+[1,"a",[],{},null,true]
+[null]
+
+[.[] | values]
+[1,"a",[],{},null,true]
+[1,"a",[],{},true]
+
+[.[] | scalars]
+[1,"a",[],{},null,true]
+[1,"a",null,true]
+
+[.[] | iterables]
+[1,"a",[],{},null,true]
+[[],{}]
+
+empty
+null
+
+halt
+null
+
+env | type
+null
+"object"
+
+builtins | length > 0
+null
+true
+
+$ENV | type
+null
+"object"

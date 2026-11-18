@@ -1,0 +1,99 @@
+# functions.test - User-defined functions: definitions, parameters, recursion, shadowing.
+# Format and comparison rule: see README.md.
+
+def f: . + 1; f
+5
+6
+
+def f: (1000,2000); f
+null
+1000
+2000
+
+def f: . + 1; def g: . * 2; f | g
+3
+8
+
+def f(x): x; f(. + 1)
+5
+6
+
+def f(x): x | x; f(.+1)
+5
+7
+
+def f(x): [x, x]; f(. + 1)
+5
+[6,6]
+
+def f($a): $a + 1; f(10)
+null
+11
+
+def f($a; $b): $a + $b; f(3; 4)
+null
+7
+
+def f(a; $b): a + $b; f(. * 2; 3)
+5
+13
+
+def f: . + 1; def g: f; def f: . + 100; g
+5
+6
+
+def f: 1; def f: 2; f
+null
+2
+
+def fact: if . <= 1 then 1 else . * ((. - 1) | fact) end; 5 | fact
+null
+120
+
+def sum: if length == 0 then 0 else first + (.[1:] | sum) end; sum
+[1,2,3,4,5]
+15
+
+2000 as $x | def f(x): 1 as $x | [$x, x]; f($x)
+null
+[1,2000]
+
+def empty: 42; empty
+null
+42
+
+def length: 99; length
+[1,2,3]
+99
+
+def f: def g: . + 1; g | g; f
+5
+7
+
+def f: 1; def f(x): x + 10; [f, f(5)]
+null
+[1,15]
+
+def f(x): [x]; f(1,2,3)
+null
+[1,2,3]
+
+def f(x): x | x; f(1,2)
+null
+1
+2
+1
+2
+
+def outer: 1; (def outer: 2; outer), outer
+null
+2
+1
+
+def repeat(f): ., (f | repeat(f)); 1 | limit(5; (repeat(. * 2) | select(. > 1)))
+null
+2
+4
+8
+16
+32

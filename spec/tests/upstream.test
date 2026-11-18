@@ -1,0 +1,94 @@
+# upstream.test - Cases copied from jq's own test suite (src/Tests/suite/jq.test).
+# Format and comparison rule: see README.md.
+
+.
+"Aa\r\n\t\b\f\u03bc"
+"Aa\r\n\t\b\fμ"
+
+.foo
+{"foo": 42, "bar": 43}
+42
+
+.foo | .bar
+{"foo": {"bar": 42}, "bar": "badvalue"}
+42
+
+.foo.bar
+{"foo": {"bar": 42}, "bar": "badvalue"}
+42
+
+.foo_bar
+{"foo_bar": 2}
+2
+
+.["foo"].bar
+{"foo": {"bar": 42}, "bar": "badvalue"}
+42
+
+."foo"."bar"
+{"foo": {"bar": 20}}
+20
+
+.e0, .E1, .E-1, .E+1
+{"e0": 1, "E1": 2, "E": 3}
+1
+2
+2
+4
+
+.[]
+[1,2,3]
+1
+2
+3
+
+.+4
+15
+19
+
+.+null
+{"a":42}
+{"a":42}
+
+.a+.b
+{"a":42}
+42
+
+.[] | [.[0] and .[1], .[0] or .[1]]
+[[true,[]], [false,1], [42,null], [null,false]]
+[true,true]
+[false,true]
+[false,true]
+[false,false]
+
+. * 100000 | [.[:10],.[-10:]]
+"abc"
+["abcabcabca","cabcabcabc"]
+
+. * 1000000000
+""
+""
+
+.foo[.baz]
+{"foo":{"bar":4},"baz":"bar"}
+4
+
+. - 10
+13911860366432393
+13911860366432382
+
+.[0] - 10
+[13911860366432393]
+13911860366432382
+
+.x - 10
+{"x":13911860366432393}
+13911860366432382
+
+.foo # inline comment
+{"foo":42}
+42
+
+.foo # pick foo
+{"foo":{"bar":99}}
+{"bar":99}

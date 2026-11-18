@@ -1,0 +1,111 @@
+# operators.test - Boolean logic, the alternative operator `//`, arithmetic and comparison operators, precedence.
+# Format and comparison rule: see README.md.
+
+true and true
+null
+true
+
+true and false
+null
+false
+
+false and true
+null
+false
+
+null and true
+null
+false
+
+true or false
+null
+true
+
+false or true
+null
+true
+
+false or false
+null
+false
+
+null or false
+null
+false
+
+true | not
+null
+false
+
+false | not
+null
+true
+
+null | not
+null
+true
+
+0 | not
+null
+false
+
+1 // 42
+null
+1
+
+null // 42
+null
+42
+
+false // 42
+null
+42
+
+0 // 42
+null
+0
+
+"" // 42
+null
+""
+
+null // false // 42
+null
+42
+
+null // false
+null
+false
+
+true or false and false
+null
+true
+
+.foo // 42
+{"bar":1}
+42
+
+# From the evidence of the jqlite plan.
+false and error("x")
+null
+false
+
+# From the evidence of the jqlite plan.
+true or error("x")
+null
+true
+
+# From the evidence of the jqlite plan.
+[(1,2) + (10,20)]
+null
+[11,12,21,22]
+
+# From the evidence of the jqlite plan.
+{"a":2,"b":1} < {"a":1,"c":0}
+null
+true
+
+# From the evidence of the jqlite plan.
+1 // 2 == 2
+null
+1

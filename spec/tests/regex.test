@@ -1,0 +1,77 @@
+# regex.test - Regular expressions: `test`, `match`, `capture`, `scan`, `split`, `splits`, `sub`, `gsub`.
+# Format and comparison rule: see README.md.
+
+test("foo")
+"foobar"
+true
+
+test("foo";"i")
+"FoObAr"
+true
+
+match("(o+)")
+"foobar"
+{"offset":1,"length":2,"string":"oo","captures":[{"offset":1,"length":2,"string":"oo","name":null}]}
+
+[match("o";"g")]
+"foobar"
+[{"offset":1,"length":1,"string":"o","captures":[]},{"offset":2,"length":1,"string":"o","captures":[]}]
+
+match("z")
+"foo"
+
+capture("(?<a>\\w+)-(?<b>\\w+)")
+"foo-bar"
+{"a":"foo","b":"bar"}
+
+capture("(?<a>foo)-(?<b>bar)";"i")
+"FOO-bar"
+{"a":"FOO","b":"bar"}
+
+[scan("\\d+")]
+"abc123def456"
+["123","456"]
+
+[scan("([a-z])(\\d+)";"ig")]
+"A1b22"
+[["A","1"],["b","22"]]
+
+split("\\s+";"")
+"a  b  c"
+["a","b","c"]
+
+[splits("\\s+")]
+"foo bar"
+["foo","bar"]
+
+[splits("foo";"i")]
+"FOOfoo"
+["","",""]
+
+sub("o";"0")
+"foo"
+"f0o"
+
+sub("o";"0";"i")
+"FoO"
+"F0O"
+
+sub("(?<x>\\w+)"; .x)
+"foo"
+"foo"
+
+gsub("o";"0")
+"foo"
+"f00"
+
+gsub("o";"0";"i")
+"FoO"
+"F00"
+
+gsub("(?<x>[a-z])(?<n>\\d)"; .n + "-" + .x)
+"a1 b2"
+"1-a 2-b"
+
+try (test("a")) catch .
+123
+"number (123) cannot be matched, as it is not a string"

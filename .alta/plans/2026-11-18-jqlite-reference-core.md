@@ -172,7 +172,8 @@ The JSONL `EvaluateAsync` helpers stay, as one overload each. `JQSharp.csproj` g
 
 ## Steps
 
-- [ ] 1. **Corpus first, on the current engine.** Create `spec/tests/*.test` from the one-line facts in `src/Tests/Jq*Tests.cs` and from the Evidence cases. Add `src/Tests/ConformanceTests.cs` (one theory over every case) and `spec/tests/pending.txt`, the cases the current engine fails: the run fails when a listed case passes or an unlisted one fails. Delete the converted facts.
+- [x] 1. **Corpus first, on the current engine.** Create `spec/tests/*.test` from the one-line facts in `src/Tests/Jq*Tests.cs` and from the Evidence cases. Add `src/Tests/ConformanceTests.cs` (one theory over every case) and `spec/tests/pending.txt`, the cases the current engine fails: the run fails when a listed case passes or an unlisted one fails. Delete the converted facts.
+  - Done: 452 cases in 21 files, every expected output checked against jq 1.8.2; 41 pending. `localtime.test` (fixed host zone UTC+02:00) is skipped until step 10. The 44 module tests stay in C# (the one-line format cannot carry module sources); the recursion-depth case kills the current process, so it comes with step 11.
 - [ ] 2. **Write `spec/jqlite.md`**: grammar and precedence, values and ordering, number and string rules, each construct, the builtin catalogue (taken from the name lists of `BuiltinFilter`, `ParameterizedFilter` and `FormatFilter`, each marked native or prelude, modules marked optional), error messages, limits, differences from jq.
 - [ ] 3. **`Core/Values`**: `JqValue`, `JqArray`, `JqObject`, `ValueOps`, `ValueText`, with unit tests for ordering, arithmetic, number text and code-point handling.
 - [ ] 4. **`Core/Syntax`**: `Token`, `Lexer`, `Ast`, `Parser`, with tests for precedence, object construction, interpolation and error positions.

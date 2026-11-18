@@ -1,0 +1,82 @@
+# objects.test - Object construction, `+` on objects, keys and entries.
+# Format and comparison rule: see README.md.
+
+keys
+{"b":2,"a":1}
+["a","b"]
+
+[{"key":"b","value":2},{"key":"a","value":1}] | from_entries | keys_unsorted
+null
+["b","a"]
+
+keys
+[1,2,3]
+[0,1,2]
+
+to_entries
+{"a":1,"b":2}
+[{"key":"a","value":1},{"key":"b","value":2}]
+
+from_entries
+[{"key":"a","value":1}]
+{"a":1}
+
+from_entries
+[{"name":"b","value":2}]
+{"b":2}
+
+try (keys) catch .
+null
+"null (null) has no keys"
+
+try (keys) catch .
+42
+"number (42) has no keys"
+
+has("a")
+{"a":1}
+true
+
+has("b")
+{"a":1}
+false
+
+has(2)
+[1,2,3]
+true
+
+has(5)
+[1,2,3]
+false
+
+["a","z"] | map(in({"a":1}))
+null
+[true,false]
+
+{ "$type": (."type" // "typing") } + .
+{"type":"event","name":"foo"}
+{"$type":"event","type":"event","name":"foo"}
+
+{ "$type": (."type" // "typing") } + .
+{"name":"foo"}
+{"$type":"typing","name":"foo"}
+
+# From the evidence of the jqlite plan.
+{a: empty}
+null
+
+# From the evidence of the jqlite plan.
+{a, b}
+{"a":1,"b":2,"c":3}
+{"a":1,"b":2}
+
+# From the evidence of the jqlite plan.
+1 as $x | {$x}
+null
+{"x":1}
+
+# From the evidence of the jqlite plan.
+{a: (1,2)}
+null
+{"a":1}
+{"a":2}

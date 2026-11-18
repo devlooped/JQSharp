@@ -1,0 +1,201 @@
+# strings.test - String builtins, conversions, code points and string interpolation.
+# Format and comparison rule: see README.md.
+
+utf8bytelength
+"hello"
+5
+
+utf8bytelength
+""
+0
+
+tonumber
+"42"
+42
+
+tonumber
+42
+42
+
+tostring
+42
+"42"
+
+tostring
+"hello"
+"hello"
+
+tostring
+true
+"true"
+
+tostring
+null
+"null"
+
+fromjson
+"{\"a\":1}"
+{"a":1}
+
+explode
+"hello"
+[104,101,108,108,111]
+
+implode
+[104,101,108,108,111]
+"hello"
+
+ascii_downcase
+"Hello"
+"hello"
+
+ascii_upcase
+"hello"
+"HELLO"
+
+split("x")
+"axbxc"
+["a","b","c"]
+
+join(",")
+["a","b","c"]
+"a,b,c"
+
+"Hello \(.name)"
+{"name":"World"}
+"Hello World"
+
+"\(.a) and \(.b)"
+{"a":1,"b":2}
+"1 and 2"
+
+"inter\("pol" + "ation")"
+null
+"interpolation"
+
+"\(.)"
+42
+"42"
+
+"\(.)"
+"hello"
+"hello"
+
+"\(.)"
+null
+"null"
+
+"\(.)"
+true
+"true"
+
+"\(.)"
+[1,2]
+"[1,2]"
+
+"val: \(.[])"
+[1,2]
+"val: 1"
+"val: 2"
+
+"\(empty)"
+null
+
+"hello"
+null
+"hello"
+
+"\(.a + .b)"
+{"a":1,"b":2}
+"3"
+
+"\(.a)\(.b)"
+{"a":"x","b":"y"}
+"xy"
+
+"a\("b\("c")")d"
+null
+"abcd"
+
+"\(if . then "yes" else "no" end)"
+true
+"yes"
+
+tojson
+"hello"
+"\"hello\""
+
+"\(.)"
+{"a":1}
+"{\"a\":1}"
+
+"line1\nvalue: \(.x)"
+{"x":42}
+"line1\nvalue: 42"
+
+# From the evidence of the jqlite plan.
+try ("nan" | tonumber) catch .
+null
+null
+
+# From the evidence of the jqlite plan.
+try ([1114112] | implode) catch .
+null
+"�"
+
+# From the evidence of the jqlite plan.
+"é<" | tojson
+null
+"\"é<\""
+
+# From the evidence of the jqlite plan.
+"aé😀b" | .[2:3]
+null
+"😀"
+
+# From the evidence of the jqlite plan.
+"aé😀b" | length
+null
+4
+
+# Non-ASCII text: lengths and slices count code points, not UTF-16 units or bytes.
+"é" | length
+null
+1
+
+"😀" | length
+null
+1
+
+"é" | utf8bytelength
+null
+2
+
+"é" | explode
+null
+[233]
+
+[233] | implode
+null
+"é"
+
+"é😀" | explode
+null
+[233,128512]
+
+"é" == "é"
+null
+true
+
+"é" == ([233] | implode)
+null
+true
+
+"é" | @json
+null
+"\"é\""
+
+"Éa" | ascii_downcase, ascii_upcase
+null
+"Éa"
+"ÉA"

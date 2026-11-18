@@ -1,0 +1,25 @@
+# localtime.test - Local-time builtins.
+#
+# HOST ZONE: the runner must evaluate this file with the host time zone fixed at
+# UTC+02:00 with no daylight saving time (for example TZ=UTC-02 for jq).
+# Format and comparison rule: see README.md.
+
+localtime
+0
+[1970,0,1,2,0,0,4,0]
+
+strflocaltime("%Y-%m-%d")
+1425599507
+"2015-03-06"
+
+strflocaltime("%Y-%m-%dT%H:%M:%S%z")
+1425599507
+"2015-03-06T01:51:47+0200"
+
+localtime | mktime
+1425599507
+1425606707
+
+gmtime | todate
+1425599507
+"2015-03-05T23:51:47Z"

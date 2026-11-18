@@ -1,0 +1,58 @@
+# try.test - `try`, `catch`, `error` and error messages.
+# Format and comparison rule: see README.md.
+
+try .foo
+42
+
+try .foo
+{"foo":"bar"}
+"bar"
+
+try error catch .
+"custom error"
+"custom error"
+
+.foo?
+{"foo":1}
+1
+
+try error
+"test"
+
+try (try error catch error) catch .
+"nested"
+"nested"
+
+try (42 | error) catch .
+null
+42
+
+try (null | error) catch .
+null
+null
+
+try ([1,2] | error) catch .
+null
+[1,2]
+
+try (true | error) catch .
+null
+true
+
+try (.foo | .bar) catch .
+42
+"Cannot index number with string (\"foo\")"
+
+try ("hello" | error) catch .
+null
+"hello"
+
+# From the evidence of the jqlite plan.
+[try (1, error("x"), 3) catch .]
+null
+[1,"x"]
+
+# From the evidence of the jqlite plan.
+try ("{" | fromjson) catch "caught"
+null
+"caught"

@@ -1,0 +1,66 @@
+# reduce.test - `reduce` and `foreach`.
+# Format and comparison rule: see README.md.
+
+reduce .[] as $x (0; . + $x)
+[1,2,4]
+7
+
+reduce .[] as $x (0; . + $x)
+[]
+0
+
+reduce .[] as $x (""; . + $x)
+["a","b","c"]
+"abc"
+
+reduce range(5) as $x (0; . + $x)
+null
+10
+
+reduce .[] as [$i, {"j":$j}] (0; . + $i - $j)
+[[2,{"j":1}],[5,{"j":3}],[6,{"j":4}]]
+5
+
+foreach .[] as $item (0; . + $item)
+[1,2,3,4,5]
+1
+3
+6
+10
+15
+
+foreach .[] as $item (0; . + $item; [$item, . * 2])
+[1,2,3,4,5]
+[1,2]
+[2,6]
+[3,12]
+[4,20]
+[5,30]
+
+foreach .[] as $x (0; . + $x)
+[]
+
+[foreach range(5) as $item (0; $item)]
+null
+[0,1,2,3,4]
+
+foreach .[] as $x (0; . + $x; if . % 2 == 0 then . else empty end)
+[1,1,1,1,1,1]
+2
+4
+6
+
+(reduce .[] as $x (0; . + $x)) as $y | $y
+[1,2,3]
+6
+
+[foreach .[] as $x (0; . + $x)] | .[]
+[1,2,3]
+1
+3
+6
+
+# From the evidence of the jqlite plan.
+reduce (1,2,3) as $x (0; empty)
+null
+null

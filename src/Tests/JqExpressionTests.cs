@@ -6,46 +6,6 @@ namespace Devlooped.Tests;
 public class JqExpressionTests
 {
     [Fact]
-    public void Parse_concat()
-    {
-        var expression = Jq.Parse(
-            """
-            { "$type": (."type" // "typing") } + .
-            """);
-
-        Assert.NotNull(expression);
-    }
-
-    [Fact]
-    public void Parsed_concat_expression_includes_existing_type_when_present()
-    {
-        using var doc = JsonDocument.Parse("""{"type":"event","name":"foo"}""");
-        var results = Jq.Evaluate("""{ "$type": (."type" // "typing") } + .""", doc.RootElement)
-            .Select(static element => JsonSerializer.Serialize(element))
-            .ToArray();
-
-        Assert.Single(results);
-        using var output = JsonDocument.Parse(results[0]);
-        Assert.Equal("event", output.RootElement.GetProperty("$type").GetString());
-        Assert.Equal("event", output.RootElement.GetProperty("type").GetString());
-        Assert.Equal("foo", output.RootElement.GetProperty("name").GetString());
-    }
-
-    [Fact]
-    public void Parsed_concat_expression_defaults_type_when_missing()
-    {
-        using var doc = JsonDocument.Parse("""{"name":"foo"}""");
-        var results = Jq.Evaluate("""{ "$type": (."type" // "typing") } + .""", doc.RootElement)
-            .Select(static element => JsonSerializer.Serialize(element))
-            .ToArray();
-
-        Assert.Single(results);
-        using var output = JsonDocument.Parse(results[0]);
-        Assert.Equal("typing", output.RootElement.GetProperty("$type").GetString());
-        Assert.Equal("foo", output.RootElement.GetProperty("name").GetString());
-    }
-
-    [Fact]
     public void Parse_returns_non_null_expression()
     {
         var expression = Jq.Parse(".");
@@ -127,28 +87,45 @@ public class JqExpressionTests
     }
 
     [Fact]
-    public void Parsed_expression_halt_yields_empty()
-    {
-        var expression = Jq.Parse("halt");
-        using var doc = JsonDocument.Parse("null");
+    public void Uncaught_error_throws_JqException()
+        => Assert.Throws<JqException>(() => EvaluateToStrings("\"hello\" | error", "null"));
 
-        var results = expression.Evaluate(doc.RootElement).ToArray();
-
-        Assert.Empty(results);
-    }
+    // Programs on several lines: the one-line programs of spec/tests cannot carry them.
 
     [Fact]
-    public void Parsed_expression_break_without_label_throws()
+    public void Leading_comment_line_is_ignored()
+        => Assert.Equal(["42"], EvaluateToStrings("""
+            # comment
+            .foo
+            """, """{"foo":42}"""));
+
+    [Fact]
+    public void Comment_before_pipe_does_not_break_next_line()
+        => Assert.Equal(["99"], EvaluateToStrings("""
+            .foo # pick foo
+            | .bar
+            """, """{"foo":{"bar":99}}"""));
+
+    [Fact]
+    public void Odd_trailing_backslashes_continue_comment_to_next_line()
+        => Assert.Equal(["42"], EvaluateToStrings("""
+            # comment \\\
+            # still comment
+            .foo
+            """, """{"foo":42}"""));
+
+    [Fact]
+    public void Even_trailing_backslashes_do_not_continue_comment()
+        => Assert.Equal(["42"], EvaluateToStrings("""
+            # comment \\\\
+            .foo
+            """, """{"foo":42}"""));
+
+    static string[] EvaluateToStrings(string expression, string inputJson)
     {
-        // A bare break without a surrounding label should throw JqException.
-        var expression = Jq.Parse("label $out | foreach .[] as $x (0; . + $x; if . > 3 then ., break $out else . end)");
-        using var doc = JsonDocument.Parse("[1,2,3,5]");
-
-        // This should succeed (label is present).
-        var results = expression.Evaluate(doc.RootElement)
-            .Select(e => e.GetInt32())
+        using var document = JsonDocument.Parse(inputJson);
+        return Jq.Evaluate(expression, document.RootElement)
+            .Select(static element => JsonSerializer.Serialize(element))
             .ToArray();
-
-        Assert.Equal([1, 3, 6], results);
     }
 }

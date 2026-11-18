@@ -1,0 +1,59 @@
+# dates.test - Date builtins in UTC (`todate`, `fromdate`, `gmtime`, `mktime`, `strftime`, `strptime`, `now`).
+# Format and comparison rule: see README.md.
+
+todate
+1425599507
+"2015-03-05T23:51:47Z"
+
+fromdate
+"2015-03-05T23:51:47Z"
+1425599507
+
+gmtime
+0
+[1970,0,1,0,0,0,4,0]
+
+gmtime
+1425599507
+[2015,2,5,23,51,47,4,63]
+
+mktime
+[2015,2,5,23,51,47,4,63]
+1425599507
+
+gmtime | mktime
+1425599507
+1425599507
+
+strftime("%Y-%m-%dT%H:%M:%SZ")
+1425599507
+"2015-03-05T23:51:47Z"
+
+strftime("%Y-%m-%d")
+1425599507
+"2015-03-05"
+
+strptime("%Y-%m-%dT%H:%M:%SZ")
+"2015-03-05T23:51:47Z"
+[2015,2,5,23,51,47,4,63]
+
+strptime("%Y-%m-%dT%H:%M:%SZ") | mktime
+"2015-03-05T23:51:47Z"
+1425599507
+
+now | type
+null
+"number"
+
+now > 1000000000
+null
+true
+
+# Local time with results that do not depend on the host zone (the rest is in localtime.test).
+localtime | length
+0
+8
+
+strflocaltime("%Y-%m-%d") | length
+1425599507
+10
