@@ -1,0 +1,85 @@
+# selectors.test - Paths into values: identity, fields, indexes, slices, iteration, recursive descent, `?`.
+# Format and comparison rule: see README.md.
+
+.foo
+{"foo":42}
+42
+
+."foo"
+{"foo":42}
+42
+
+."foo"."bar"
+{"foo":{"bar":20}}
+20
+
+.foo
+null
+null
+
+.foo
+{"bar":1}
+null
+
+.
+{"x":[1,2]}
+{"x":[1,2]}
+
+.[]
+[1,2,3]
+1
+2
+3
+
+.[]
+{"a":1,"b":2}
+1
+2
+
+.[0]
+[10,20,30]
+10
+
+.[-1]
+[10,20,30]
+30
+
+..
+{"a":{"b":1}}
+{"a":{"b":1}}
+{"b":1}
+1
+
+.foo?
+42
+
+.foo | .bar
+{"foo":{"bar":99}}
+99
+
+.not
+{"not":1}
+1
+
+.and
+{"and":2}
+2
+
+.or
+{"or":3}
+3
+
+# From the evidence of the jqlite plan.
+.[1+1]
+[0,1,2,3]
+2
+
+# From the evidence of the jqlite plan.
+.["a"+"b"]
+{"ab":5}
+5
+
+# From the evidence of the jqlite plan.
+2 as $n | .[1:$n]
+[0,1,2,3]
+[1]

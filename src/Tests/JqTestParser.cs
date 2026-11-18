@@ -33,8 +33,10 @@ public static class JqTestParser
                 continue;
             }
 
-            if (lines[index].Trim() == "%%FAIL")
+            if (IsFailMarker(lines[index]))
             {
+                // "%%FAIL IGNORE MSG": the program must not parse, whatever the message.
+                var ignoreMessage = lines[index].Contains("IGNORE MSG", StringComparison.Ordinal);
                 index++;
                 SkipSeparators(lines, ref index);
 
@@ -48,7 +50,7 @@ public static class JqTestParser
                 var errorLines = new List<string>();
                 while (index < lines.Length)
                 {
-                    if (IsSeparator(lines[index]) || lines[index].Trim() == "%%FAIL")
+                    if (IsSeparator(lines[index]) || IsFailMarker(lines[index]))
                         break;
 
                     errorLines.Add(lines[index]);
@@ -60,7 +62,7 @@ public static class JqTestParser
                     string.Empty,
                     Array.Empty<string>(),
                     true,
-                    string.Join('\n', errorLines),
+                    ignoreMessage ? null : string.Join('\n', errorLines),
                     lineNumber));
 
                 continue;
@@ -79,7 +81,7 @@ public static class JqTestParser
             var expectedOutputs = new List<string>();
             while (index < lines.Length)
             {
-                if (IsSeparator(lines[index]) || lines[index].Trim() == "%%FAIL")
+                if (IsSeparator(lines[index]) || IsFailMarker(lines[index]))
                     break;
 
                 expectedOutputs.Add(lines[index]);
@@ -103,6 +105,8 @@ public static class JqTestParser
         while (index < lines.Length && IsSeparator(lines[index]))
             index++;
     }
+
+    static bool IsFailMarker(string line) => line.TrimStart().StartsWith("%%FAIL", StringComparison.Ordinal);
 
     static bool IsSeparator(string line)
     {

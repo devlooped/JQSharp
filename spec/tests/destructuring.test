@@ -1,0 +1,41 @@
+# destructuring.test - Destructuring patterns and the `?//` alternatives.
+# Format and comparison rule: see README.md.
+
+.[] | . as {$a, b: [$c, {$d}]} ?// [$a, {$b}, $e] ?// $f | [$a, $b, $c, $d, $e, $f]
+[{"a":1, "b":[2,{"d":3}]}, [4, {"b":5, "c":6}, 7, 8, 9], "foo"]
+[1,null,2,3,null,null]
+[4,5,null,null,7,null]
+[null,null,null,null,null,"foo"]
+
+.[] | . as {a:$a} ?// {a:$a} ?// $a | $a
+[[3],[4],[5],6]
+[3]
+[4]
+[5]
+6
+
+.[] | . as $a ?// {a:$a} ?// {a:$a} | $a
+[[3],[4],[5],6]
+[3]
+[4]
+[5]
+6
+
+.[] | . as {a:$a} ?// $a ?// {a:$a} | $a
+[[3],[4],[5],6]
+[3]
+[4]
+[5]
+6
+
+. as {$a} ?// $a | $a
+{"a":1}
+1
+
+. as {$a} ?// $a | $a
+42
+42
+
+try (.[] | . as {a:$a} ?// {a:$a} ?// {a:$a} | $a) catch .
+[[3],[4],[5],6]
+"Cannot index array with string (\"a\")"

@@ -1,0 +1,131 @@
+# formats.test - `@` formats: `@base64`, `@base64d`, `@html`, `@uri`, `@urid`, `@csv`, `@tsv`, `@sh`, `@json`, `@text`, and format strings.
+# Format and comparison rule: see README.md.
+
+"This is a message" | @base64
+null
+"VGhpcyBpcyBhIG1lc3NhZ2U="
+
+"" | @base64
+null
+""
+
+"VGhpcyBpcyBhIG1lc3NhZ2U=" | @base64d
+null
+"This is a message"
+
+"" | @base64d
+null
+""
+
+"hello" | @base64 | @base64d
+null
+"hello"
+
+"This works if x < y" | @html
+null
+"This works if x &lt; y"
+
+"<>&'\"" | @html
+null
+"&lt;&gt;&amp;&apos;&quot;"
+
+"safe text" | @html
+null
+"safe text"
+
+"what is jq?" | @uri
+null
+"what%20is%20jq%3F"
+
+"abc-_.~" | @uri
+null
+"abc-_.~"
+
+"what%20is%20jq%3F" | @urid
+null
+"what is jq?"
+
+"hello world" | @uri | @urid
+null
+"hello world"
+
+[1,"two",null,true] | @csv
+null
+"1,\"two\",,true"
+
+["a\"b"] | @csv
+null
+"\"a\"\"b\""
+
+[1,"hello\tworld"] | @tsv
+null
+"1\thello\\tworld"
+
+["a","b","c"] | @tsv
+null
+"a\tb\tc"
+
+"test" | @sh
+null
+"'test'"
+
+"O'Hara's Ale" | @sh
+null
+"'O'\\''Hara'\\''s Ale'"
+
+["a","b c"] | @sh
+null
+"'a' 'b c'"
+
+42 | @json
+null
+"42"
+
+{"a":1} | @json
+null
+"{\"a\":1}"
+
+"hello" | @text
+null
+"hello"
+
+42 | @text
+null
+"42"
+
+@html "<b>\(.)</b>"
+"<script>"
+"<b>&lt;script&gt;</b>"
+
+@uri "https://example.com/search?q=\(.)"
+"hello world"
+"https://example.com/search?q=hello%20world"
+
+@sh "echo \(.)"
+"hello"
+"echo 'hello'"
+
+@html "a<b>\(.)</b>"
+"x"
+"a<b>x</b>"
+
+42 | @html
+null
+"42"
+
+42 | @uri
+null
+"42"
+
+try ("not an array" | @csv) catch .
+null
+"string (\"not an array\") cannot be csv-formatted, only array"
+
+try ("not an array" | @tsv) catch .
+null
+"string (\"not an array\") cannot be tsv-formatted, only array"
+
+42 | tojson, @json
+null
+"42"
+"42"

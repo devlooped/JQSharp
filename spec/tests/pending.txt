@@ -1,0 +1,65 @@
+# Cases of spec/tests/*.test that the current engine (JQSharp 1.x) fails.
+#
+# One case per line: the file name, the program and the input line, separated by tabs
+# (a %%FAIL case has no input). ConformanceTests fails when a listed case passes, when an
+# unlisted case fails, and when a line here matches no case. Remove a line when its case passes;
+# the file goes away when the new engine passes the whole corpus.
+
+# Parser: object shorthand, any expression in an index or slice, precedence of `as` and `//`
+objects.test	1 as $x | {$x}	null
+objects.test	{a, b}	{"a":1,"b":2,"c":3}
+operators.test	1 // 2 == 2	null
+selectors.test	.["a"+"b"]	{"ab":5}
+selectors.test	.[1+1]	[0,1,2,3]
+selectors.test	2 as $n | .[1:$n]	[0,1,2,3]
+variables.test	1, 2 as $x | $x * 10	null
+
+# Scoping: functions see the caller's variables and labels; closures share state
+labels.test	[label $f | def g: break $f; (label $f | 1, g, 2), 3]	null
+scoping.test	1 as $x | def f: $x; 2 as $x | f	null
+scoping.test	def f($d): map(if type == "array" then f($d + 1) else $d end); f(0)	[[1],2]
+
+# Generators: every output of an operand, a value or an update; `empty` in objects and reduce
+objects.test	{a: (1,2)}	null
+objects.test	{a: empty}	null
+operators.test	[(1,2) + (10,20)]	null
+paths.test	.a += (1,2)	{"a":0}
+reduce.test	reduce (1,2,3) as $x (0; empty)	null
+
+# `try`, `break` and short-circuit logic
+labels.test	label $out | try (0, break $out, 1) catch 99	null
+operators.test	false and error("x")	null
+operators.test	true or error("x")	null
+try.test	[try (1, error("x"), 3) catch .]	null
+
+# Host exceptions leak out instead of jq errors
+strings.test	try ("nan" | tonumber) catch .	null
+strings.test	try ([1114112] | implode) catch .	null
+try.test	try ("{" | fromjson) catch "caught"	null
+
+# Error messages differ from jq 1.8
+destructuring.test	try (.[] | . as {a:$a} ?// {a:$a} ?// {a:$a} | $a) catch .	[[3],[4],[5],6]
+formats.test	try ("not an array" | @csv) catch .	null
+formats.test	try ("not an array" | @tsv) catch .	null
+regex.test	try (test("a")) catch .	123
+try.test	try (.foo | .bar) catch .	42
+
+# Strings: JSON text escaping, slices by code point, case mapping of ASCII letters only
+strings.test	"aé😀b" | .[2:3]	null
+strings.test	"Éa" | ascii_downcase, ascii_upcase	null
+strings.test	"é" | @json	null
+strings.test	"é<" | tojson	null
+
+# Ordering: objects compare by sorted keys; `sort_by`, `group_by`, `unique_by`, `min_by`, `max_by` are stable
+collections.test	[range(40) | {a: (. % 3), b: .}] | group_by(.a) | map(map(.b))	null
+collections.test	[range(40) | {a: (. % 3), b: .}] | min_by(.a), max_by(.a)	null
+collections.test	[range(40) | {a: (. % 3), b: .}] | sort_by(.a) | map(.b)	null
+collections.test	[range(40) | {a: (. % 3), b: .}] | unique_by(.a) | map(.b)	null
+operators.test	{"a":2,"b":1} < {"a":1,"c":0}	null
+
+# Builtin results differ from jq 1.8
+collections.test	first	[]
+collections.test	last	[]
+formats.test	42 | @html	null
+formats.test	42 | @uri	null
+regex.test	match("z")	"foo"

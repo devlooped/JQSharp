@@ -1,0 +1,13 @@
+# syntax.test - Lexical syntax: comments, and programs that must not parse.
+# Format and comparison rule: see README.md.
+
+.foo # comment
+{"foo":42}
+42
+
+"# not a comment"
+null
+"# not a comment"
+
+%%FAIL IGNORE MSG
+[invalid!!!

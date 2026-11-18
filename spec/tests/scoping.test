@@ -1,0 +1,12 @@
+# scoping.test - Lexical scoping of variables and closure parameters.
+# Format and comparison rule: see README.md.
+
+# From the evidence of the jqlite plan.
+1 as $x | def f: $x; 2 as $x | f
+null
+1
+
+# From the evidence of the jqlite plan.
+def f($d): map(if type == "array" then f($d + 1) else $d end); f(0)
+[[1],2]
+[[1],0]

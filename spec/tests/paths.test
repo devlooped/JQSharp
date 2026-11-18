@@ -1,0 +1,92 @@
+# paths.test - Path expressions, assignment and update operators, `paths`.
+# Format and comparison rule: see README.md.
+
+.foo |= .+1
+{"foo":42}
+{"foo":43}
+
+.[] |= .+1
+[1,2,3]
+[2,3,4]
+
+. |= .+1
+41
+42
+
+.foo = "bar"
+{"foo":1}
+{"foo":"bar"}
+
+.foo = .bar
+{"foo":1,"bar":2}
+{"foo":2,"bar":2}
+
+.[] = 1
+[4,5,6]
+[1,1,1]
+
+.[] += 2
+[1,2,3]
+[3,4,5]
+
+.[] -= 2
+[5,6,7]
+[3,4,5]
+
+.[] *= 2
+[1,2,3]
+[2,4,6]
+
+.[] /= 2
+[2,4,6]
+[1,2,3]
+
+.[] %= 2
+[1,2,3]
+[1,0,1]
+
+.foo //= "default"
+{"foo":null}
+{"foo":"default"}
+
+.foo //= "default"
+{"foo":"value"}
+{"foo":"value"}
+
+(.a, .b) |= .+1
+{"a":1,"b":2}
+{"a":2,"b":3}
+
+(.[] | select(. >= 2)) |= . * 10
+[1,2,3]
+[1,20,30]
+
+(.[] | select(. < 2)) |= empty
+[0,1,2,3]
+[2,3]
+
+.[2][3] = 1
+[4]
+[4,null,[null,null,null,1]]
+
+.foo[1].bar = "x"
+{}
+{"foo":[null,{"bar":"x"}]}
+
+[paths]
+{"a":{"b":1}}
+[["a"],["a","b"]]
+
+[paths]
+[1,[2]]
+[[0],[1],[1,0]]
+
+[paths]
+null
+[]
+
+# From the evidence of the jqlite plan.
+.a += (1,2)
+{"a":0}
+{"a":1}
+{"a":2}
