@@ -16,6 +16,7 @@ def _modify(paths; update):
 def error(msg): msg | error;
 def not: if . then false else true end;
 def env: $ENV;
+def halt_error: halt_error(5);
 def select(f): if f then . else empty end;
 def recurse(f): def r: ., (f | r); r;
 def recurse(f; cond): def r: ., (f | select(cond) | r); r;
@@ -26,6 +27,11 @@ def first: .[0];
 def last: .[-1];
 def nth($n): .[$n];
 def nth($n; f): if $n < 0 then error("nth doesn't support negative indices") else first(skip($n; f)) end;
+def have_decnum: false;
+def have_literal_numbers: false;
+def debug(msgs): (msgs | debug | empty), .;
+def input_filename: null;
+def input_line_number: 0;
 
 # §9.3 Types and selection
 def values: select(. != null);
@@ -77,12 +83,17 @@ def INDEX(idx_expr): INDEX(.[]; idx_expr);
 def IN(s): any(s == .; .);
 def IN(src; s): any(src == s; .);
 def JOIN($idx; idx_expr): [.[] | [., $idx[idx_expr]]];
+def JOIN($idx; stream; idx_expr): stream | [., $idx[idx_expr]];
+def JOIN($idx; stream; idx_expr; join_expr): stream | [., $idx[idx_expr]] | join_expr;
 
 # §9.5 Paths
 def paths: path(..) | select(length > 0);
 def paths(node_filter): . as $dot | paths | select(. as $p | $dot | getpath($p) | node_filter);
 def del(f): delpaths([path(f)]);
 def pick(pathexps): . as $top | reduce path(pathexps) as $p (null; setpath($p; $top | getpath($p)));
+def tostream: path(def r: (.[]? | r), .; r) as $p | getpath($p) | reduce path(.[]?) as $q ([$p, .]; [$p + $q]);
+def fromstream(f): {x: null, e: false} as $init | foreach f as $i ($init; if .e then $init else . end | if $i | length == 2 then setpath(["e"]; $i[0] | length == 0) | setpath(["x"] + $i[0]; $i[1]) else setpath(["e"]; $i[0] | length == 1) end; if .e then .x else empty end);
+def truncate_stream(stream): . as $n | null | stream | . as $input | if (.[0] | length) > $n then setpath([0]; $input[0][$n:]) else empty end;
 
 # §9.6 Strings
 def ltrimstr($x): if startswith($x) then .[($x | length):] else . end;

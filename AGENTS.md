@@ -111,9 +111,11 @@ Only `src/JQSharp` outside `Core` knows .NET's JSON types:
 - `Jq.Parse(expression, JqOptions? options)` returns a `JqExpression` (sealed, parse once, evaluate
   many times, thread-safe). `Jq.Evaluate` / `JqExpression.Evaluate` return all outputs (buffered);
   the overload with `Func<JsonElement, bool> onResult` streams them and stops when it returns
-  false. The JSONL `Jq.EvaluateAsync` helpers take the expression as a string or a `JqExpression`.
+  false. The JSONL `Jq.EvaluateAsync` helpers take the expression as a string or a
+  `JqExpression`; each value is evaluated alone (jqlite has no `input`/`inputs`, spec §13).
 - `JqOptions`: `Resolver` (for `import`/`include`/`modulemeta`), `Environment` (`$ENV`; null is
-  the process environment), `TimeProvider` (`now` and the local zone), `MaxDepth` (default 1000).
+  the process environment), `TimeProvider` (`now` and the local zone), `MaxDepth` (default 1000),
+  `Debug` and `Stderr` (the values of `debug` and `stderr`; null drops them).
 - `JqResolver`: `GetCanonicalPath(path, JqModuleKind, metadata, fromPath)` returns the module's
   identity or null, `Open(canonicalPath)` reads it. `JqFileResolver` (files, relative to the
   importing module) and `JqResourceResolver` (embedded resources) are the two built in.
@@ -130,7 +132,7 @@ Only `src/JQSharp` outside `Core` knows .NET's JSON types:
   allowed (`$ENV` is the environment). Invalid keys are rejected before evaluation.
 - Values are converted to jqlite values once per evaluation, so the caller's documents may be
   disposed afterwards.
-- A `$name` with no lexical binding (and not `$ENV`) is a host variable, looked up when evaluated;
+- A `$name` with no lexical binding (and not `$ENV` or `$__loc__`) is a host variable, looked up when evaluated;
   if the host did not supply it, the error is `$name is not defined` (a run-time error, catchable
   with `try`). The same holds inside modules.
 - `$alias::name` must be bound by a data import; otherwise it is a binding error.

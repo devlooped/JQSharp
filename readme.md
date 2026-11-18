@@ -277,6 +277,8 @@ Options are read when the expression is parsed and apply to every evaluation of 
 | `Environment` | the process environment | `$ENV` and `env`, in the dictionary's order |
 | `TimeProvider` | `TimeProvider.System` | `now`, and the local time zone of `localtime`, `strflocaltime`, `%z` and `%Z` |
 | `MaxDepth` | 1000 | the calls of jq-defined functions active at once; beyond it, the catchable error `Maximum call depth exceeded` (deep recursion never overflows the .NET stack) |
+| `Debug` | none: values are dropped | receives the input of each `debug` and each message of `debug(msgs)`, as is: `1 \| debug("m")` gives it `"m"` (jq prints `["DEBUG:","m"]` to standard error) |
+| `Stderr` | none: values are dropped | receives the input of each `stderr`, as is |
 
 ```csharp
 using var doc = JsonDocument.Parse("null");
@@ -345,7 +347,8 @@ The same dictionary can be passed to `JqExpression.Evaluate` and the `EvaluateAs
 filter against each element as it arrives, making it well-suited for processing 
 [JSONL](https://jsonlines.org) (newline-delimited JSON) files or any other streaming 
 JSON source without buffering the entire dataset in memory. The results of one element 
-are computed before they are yielded.
+are computed before they are yielded, and each element is evaluated alone (`halt` ends only 
+its own evaluation).
 
 ### Reading a JSONL file
 
@@ -507,9 +510,12 @@ that make the profile portable. Those you are most likely to notice:
 - An unbound `$name` is a host variable (see [External variables](#external-variables)), not a parse error.
 - Recursion depth is limited by `MaxDepth`, with no tail calls.
 - Dates use their own English tables, with no locale.
-- Not in the profile: I/O and debugging (`input`, `inputs`, `debug`, `stderr`, `input_filename`, 
-  `$__loc__`), streaming (`tostream`, `fromstream`, `truncate_stream`), and a few others such as 
-  `trim`, `@base32`, `leaf_paths` and some math and date functions.
+- `debug` and `stderr` hand their values to `JqOptions.Debug` and `JqOptions.Stderr`; 
+  `input_filename` is `null`.
+- An evaluation has one input: APIs that take several values (such as `Jq.EvaluateAsync`) 
+  evaluate each one alone.
+- Every builtin of jq 1.8 is in, except `get_search_list`, `get_jq_origin` and `get_prog_origin`, 
+  which describe the jq command line, and `input` and `inputs`, which read the next input.
 
 ## Upgrading from 1.x
 

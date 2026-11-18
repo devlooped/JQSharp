@@ -341,7 +341,7 @@ No date library: `Calendar.cs` (the `days` formula of §9.12 and its inverse, in
 
 ### 3.5 Math
 
-`MathExtra.cs` is portable code: every operation the spec specifies exactly (`round`, `nearbyint`, `remainder`, `fmin`/`fmax`, `ldexp`/`scalbln`, `logb`, `frexp`, `modf`) and every formula (`erf`, `erfc`, `tgamma`, `lgamma`, `j0`, `j1`, `exp2`, `expm1`, `log1p`), evaluated left to right, no fused multiply-add. Port it whole. The library functions of §9.8 come from the host:
+`MathExtra.cs` is portable code: every operation the spec specifies exactly (`round`, `nearbyint`, `remainder`, `fmin`/`fmax`, `fdim`, `copysign`, `nextafter`, `ldexp`/`scalbln`, `scalb`, `logb`, `significand`, `frexp`, `modf`) and every formula (`erf`, `erfc`, `tgamma`, `lgamma`, `lgamma_r`'s sign, `j0`, `j1`, `y0`, `y1`, `jn`, `yn`, `exp2`, `exp10`, `expm1`, `log1p`), evaluated left to right, no fused multiply-add. Port it whole. The library functions of §9.8 come from the host:
 
 | Language | Notes |
 | --- | --- |
@@ -381,7 +381,7 @@ Embed `spec/prelude.jq` unchanged, parse and bind it once against the natives, s
 
 - **Insertion order** (§4.1): JS plain objects reorder integer-like keys (use `Map` or arrays); Go maps are unordered; Python `dict` and Java `LinkedHashMap` keep order. The reference's own `JqObject` (2.9) does it everywhere.
 - **Threads**: the bound program, the prelude, values and frames are immutable and shared; one `Interpreter` holds the state of one evaluation (host variables, `$ENV`, depth, label counter, scratch stacks). Evaluating one program from many threads at once must work; the reference's only shared mutable state is the buffer claims (CAS) and object indexes (lock) of 2.9, and the regex cache (`RegexEngine`, a concurrent map).
-- **Host interface** (§12, `Runtime/Evaluation.cs`): `EvaluationOptions` (host variables by name, the `$ENV` object, `MaxDepth`, `IClock`), `IModuleSource` (`TryResolve(path, kind, metadata, from)` → identity, `TryRead(identity)` → text), and `Outcome` (`Completed`, `Stopped`, `Error(value)`, `Halt(value?, code)`). Map them to an options object/struct and two small interfaces (Go: interfaces; Rust: traits; TS/Python: protocols). Validate host variable names (§12) and convert host values to jqlite values once per evaluation, at the boundary; throw the host's exceptions there and nowhere else.
+- **Host interface** (§12, `Runtime/Evaluation.cs`): `EvaluationOptions` (host variables by name, the `$ENV` object, `MaxDepth`, `IClock`, the `Debug` and `Stderr` handlers), `IModuleSource` (`TryResolve(path, kind, metadata, from)` → identity, `TryRead(identity)` → text), and `Outcome` (`Completed`, `Stopped`, `Error(value)`, `Halt(value?, code)`). Map them to an options object/struct and two small interfaces (Go: interfaces; Rust: traits; TS/Python: protocols). Validate host variable names (§12) and convert host values to jqlite values once per evaluation, at the boundary; throw the host's exceptions there and nowhere else.
 
 ## 4. Verifying a port
 

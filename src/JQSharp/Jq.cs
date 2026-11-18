@@ -61,7 +61,9 @@ public static class Jq
     /// <summary>
     /// Evaluates <paramref name="expression"/> on each value of <paramref name="input"/> in turn (a
     /// JSON Lines stream, for example), yielding the results of each; the results of one input are
-    /// computed before they are yielded.
+    /// computed before they are yielded. Each value is evaluated alone, as by
+    /// <see cref="JqExpression.Evaluate(JsonElement, IReadOnlyDictionary{string, JsonElement}?)"/>:
+    /// <c>halt</c> ends only the evaluation of its value.
     /// </summary>
     /// <param name="expression">The parsed expression.</param>
     /// <param name="input">The input values.</param>

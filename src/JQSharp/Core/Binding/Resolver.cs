@@ -499,6 +499,10 @@ sealed partial class Resolver
 
     Node? BindVariable(S.Variable variable)
     {
+        // The parser lets nothing bind $__loc__ (§7.5).
+        if (variable.Name == Parser.LocationVariable)
+            return new Literal(Location(variable.Position));
+
         for (var i = scope.Count - 1; i >= 0; i--)
         {
             var entry = scope[i];
@@ -522,6 +526,15 @@ sealed partial class Resolver
         }
 
         return new HostVariable(variable.Name, index);
+    }
+
+    // $__loc__: {"file": the module's identity or "<top-level>", "line": the line of its '$'}.
+    JqValue Location(Position position)
+    {
+        var builder = new JqObjectBuilder(2);
+        builder.Set("file", JqValue.FromString(module?.Identity ?? "<top-level>"));
+        builder.Set("line", JqValue.FromNumber(position.Line));
+        return JqValue.FromObject(builder.ToObject());
     }
 
     void VisitCall(S.Call call)

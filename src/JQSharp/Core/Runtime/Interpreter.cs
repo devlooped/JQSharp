@@ -76,6 +76,8 @@ sealed class Interpreter
         readEnvironment = options.Environment;
         maxDepth = options.MaxDepth;
         Clock = options.Clock;
+        Debug = options.Debug;
+        Stderr = options.Stderr;
     }
 
     /// <summary>The program being evaluated.</summary>
@@ -83,6 +85,12 @@ sealed class Interpreter
 
     /// <summary>The host's clock, for the date builtins.</summary>
     public IClock? Clock { get; }
+
+    /// <summary>The host's handler of <c>debug</c>.</summary>
+    public Action<JqValue>? Debug { get; }
+
+    /// <summary>The host's handler of <c>stderr</c>.</summary>
+    public Action<JqValue>? Stderr { get; }
 
     /// <summary>
     /// Evaluates <paramref name="program"/> on <paramref name="input"/>, giving each output to

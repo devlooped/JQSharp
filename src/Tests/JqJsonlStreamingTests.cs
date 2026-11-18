@@ -75,4 +75,14 @@ public class JqJsonlStreamingTests
 
         Assert.Equal(["Alice", "Charlie"], results);
     }
+
+    [Fact]
+    public async Task Jsonl_stream_evaluates_each_element_alone()
+    {
+        var results = new List<int>();
+        await foreach (var element in Jq.EvaluateAsync("if . == 2 then halt else . end", ParseJsonLines("1\n2\n3")))
+            results.Add(element.GetInt32());
+
+        Assert.Equal([1, 3], results);
+    }
 }

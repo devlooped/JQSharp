@@ -49,6 +49,28 @@ public class JqBoundaryTests
     }
 
     [Fact]
+    public void Options_debug_and_stderr_receive_the_values()
+    {
+        var debugged = new List<string>();
+        var written = new List<string>();
+        var options = new JqOptions { Debug = value => debugged.Add(value.GetRawText()), Stderr = value => written.Add(value.GetRawText()) };
+        Assert.Equal(["1", "1", "1"], Texts(Jq.Parse("debug, debug(\"m\", {a: .}), stderr", options).Evaluate(Json("1"))));
+        Assert.Equal(["1", "\"m\"", """{"a":1}"""], debugged);
+        Assert.Equal(["1"], written);
+    }
+
+    [Fact]
+    public void Without_handlers_debug_and_stderr_only_output_their_input()
+        => Assert.Equal(["1", "1"], Texts(Jq.Evaluate("debug, stderr", Json("1"))));
+
+    [Fact]
+    public void Halt_error_without_a_code_exits_with_5()
+    {
+        var error = Assert.Throws<JqHaltException>(() => Jq.Evaluate("halt_error", Json("\"bye\"")));
+        Assert.Equal(("bye", 5), (error.Message, error.ExitCode));
+    }
+
+    [Fact]
     public void Options_max_depth_limits_recursion()
     {
         var expression = Jq.Parse("def f: if . == 0 then 0 else (. - 1 | f) + 1 end; f", new JqOptions { MaxDepth = 10 });

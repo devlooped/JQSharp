@@ -145,6 +145,13 @@ static class Errors
 
     public static JqValue CannotParseNumber(JqValue value) => Message($"{Describe(value)} cannot be parsed as a number");
 
+    public static JqValue CannotParseBoolean(JqValue value) => Message($"{Describe(value)} cannot be parsed as a boolean");
+
+    /// <summary><c>format/1</c> with a name that is not a string.</summary>
+    public static JqValue NotAValidFormat(JqValue value) => Message($"{Describe(value)} is not a valid format");
+
+    public static JqValue TrimNotString => Message("trim input must be a string");
+
     public static JqValue StartsWithStrings => Message("startswith() requires string inputs");
 
     public static JqValue EndsWithStrings => Message("endswith() requires string inputs");

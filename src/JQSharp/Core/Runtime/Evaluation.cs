@@ -32,6 +32,12 @@ sealed class EvaluationOptions
 
     /// <summary>The clock and zone, for the date builtins.</summary>
     public IClock? Clock { get; init; }
+
+    /// <summary>Receives the values of <c>debug</c>; they are dropped when null.</summary>
+    public Action<JqValue>? Debug { get; init; }
+
+    /// <summary>Receives the values of <c>stderr</c>; they are dropped when null.</summary>
+    public Action<JqValue>? Stderr { get; init; }
 }
 
 enum OutcomeKind

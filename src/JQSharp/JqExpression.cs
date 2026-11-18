@@ -23,12 +23,18 @@ public sealed class JqExpression
     readonly Func<JqValue> environment;
     readonly IClock clock;
     readonly int maxDepth;
+    readonly Action<JqValue>? debug;
+    readonly Action<JqValue>? stderr;
 
     internal JqExpression(BoundProgram program, JqOptions options)
     {
         this.program = program;
         clock = new TimeProviderClock(options.TimeProvider);
         maxDepth = options.MaxDepth;
+        if (options.Debug is { } onDebug)
+            debug = value => onDebug(JsonElementAdapter.ToElement(value));
+        if (options.Stderr is { } onStderr)
+            stderr = value => onStderr(JsonElementAdapter.ToElement(value));
         if (options.Environment is { } variables)
         {
             var snapshot = ToObject(variables);
@@ -82,6 +88,8 @@ public sealed class JqExpression
             Environment = environment,
             Clock = clock,
             MaxDepth = maxDepth,
+            Debug = debug,
+            Stderr = stderr,
         };
 
         var outcome = Interpreter.Run(program, JsonElementAdapter.ToValue(input), options, value => onResult(JsonElementAdapter.ToElement(value)));

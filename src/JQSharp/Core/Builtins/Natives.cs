@@ -45,6 +45,7 @@ static class Natives
     [
         // §9.2 Core
         "empty/0", "error/0", "type/0", "length/0", "utf8bytelength/0", "builtins/0", "halt/0", "halt_error/1", "last/1",
+        "debug/0", "stderr/0",
         // §9.3 Types and selection
         "infinite/0", "nan/0", "isinfinite/0", "isnan/0", "isnormal/0",
         // §9.4 Objects, arrays and collections
@@ -53,16 +54,17 @@ static class Natives
         // §9.5 Paths
         "path/1", "getpath/1", "setpath/2", "delpaths/1",
         // §9.6 Strings
-        "tostring/0", "tojson/0", "fromjson/0", "tonumber/0", "explode/0", "implode/0", "ascii_downcase/0", "ascii_upcase/0",
-        "startswith/1", "endswith/1", "split/1", "_strindices/1", "test/2", "match/2",
+        "tostring/0", "tojson/0", "fromjson/0", "tonumber/0", "toboolean/0", "format/1", "explode/0", "implode/0", "ascii_downcase/0", "ascii_upcase/0",
+        "startswith/1", "endswith/1", "trim/0", "ltrim/0", "rtrim/0", "split/1", "_strindices/1", "test/2", "match/2",
         // §9.7 Dates
         "now/0", "gmtime/0", "localtime/0", "mktime/0", "strftime/1", "strflocaltime/1", "strptime/1",
         // §9.8 Math: exactly specified, library functions, defined by formula
-        "floor/0", "ceil/0", "trunc/0", "round/0", "nearbyint/0", "fabs/0", "sqrt/0", "fmod/2", "remainder/2", "fma/3",
-        "fmin/2", "fmax/2", "ldexp/2", "scalbln/2", "logb/0", "frexp/0", "modf/0",
+        "floor/0", "ceil/0", "trunc/0", "round/0", "nearbyint/0", "rint/0", "fabs/0", "sqrt/0", "fmod/2", "remainder/2", "drem/2", "fma/3",
+        "fmin/2", "fmax/2", "fdim/2", "copysign/2", "nextafter/2", "nexttoward/2", "ldexp/2", "scalbln/2", "scalb/2", "logb/0",
+        "significand/0", "frexp/0", "modf/0",
         "acos/0", "asin/0", "atan/0", "acosh/0", "asinh/0", "atanh/0", "cbrt/0", "cos/0", "cosh/0", "exp/0", "exp2/0",
-        "expm1/0", "log/0", "log10/0", "log1p/0", "log2/0", "sin/0", "sinh/0", "tan/0", "tanh/0", "atan2/2", "pow/2", "hypot/2",
-        "erf/0", "erfc/0", "tgamma/0", "lgamma/0", "j0/0", "j1/0",
+        "exp10/0", "expm1/0", "log/0", "log10/0", "log1p/0", "log2/0", "sin/0", "sinh/0", "tan/0", "tanh/0", "atan2/2", "pow/2", "hypot/2",
+        "erf/0", "erfc/0", "tgamma/0", "lgamma/0", "gamma/0", "lgamma_r/0", "j0/0", "j1/0", "y0/0", "y1/0", "jn/2", "yn/2",
     ],
     [
         // §9.11 Modules
