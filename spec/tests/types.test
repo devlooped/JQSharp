@@ -110,3 +110,46 @@ true
 $ENV | type
 null
 "object"
+
+# builtins and env without depending on the host: no internal names, no duplicates.
+
+env | type
+null
+"object"
+
+$ENV | type
+null
+"object"
+
+env == $ENV
+null
+true
+
+builtins | length > 100
+null
+true
+
+builtins | map(select(startswith("_"))) | length
+null
+0
+
+builtins | index("contains/1") != null
+null
+true
+
+[builtins[] | select(. == "map/1" or . == "contains/1" or . == "@base64/0" or . == "env/0" or . == "builtins/0" or . == "not/0")] | sort
+null
+["builtins/0","contains/1","env/0","map/1","not/0"]
+
+builtins | map(select(startswith("modulemeta")))
+null
+["modulemeta/0"]
+
+builtins | unique | length == (builtins | length)
+null
+true
+
+# builtins is sorted (spec 13: jq lists it unsorted).
+builtins | . == sort
+null
+true

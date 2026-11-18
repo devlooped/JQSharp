@@ -129,3 +129,305 @@ null
 null
 "42"
 "42"
+
+# Every value kind, the escaping tables, UTF-8 bytes (@uri, @urid, @base64, @base64d), errors, and
+# formats inside interpolated strings (applied to the interpolated values only).
+
+[null, true, false, 1.5, "a<", [1, "<b>"], {"a": "'&\""}] | map(@html)
+null
+["null","true","false","1.5","a&lt;","[1,&quot;&lt;b&gt;&quot;]","{&quot;a&quot;:&quot;&apos;&amp;\\&quot;&quot;}"]
+
+[null, true, false, 1.5, "a b", [1, "x"], {"a": "é"}] | map(@uri)
+null
+["null","true","false","1.5","a%20b","%5B1%2C%22x%22%5D","%7B%22a%22%3A%22%C3%A9%22%7D"]
+
+"é😀 /?#[]@!$&'()*+,;=%" | @uri
+null
+"%C3%A9%F0%9F%98%80%20%2F%3F%23%5B%5D%40%21%24%26%27%28%29%2A%2B%2C%3B%3D%25"
+
+"AZaz09-_.~" | @uri
+null
+"AZaz09-_.~"
+
+[null, true, 1, "%41%c3%A9", [1], {"a":1}] | map(@urid)
+null
+["null","true","1","Aé","[1]","{\"a\":1}"]
+
+"é%20x" | @urid
+null
+"é x"
+
+"%C3%A9%F0%9F%98%80" | @urid
+null
+"é😀"
+
+"+" | @urid
+null
+"+"
+
+try ("%FF" | @urid) catch .
+null
+"string (\"%FF\") is not a valid uri encoding"
+
+try ("%" | @urid) catch .
+null
+"string (\"%\") is not a valid uri encoding"
+
+try ("%4" | @urid) catch .
+null
+"string (\"%4\") is not a valid uri encoding"
+
+try ("%zz" | @urid) catch .
+null
+"string (\"%zz\") is not a valid uri encoding"
+
+try ("a%4g" | @urid) catch .
+null
+"string (\"a%4g\") is not a valid uri encoding"
+
+try ("%E2%82" | @urid) catch .
+null
+"string (\"%E2%82\") is not a valid uri encoding"
+
+try ("%E2%82x" | @urid) catch .
+null
+"string (\"%E2%82x\") is not a valid uri encoding"
+
+try ("%ED%A0%80" | @urid) catch .
+null
+"string (\"%ED%A0%80\") is not a valid uri encoding"
+
+try ("%C0%80" | @urid) catch .
+null
+"string (\"%C0%80\") is not a valid uri encoding"
+
+try ("%F4%90%80%80" | @urid) catch .
+null
+"string (\"%F4%90%80%80\") is not a valid uri encoding"
+
+try ("%80" | @urid) catch .
+null
+"string (\"%80\") is not a valid uri encoding"
+
+try ("a very long string that is long %FF" | @urid) catch .
+null
+"string (\"a very long string that ...\") is not a valid uri encoding"
+
+[null, true, false, 1.5, "a", [1, "x"], {"a": "é"}] | map(@base64)
+null
+["bnVsbA==","dHJ1ZQ==","ZmFsc2U=","MS41","YQ==","WzEsIngiXQ==","eyJhIjoiw6kifQ=="]
+
+["", "f", "fo", "foo", "foob", "fooba", "foobar", "é😀"] | map(@base64)
+null
+["","Zg==","Zm8=","Zm9v","Zm9vYg==","Zm9vYmE=","Zm9vYmFy","w6nwn5iA"]
+
+["", "Zg", "Zg=", "Zg==", "Zm8", "Zm8=", "Zm9v", "Zm9vYg", "Zm9vYmE=", "w6nwn5iA", "/w==", "gA==", "4oI=", "7aCA", "===="] | map(@base64d)
+null
+["","f","f","f","fo","fo","foo","foob","fooba","é😀","�","�","�","�",""]
+
+try ("Z" | @base64d) catch .
+null
+"string (\"Z\") trailing base64 byte found"
+
+try ("Zg=" | @base64d) catch .
+null
+"f"
+
+try ("Z===" | @base64d) catch .
+null
+"string (\"Z===\") trailing base64 byte found"
+
+try ("Zm9vY" | @base64d) catch .
+null
+"string (\"Zm9vY\") trailing base64 byte found"
+
+try ("Z!==" | @base64d) catch .
+null
+"string (\"Z!==\") is not valid base64 data"
+
+try ("Zg==Zg==" | @base64d) catch .
+null
+"f"
+
+try ("Zm 9v" | @base64d) catch .
+null
+"string (\"Zm 9v\") is not valid base64 data"
+
+try ("Zm9v-_" | @base64d) catch .
+null
+"string (\"Zm9v-_\") is not valid base64 data"
+
+try (1 | @base64d) catch .
+null
+"string (\"1\") trailing base64 byte found"
+
+try (12 | @base64d) catch .
+null
+"�"
+
+try (null | @base64d) catch .
+null
+"��"
+
+try ([1] | @base64d) catch .
+null
+"string (\"[1]\") is not valid base64 data"
+
+try ("a long string with a bad char ! in it for sure" | @base64d) catch .
+null
+"string (\"a long string with a bad...\") is not valid base64 data"
+
+[1.5, "a,b", "x\"y", false, true, null, 100000000000000000000] | @csv
+null
+"1.5,\"a,b\",\"x\"\"y\",false,true,,100000000000000000000"
+
+[nan, infinite, -infinite] | @csv
+null
+",1.7976931348623157e+308,-1.7976931348623157e+308"
+
+[] | @csv
+null
+""
+
+try ([[1]] | @csv) catch .
+null
+"array ([1]) is not valid in a csv row"
+
+try ([{"a":1}] | @csv) catch .
+null
+"object ({\"a\":1}) is not valid in a csv row"
+
+try (null | @csv) catch .
+null
+"null (null) cannot be csv-formatted, only array"
+
+try ({} | @csv) catch .
+null
+"object ({}) cannot be csv-formatted, only array"
+
+try (1 | @csv) catch .
+null
+"number (1) cannot be csv-formatted, only array"
+
+["a\\b", "x\ny", "c\rd", "t\tt", 1.5, null, true, false, "é"] | @tsv
+null
+"a\\\\b\tx\\ny\tc\\rd\tt\\tt\t1.5\t\ttrue\tfalse\té"
+
+[nan] | @tsv
+null
+""
+
+[] | @tsv
+null
+""
+
+try ([[1]] | @tsv) catch .
+null
+"array ([1]) is not valid in a csv row"
+
+try ([{}] | @tsv) catch .
+null
+"object ({}) is not valid in a csv row"
+
+try (null | @tsv) catch .
+null
+"null (null) cannot be tsv-formatted, only array"
+
+[1.5, null, true, false, "a'b", "", "é"] | @sh
+null
+"1.5 null true false 'a'\\''b' '' 'é'"
+
+[null, true, 1, "x y"] | map(@sh)
+null
+["null","true","1","'x y'"]
+
+[] | @sh
+null
+""
+
+[nan, infinite] | @sh
+null
+"null 1.7976931348623157e+308"
+
+try ([[1]] | @sh) catch .
+null
+"array ([1]) can not be escaped for shell"
+
+try ({} | @sh) catch .
+null
+"object ({}) can not be escaped for shell"
+
+try ([{"a":1}] | @sh) catch .
+null
+"object ({\"a\":1}) can not be escaped for shell"
+
+@csv "row: \(.)"
+[1,"a"]
+"row: 1,\"a\""
+
+@tsv "row: \(.)"
+["a","b"]
+"row: a\tb"
+
+@json "x\(.)y"
+"a\"b"
+"x\"a\\\"b\"y"
+
+@text "x\(.)y"
+[1,"a"]
+"x[1,\"a\"]y"
+
+@base64 "x\(.)y"
+"hello"
+"xaGVsbG8=y"
+
+@base64d "x\(.)y"
+"aGVsbG8="
+"xhelloy"
+
+@urid "x\(.)y"
+"a%20b"
+"xa by"
+
+@sh "echo \(.) \(.)"
+["a", 1]
+"echo 'a' 1 'a' 1"
+
+@html "\(1, 2)-\(3, 4)"
+null
+"1-3"
+"2-3"
+"1-4"
+"2-4"
+
+try (@csv "x\(.)") catch .
+"str"
+"string (\"str\") cannot be csv-formatted, only array"
+
+[.[] | @json]
+[1, "a", null, [1], {"a":"é"}]
+["1","\"a\"","null","[1]","{\"a\":\"é\"}"]
+
+"x" | @json "\(.)"
+null
+"\"x\""
+
+try (@foo) catch .
+null
+"foo is not a valid format"
+
+try (@foo "x\(.)") catch .
+1
+"foo is not a valid format"
+
+try (@foo "x") catch .
+1
+"x"
+
+@base64 "abc"
+1
+"abc"
+
+[.[] | try @urid catch .]
+["%e2%82%ac", "%E2%82%AC%41", "%ED%9F%BF", "%F4%8F%BF%BF", "%00", "a+b%2B", "%C3%A9é", "%C3é"]
+["€","€A","퟿","􏿿","\u0000","a+b+","éé","string (\"%C3é\") is not a valid uri encoding"]

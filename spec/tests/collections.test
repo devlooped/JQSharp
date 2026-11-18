@@ -238,3 +238,115 @@ null
 null
 {"a":0,"b":0}
 {"a":2,"b":38}
+
+# contains/1: strings, arrays, objects, nesting, kinds (top level: an error; inside: false).
+
+[contains("bar"), contains(""), contains("foobar"), contains("foobarx"), contains("baz")]
+"foobar"
+[true,true,true,false,false]
+
+[contains("é"), contains("😀b"), contains("\u0000b")]
+"aé😀b\u0000b"
+[true,true,true]
+
+[contains([]), contains([1]), contains([[2]]), contains([[2,3],1]), contains([4]), contains(["1"])]
+[1,[2,3]]
+[true,true,true,true,false,false]
+
+[contains(["bar"]), contains(["foo","baz"]), contains(["x"])]
+["foobar","baz"]
+[true,true,false]
+
+[contains({}), contains({"a":{"b":1}}), contains({"a":{"b":2}}), contains({"a":{"b":1,"c":2}}), contains({"x":null})]
+{"a":{"b":1,"c":2}}
+[true,true,false,true,false]
+
+[contains({"a":"bar"}), contains({"a":"x"})]
+{"a":"foobar"}
+[true,false]
+
+[contains({"a":"1"}), contains({"a":[1]}), contains({"a":{}})]
+{"a":1}
+[false,false,false]
+
+[contains([[1]]), contains(["a"]), contains([{}]), contains([null])]
+[{"a":1}, "abc", 1, null]
+[false,true,true,true]
+
+[null | contains(null)], [1 | contains(1), contains(2)], [true | contains(true)], [false | contains(false)]
+null
+[true]
+[true,false]
+[true]
+[true]
+
+[nan | contains(nan)], [[nan] | contains([nan])], [{"a":nan} | contains({"a":nan})]
+null
+[false]
+[false]
+[false]
+
+[[1,1] | contains([1,1,1])], [[] | contains([])], [{} | contains({})], ["" | contains("")]
+null
+[true]
+[true]
+[true]
+[true]
+
+[[true] | contains([false])], [[false] | contains([true])], [[true] | contains([true])]
+null
+[false]
+[false]
+[true]
+
+try (true | contains(false)) catch .
+null
+"boolean (true) and boolean (false) cannot have their containment checked"
+
+try (false | contains(true)) catch .
+null
+"boolean (false) and boolean (true) cannot have their containment checked"
+
+try (1 | contains("a")) catch .
+null
+"number (1) and string (\"a\") cannot have their containment checked"
+
+try ([1,2] | contains(1)) catch .
+null
+"array ([1,2]) and number (1) cannot have their containment checked"
+
+try ({"a":1} | contains([1])) catch .
+null
+"object ({\"a\":1}) and array ([1]) cannot have their containment checked"
+
+try (null | contains(false)) catch .
+null
+"null (null) and boolean (false) cannot have their containment checked"
+
+try ("very long string here and more and more" | contains(["very long string here and more"])) catch .
+null
+"string (\"very long string here an...\") and array ([\"very long string here a...]) cannot have their containment checked"
+
+[contains("b", "z")]
+"abc"
+[true,false]
+
+[inside("foobar"), inside("xbarx"), inside("ba")]
+"bar"
+[true,true,false]
+
+try ("a" | inside(1)) catch .
+null
+"number (1) and string (\"a\") cannot have their containment checked"
+
+[-0 | contains(0)], [0 | contains(-0)], [1.0 | contains(1)]
+null
+[true]
+[true]
+[true]
+
+[[[1,2]] | contains([[2]])], [[[1,2]] | contains([[3]])], [[["ab"]] | contains([["b"]])]
+null
+[true]
+[false]
+[true]

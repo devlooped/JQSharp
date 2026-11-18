@@ -171,7 +171,8 @@ static class ValueText
     /// <summary>
     /// The JSON text of <paramref name="value"/>; when longer than <paramref name="maxBytes"/> UTF-8
     /// bytes, its longest prefix of at most <paramref name="keepBytes"/> bytes that ends on a code
-    /// point boundary, then "...".
+    /// point boundary, then "..." and the closing delimiter of the value (<c>"</c>, <c>]</c> or
+    /// <c>}</c>), as jq 1.8.2 writes them: <c>"aaa..."</c>, <c>[1,2,...]</c>, <c>{"a":...}</c>.
     /// </summary>
     public static string ToJsonTruncated(JqValue value, int maxBytes, int keepBytes)
     {
@@ -190,7 +191,7 @@ static class ValueText
             end += units;
         }
 
-        return string.Concat(text.AsSpan(0, end), "...");
+        return string.Concat(text.AsSpan(0, end), value.Kind == JqKind.String ? "...\"" : value.Kind == JqKind.Array ? "...]" : "...}");
     }
 
     /// <summary>The canonical text of a number: shortest round-trip digits in ECMAScript <c>Number::toString</c> layout.</summary>

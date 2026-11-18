@@ -5,40 +5,6 @@
 # unlisted case fails, and when a line here matches no case. Steps 7 to 9 of the jqlite plan
 # shrink the list; step 10 deletes it with pending.txt.
 
-# step 7: formats
-formats.test	"" | @base64	null
-formats.test	"" | @base64d	null
-formats.test	"<>&'\"" | @html	null
-formats.test	"O'Hara's Ale" | @sh	null
-formats.test	"This is a message" | @base64	null
-formats.test	"This works if x < y" | @html	null
-formats.test	"VGhpcyBpcyBhIG1lc3NhZ2U=" | @base64d	null
-formats.test	"abc-_.~" | @uri	null
-formats.test	"hello world" | @uri | @urid	null
-formats.test	"hello" | @base64 | @base64d	null
-formats.test	"safe text" | @html	null
-formats.test	"test" | @sh	null
-formats.test	"what is jq?" | @uri	null
-formats.test	"what%20is%20jq%3F" | @urid	null
-formats.test	42 | @html	null
-formats.test	42 | @uri	null
-formats.test	@html "<b>\(.)</b>"	"<script>"
-formats.test	@html "a<b>\(.)</b>"	"x"
-formats.test	@sh "echo \(.)"	"hello"
-formats.test	@uri "https://example.com/search?q=\(.)"	"hello world"
-formats.test	["a","b c"] | @sh	null
-formats.test	["a","b","c"] | @tsv	null
-formats.test	["a\"b"] | @csv	null
-formats.test	[1,"hello\tworld"] | @tsv	null
-formats.test	[1,"two",null,true] | @csv	null
-formats.test	try ("not an array" | @csv) catch .	null
-formats.test	try ("not an array" | @tsv) catch .	null
-
-# step 7: native not implemented: contains/1
-collections.test	contains({"foo":"baz"})	{"foo":"foobar"}
-collections.test	contains({"foo":"foo"})	{"foo":"foobar"}
-collections.test	inside({"foo":"foobar"})	{"foo":"foo"}
-
 # step 8: regex (test/2, match/2)
 regex.test	[match("o";"g")]	"foobar"
 regex.test	[scan("([a-z])(\\d+)";"ig")]	"A1b22"

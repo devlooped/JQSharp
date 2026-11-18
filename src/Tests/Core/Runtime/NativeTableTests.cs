@@ -4,11 +4,10 @@ namespace Devlooped.Tests.Core.Runtime;
 
 public class NativeTableTests
 {
-    // The natives of the catalogue without an implementation yet: steps 7 (collections, strings,
-    // formats) and 8 (regex, dates, math) of the jqlite plan, and 9 (modules) empty this list.
+    // The natives of the catalogue without an implementation yet: steps 8 (regex, dates, math)
+    // and 9 (modules) of the jqlite plan empty this list.
     static readonly string[] NotImplemented =
     [
-        "contains/1",
         "test/2", "match/2",
         "now/0", "gmtime/0", "localtime/0", "mktime/0", "strftime/1", "strflocaltime/1", "strptime/1",
         "floor/0", "ceil/0", "trunc/0", "round/0", "nearbyint/0", "fabs/0", "sqrt/0", "fmod/2", "remainder/2", "fma/3",

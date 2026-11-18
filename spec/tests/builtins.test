@@ -1,0 +1,802 @@
+# builtins.test - The builtins of spec 9 entry by entry (core, types, collections, paths, strings): edge cases and error texts, and the error dump of spec 10.1.
+# Format and comparison rule: see README.md.
+
+[try error catch .]
+{"a":1}
+[{"a":1}]
+
+[try error(null) catch .]
+null
+[null]
+
+[.[] | not]
+[null, false, true, 0, "", [], {}]
+[true,true,false,false,false,false,false]
+
+[.[] | type]
+[null, false, true, 0, "", [], {}]
+["null","boolean","boolean","number","string","array","object"]
+
+[.[] | length]
+[null, -5, "é😀", [1,2], {"a":1}, -0]
+[0,5,2,2,1,0]
+
+try (true | length) catch .
+null
+"boolean (true) has no length"
+
+try (false | length) catch .
+null
+"boolean (false) has no length"
+
+[.[] | utf8bytelength]
+["", "é😀", "a"]
+[0,6,1]
+
+try (1 | utf8bytelength) catch .
+null
+"number (1) only strings have UTF-8 byte length"
+
+try ([1] | utf8bytelength) catch .
+null
+"array ([1]) only strings have UTF-8 byte length"
+
+[recurse(if . < 3 then . + 1 else empty end)]
+0
+[0,1,2,3]
+
+[recurse(. + 1; . < 3)]
+0
+[0,1,2]
+
+[recurse]
+[[1],{"a":2}]
+[[[1],{"a":2}],[1],1,{"a":2},2]
+
+[recurse(.a?; . != null)]
+{"a":{"a":null}}
+[{"a":{"a":null}},{"a":null}]
+
+[isempty(empty), isempty(1, error("x")), isempty(1, 2)]
+null
+[true,false,false]
+
+try isempty(error("x")) catch .
+null
+"x"
+
+[first(empty)], [first(1, error("x"))], [first(range(10; 0; -1))]
+null
+[]
+[1]
+[10]
+
+[first, last]
+[]
+[null,null]
+
+[first, last, nth(1), nth(-1), nth(5)]
+[1, 2, 3]
+[1,3,2,3,null]
+
+[last(range(5))], [last(empty)], [last(1, 2)]
+null
+[4]
+[]
+[2]
+
+[nth(2; range(10))], [nth(5; range(3))], [nth(0; 1, error("x"))]
+null
+[2]
+[]
+[1]
+
+try nth(-1; 1) catch .
+null
+"nth doesn't support negative indices"
+
+[limit(3; range(10))], [limit(0; 1, 2)], [limit(1; 1, error("x"))]
+null
+[0,1,2]
+[]
+[1]
+
+try [limit(-1; 1, 2)] catch .
+null
+"limit doesn't support negative count"
+
+[skip(2; range(5))], [skip(0; 1, 2)], [skip(5; 1, 2)]
+null
+[2,3,4]
+[1,2]
+[]
+
+try [skip(-1; 1, 2)] catch .
+null
+"skip doesn't support negative count"
+
+[.[] | values], [.[] | nulls], [.[] | booleans], [.[] | numbers], [.[] | strings], [.[] | arrays], [.[] | objects], [.[] | iterables], [.[] | scalars]
+[null, false, true, 0, "a", [1], {"b":2}]
+[false,true,0,"a",[1],{"b":2}]
+[null]
+[false,true]
+[0]
+["a"]
+[[1]]
+[{"b":2}]
+[[1],{"b":2}]
+[null,false,true,0,"a"]
+
+[.[] | isinfinite], [.[] | isnan], [.[] | isnormal], [.[] | isfinite]
+[1, 0, null, "a", [], 1e-310]
+[false,false,false,false,false,false]
+[false,false,false,false,false,false]
+[true,false,false,false,false,false]
+[true,true,false,false,false,true]
+
+[infinite, -infinite, nan] | map(isinfinite, isnan, isnormal, isfinite)
+null
+[true,false,false,false,true,false,false,false,false,true,false,true]
+
+[[infinite, -infinite, nan, 1, 0, "a"][] | finites], [[infinite, nan, 1, 0, "a", 1e-310][] | normals]
+null
+[null,1,0]
+[1]
+
+keys, keys_unsorted
+{"b": 1, "a": 2, "é": 3, "A": 4, "😀": 5, "ｚ": 6}
+["A","a","b","é","ｚ","😀"]
+["b","a","é","A","😀","ｚ"]
+
+keys, keys_unsorted
+[5, 6, 7]
+[0,1,2]
+[0,1,2]
+
+try (null | keys) catch .
+null
+"null (null) has no keys"
+
+try ("a" | keys_unsorted) catch .
+null
+"string (\"a\") has no keys"
+
+[has("a"), has("b")]
+{"a": null}
+[true,false]
+
+[has(0), has(1.5), has(2), has(-1), has(nan), has(-0.5)]
+[1, 2]
+[true,true,false,false,false,true]
+
+[null | has("a"), has(0)]
+null
+[false,false]
+
+try ({"a":1} | has(0)) catch .
+null
+"Cannot check whether object has a number key"
+
+try ([1] | has("a")) catch .
+null
+"Cannot check whether array has a string key"
+
+try ("a" | has(0)) catch .
+null
+"Cannot check whether string has a number key"
+
+try (1 | has(0)) catch .
+null
+"Cannot check whether number has a number key"
+
+["a", "x"] | map(in({"a":1}))
+null
+[true,false]
+
+[1, 5] | map(in([0, 1]))
+null
+[true,false]
+
+map_values(. + 1), map_values(empty), map_values(., .)
+{"a": 1, "b": 2}
+{"a":2,"b":3}
+{}
+{"a":1,"b":2}
+
+map_values(. + 1), map_values(empty), map_values(select(. != 2))
+[1, 2, 3]
+[2,3,4]
+[]
+[1,3]
+
+[.[] | add]
+[[1, 2, 3], [], ["a", "b"], [[1], [2]], [{"a": 1}, {"b": 2}], [null, 1], {"a": 1, "b": 2}]
+[6,null,"ab",[1,2],{"a":1,"b":2},1,3]
+
+add(.[].a), add(empty), add(1, 2)
+[{"a": 1}, {"a": 2}]
+3
+null
+3
+
+try ([1, "a"] | add) catch .
+null
+"number (1) and string (\"a\") cannot be added"
+
+[.[] | any, all]
+[[true, false], [], [false], [null, 1], [true]]
+[true,false,false,true,false,false,true,false,true,true]
+
+any(. > 1), all(. > 0), any(.[]; . > 2), all(.[]; . < 3)
+[1, 2]
+true
+true
+false
+true
+
+[any(1, error("x"); . == 1), all(1, error("x"); . == 2)]
+null
+[true,false]
+
+try any(error("x"); .) catch .
+null
+"x"
+
+[range(0; 10; 3)], [range(5; 0; -2)], [range(0; 1; 0)], [range(1.5)], [range(-1)], [range(0.5; 3)]
+null
+[0,3,6,9]
+[5,3,1]
+[]
+[0,1]
+[]
+[0.5,1.5,2.5]
+
+[limit(5; range(0; "a"; 1))]
+null
+[0,1,2,3,4]
+
+try [range("a")] catch .
+null
+"Range bounds must be numeric"
+
+try [range(0; "a")] catch .
+null
+"Range bounds must be numeric"
+
+try [range(null; 3)] catch .
+null
+"Range bounds must be numeric"
+
+[limit(5; 1 | repeat(. * 2))], [limit(5; repeat(1, 2))]
+null
+[2,2,2,2,2]
+[1,2,1,2,1]
+
+[1 | while(. < 10; . * 2)], [1 | until(. > 10; . * 2)], [5 | while(. < 3; . + 1)], [5 | until(. > 3; . + 1)]
+null
+[1,2,4,8]
+[16]
+[]
+[5]
+
+[.[] | reverse]
+[[1, 2, 3], [], null, ""]
+[[3,2,1],[],[],[]]
+
+try ("abc" | reverse) catch .
+null
+"Cannot index string with number (2)"
+
+try ({"a": 1} | reverse) catch .
+null
+"Cannot index object with number (0)"
+
+try ({} | reverse) catch .
+null
+[]
+
+try (1 | reverse) catch .
+null
+"Cannot index number with number (0)"
+
+sort
+[3, 1, null, "b", "a", [1], [0, 5], {"b": 1}, {"a": 2}, true, false, 1.5, -1]
+[null,false,true,-1,1,1.5,3,"a","b",[0,5],[1],{"a":2},{"b":1}]
+
+try ("a" | sort) catch .
+null
+"string (\"a\") cannot be sorted, as it is not an array"
+
+try ({"a": 1} | sort) catch .
+null
+"object ({\"a\":1}) cannot be sorted, as it is not an array"
+
+group_by(.a), unique_by(.a), min_by(.a), max_by(.a), min_by(.b), max_by(.b)
+[{"a": 1, "b": 1}, {"a": 2, "b": 2}, {"a": 1, "b": 3}, {"a": 2, "b": 0}]
+[[{"a":1,"b":1},{"a":1,"b":3}],[{"a":2,"b":2},{"a":2,"b":0}]]
+[{"a":1,"b":1},{"a":2,"b":2}]
+{"a":1,"b":1}
+{"a":2,"b":0}
+{"a":2,"b":0}
+{"a":1,"b":3}
+
+unique, min, max
+[3, 1, 3, "a", null, 1, [1], "a"]
+[null,1,3,"a",[1]]
+null
+[1]
+
+[[] | min, max, min_by(.), max_by(.), unique, group_by(.), sort_by(.)]
+null
+[null,null,null,null,[],[],[]]
+
+try ({} | min) catch .
+null
+"object ({}) and object ({}) cannot be iterated over"
+
+try ("a" | max) catch .
+null
+"string (\"a\") and string (\"a\") cannot be iterated over"
+
+try ("a" | sort_by(.)) catch .
+null
+"Cannot iterate over string (\"a\")"
+
+try ("a" | unique) catch .
+null
+"string (\"a\") cannot be sorted, as it is not an array"
+
+try ({"a":1} | group_by(.)) catch .
+null
+"object ({\"a\":1}) and array ([[1]]) cannot be sorted, as they are not both arrays"
+
+try ("a" | min_by(.)) catch .
+null
+"Cannot iterate over string (\"a\")"
+
+unique_by(length), group_by(length)
+["ab", "c", "de", "f", ""]
+["","c","ab"]
+[[""],["c","f"],["ab","de"]]
+
+flatten, flatten(1), flatten(0), flatten(2)
+[1, [2, [3, [4]]], [], [[]]]
+[1,2,3,4]
+[1,2,[3,[4]],[]]
+[1,[2,[3,[4]]],[],[[]]]
+[1,2,3,[4]]
+
+try flatten(-1) catch .
+null
+"flatten depth must not be negative"
+
+[{"a": [1]}] | flatten
+null
+[{"a":[1]}]
+
+{"a": [1], "b": 2} | flatten
+null
+[1,2]
+
+try ("a" | flatten) catch .
+null
+"Cannot iterate over string (\"a\")"
+
+to_entries, with_entries(.value += 1)
+{"a": 1, "b": 2}
+[{"key":"a","value":1},{"key":"b","value":2}]
+{"a":2,"b":3}
+
+to_entries
+[5, 6]
+[{"key":0,"value":5},{"key":1,"value":6}]
+
+with_entries(.key |= tostring)
+[5, 6]
+{"0":5,"1":6}
+
+try ([{"key": 1, "value": 2}] | from_entries) catch .
+null
+"Cannot use number (1) as object key"
+
+try ([{"key": true, "value": 2}] | from_entries) catch .
+null
+"Cannot use boolean (true) as object key"
+
+try ([{"value": 2}] | from_entries) catch .
+null
+"Cannot use null (null) as object key"
+
+try ([{"key": null, "value": 2}] | from_entries) catch .
+null
+"Cannot use null (null) as object key"
+
+from_entries
+[]
+{}
+
+from_entries
+{"x": {"key": "a", "value": 1}}
+{"a":1}
+
+transpose
+[[1, 2], [3], [], [4, 5, 6]]
+[[1,3,null,4],[2,null,null,5],[null,null,null,6]]
+
+transpose
+[]
+[]
+
+[combinations]
+[[1, 2], [3, 4]]
+[[1,3],[1,4],[2,3],[2,4]]
+
+[combinations]
+[]
+[[]]
+
+[combinations]
+[[1], []]
+[]
+
+[combinations(2)]
+[0, 1]
+[[0,0],[0,1],[1,0],[1,1]]
+
+walk(if type == "number" then . + 1 else . end)
+[1, [2], {"b": 3, "a": 4}]
+[2,[3],{"b":4,"a":5}]
+
+walk(if type == "object" then del(.a) else . end)
+{"a": 1, "b": {"a": 2, "c": 3}}
+{"b":{"c":3}}
+
+[walk(numbers |= empty)]
+[1, [2], "x"]
+[[null,[null],"x"]]
+
+[bsearch(2), bsearch(0), bsearch(4), bsearch(2.5), bsearch("a")]
+[1, 2, 3]
+[1,-1,-4,-3,-4]
+
+[bsearch(1)]
+[]
+[-1]
+
+try ("a" | bsearch(1)) catch .
+null
+"string (\"a\") cannot be searched from"
+
+try ({"a":1} | bsearch(1)) catch .
+null
+"object ({\"a\":1}) cannot be searched from"
+
+INDEX(.id)
+[{"id": 1}, {"id": "1", "x": 2}, {"id": null}, {"id": [1]}]
+{"1":{"id":"1","x":2},"null":{"id":null},"[1]":{"id":[1]}}
+
+INDEX(.[]; .a)
+[{"a": "x"}, {"a": "y"}]
+{"x":{"a":"x"},"y":{"a":"y"}}
+
+[2 | IN(1, 2)], [5 | IN(1, 2)], [IN(range(3); 5)], [IN(range(3); 2)]
+null
+[true]
+[false]
+[false]
+[true]
+
+JOIN({"a": "x"}; .[1])
+[[1, "a"], [2, "b"]]
+[[[1,"a"],"x"],[[2,"b"],null]]
+
+[paths], [paths(type == "number")]
+{"a": {"b": 1}, "c": [2, "x"]}
+[["a"],["a","b"],["c"],["c",0],["c",1]]
+[["a","b"],["c",0]]
+
+[paths]
+1
+[]
+
+pick(.a.b), pick(.c[1]), pick(.x)
+{"a": {"b": 1, "z": 0}, "c": [2, "x"]}
+{"a":{"b":1}}
+{"c":[null,"x"]}
+{"x":null}
+
+pick(.[1])
+[1, 2, 3]
+[null,2]
+
+pick(.a)
+null
+{"a":null}
+
+try pick(.[-1]) catch .
+[1, 2]
+"Out of bounds negative array index"
+
+[pick(first)]
+[1, 2]
+[[1]]
+
+del(.[0, 2]), del(.a?), del(.[])
+[1, 2, 3, 4]
+[2,4]
+[1,2,3,4]
+[]
+
+del(.a, .b), del(.c), del(.)
+{"a": 1, "b": 2, "c": 3}
+{"c":3}
+{"a":1,"b":2}
+null
+
+[getpath(["a", "x"]), getpath([]), getpath(["a", "b", 0])]
+{"a": {"b": null}}
+[null,{"a":{"b":null}},null]
+
+try getpath(["a", 0]) catch .
+{"a": {"b": 1}}
+"Cannot index object with number (0)"
+
+try getpath("a") catch .
+null
+"Path must be specified as an array"
+
+try (1 | getpath(["a"])) catch .
+null
+"Cannot index number with string (\"a\")"
+
+null | getpath(["a", 1, "b"])
+null
+null
+
+setpath([]; 1), setpath(["a", 1]; 2), setpath([0]; 3)
+null
+1
+{"a":[null,2]}
+[3]
+
+[.[] | tostring]
+[null, true, 1.5, "a", [1, "b"], {"a": "é"}, 100]
+["null","true","1.5","a","[1,\"b\"]","{\"a\":\"é\"}","100"]
+
+[.[] | tojson]
+[null, true, 1.5, "a\"\\\u0001\u007f /é😀", [1, "b"], {"a": "é"}]
+["null","true","1.5","\"a\\\"\\\\\\u0001\\u007f /é😀\"","[1,\"b\"]","{\"a\":\"é\"}"]
+
+[infinite, -infinite, nan] | map(tostring), map(tojson), tojson, tostring
+null
+["1.7976931348623157e+308","-1.7976931348623157e+308","null"]
+["1.7976931348623157e+308","-1.7976931348623157e+308","null"]
+"[1.7976931348623157e+308,-1.7976931348623157e+308,null]"
+"[1.7976931348623157e+308,-1.7976931348623157e+308,null]"
+
+[.[] | fromjson]
+["[1,2]", "{\"a\":1}", "\"x\"", "1", "null", " true ", "nan", "-Infinity"]
+[[1,2],{"a":1},"x",1,null,true,null,-1.7976931348623157e+308]
+
+try ("{" | fromjson | 1) catch "caught"
+null
+"caught"
+
+try ("1 2" | fromjson) catch .
+null
+"Unexpected extra JSON values (while parsing '1 2')"
+
+try ("" | fromjson) catch .
+null
+"Expected JSON value (while parsing '')"
+
+try (1 | fromjson) catch .
+null
+"number (1) only strings can be parsed"
+
+[.[] | tonumber]
+[1, "+5.43", ".89", "1.", "-1e2", "0", "-0", "001", "1E2"]
+[1,5.43,0.89,1,-1E+2,0,-0,1,1E+2]
+
+"nan" | tonumber | isnan
+null
+true
+
+[.[] | try tonumber catch .]
+[" 4", "4 ", "0x10", "-", "", "1e", "abc", "1_0", "nan1", null, [], true, "Infinity", "infinity", "-inf"]
+["string (\" 4\") cannot be parsed as a number","string (\"4 \") cannot be parsed as a number","string (\"0x10\") cannot be parsed as a number","string (\"-\") cannot be parsed as a number","string (\"\") cannot be parsed as a number","string (\"1e\") cannot be parsed as a number","string (\"abc\") cannot be parsed as a number","string (\"1_0\") cannot be parsed as a number","string (\"nan1\") cannot be parsed as a number","null (null) cannot be parsed as a number","array ([]) cannot be parsed as a number","boolean (true) cannot be parsed as a number",1.7976931348623157e+308,1.7976931348623157e+308,-1.7976931348623157e+308]
+
+explode
+"aé😀\u0000"
+[97,233,128512,0]
+
+implode
+[65, 233, 128512, 0]
+"Aé😀\u0000"
+
+[[1114112], [55296], [57343], [-1], [65.7], [66.2], [], [1e10]] | map(implode)
+null
+["�","�","�","�","A","B","","�"]
+
+try ([null] | implode) catch .
+null
+"null (null) can't be imploded, unicode codepoint needs to be numeric"
+
+try (["a"] | implode) catch .
+null
+"string (\"a\") can't be imploded, unicode codepoint needs to be numeric"
+
+try ([[1]] | implode) catch .
+null
+"array ([1]) can't be imploded, unicode codepoint needs to be numeric"
+
+try ([nan] | implode) catch .
+null
+"number (null) can't be imploded, unicode codepoint needs to be numeric"
+
+try ("a" | implode) catch .
+null
+"implode input must be an array"
+
+try ({} | implode) catch .
+null
+"implode input must be an array"
+
+try (1 | explode) catch .
+null
+"explode input must be a string"
+
+[ascii_downcase, ascii_upcase]
+"aÉzZ1é"
+["aÉzz1é","AÉZZ1é"]
+
+try (1 | ascii_downcase) catch .
+null
+"explode input must be a string"
+
+try ([] | ascii_upcase) catch .
+null
+"explode input must be a string"
+
+[startswith("ab"), startswith(""), startswith("abcd"), endswith("bc"), endswith(""), endswith("x")]
+"abc"
+[true,true,false,true,true,false]
+
+try (1 | startswith("a")) catch .
+null
+"startswith() requires string inputs"
+
+try ("a" | startswith(1)) catch .
+null
+"startswith() requires string inputs"
+
+try (1 | endswith("a")) catch .
+null
+"endswith() requires string inputs"
+
+[ltrimstr("ab"), ltrimstr("x"), ltrimstr(""), rtrimstr("bc"), rtrimstr("x"), trimstr("a"), trimstr("abc")]
+"abca"
+["ca","abca","abca","abca","abca","bc","a"]
+
+[.[] | split(",")]
+["a,b,,c", "", ",", "a"]
+[["a","b","","c"],[],["",""],["a"]]
+
+[split(""), split("é"), split("aé😀b")]
+"aé😀b"
+[["a","é","😀","b"],["a","😀b"],["",""]]
+
+["a" | split("a")], ["aaa" | split("aa")]
+null
+[["",""]]
+[["","a"]]
+
+try (1 | split(",")) catch .
+null
+"split input and separator must be strings"
+
+try ("a" | split(1)) catch .
+null
+"split input and separator must be strings"
+
+join("-"), join(""), join(", ")
+["a", 1, null, true, false, 1.5]
+"a-1--true-false-1.5"
+"a1truefalse1.5"
+"a, 1, , true, false, 1.5"
+
+[[] | join(",")], [[null] | join(",")], [["a"] | join(",")]
+null
+[""]
+[""]
+["a"]
+
+try ([[1]] | join(",")) catch .
+null
+"string (\"\") and array ([1]) cannot be added"
+
+try ([{"a":1}] | join(",")) catch .
+null
+"string (\"\") and object ({\"a\":1}) cannot be added"
+
+try (["a", "b"] | join(1)) catch .
+null
+"string (\"a\") and number (1) cannot be added"
+
+try ("ab" | join(",")) catch .
+null
+"Cannot iterate over string (\"ab\")"
+
+{"a": "x", "b": "y"} | join(",")
+null
+"x,y"
+
+[indices(", "), indices("x"), indices("")]
+"a,b, cd, efg"
+[[3,7],[],[]]
+
+[indices(1), indices([1, 2]), indices([]), indices([9])]
+[0, 1, 2, 1, 3, 1, 2, 4]
+[[1,3,5],[1,5],[],[]]
+
+["aaa" | indices("aa")], ["aé😀bé" | indices("é"), index("é"), rindex("é")]
+null
+[[0,1]]
+[[1,4],1,4]
+
+[index("b"), rindex("b"), index("z"), rindex("z")]
+"abcb"
+[1,3,null,null]
+
+[index(1), rindex(1), index(9)]
+[1, 2, 1]
+[0,2,null]
+
+[null | indices(1), index("a")]
+null
+[null,null]
+
+try ("a" | indices(1)) catch .
+null
+"Cannot index string with number (1)"
+
+try (1 | indices("a")) catch .
+null
+"Cannot index number with string (\"a\")"
+
+try ({} | indices("a")) catch .
+null
+null
+
+try ({"a": 1} | index("a")) catch .
+null
+"Cannot index number with number (0)"
+
+[.[] | tojson]
+[0.1, 3, -2.5, 1e-5, 12345678]
+["0.1","3","-2.5","0.00001","12345678"]
+
+[.[] | @text, @json]
+[0.5, "x", [1]]
+["0.5","0.5","x","\"x\"","[1]","[1]"]
+
+.[] | try -. catch .
+["aaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "ééééééééééééééééééé", "aaaaaaaaaaaaaaaaaaaaaaaaéééé", "\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"", "aaaaaaaaaaaaaaaaaaaaaaa\"bbbbbb", "aaaaaaaaaaaaaaaaaaaaaaaa\"bbbbbb", ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"], {"a":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, ["a","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]]
+"string (\"aaaaaaaaaaaaaaaaaaaaaaaaaaa\") cannot be negated"
+"string (\"aaaaaaaaaaaaaaaaaaaaaaaa...\") cannot be negated"
+"string (\"aaaaaaaaaaaaaaaaaaaaaaaa...\") cannot be negated"
+"string (\"éééééééééééé...\") cannot be negated"
+"string (\"aaaaaaaaaaaaaaaaaaaaaaaa...\") cannot be negated"
+"string (\"\\\"\\\"\\\"\\\"\\\"\\\"\\\"\\\"\\\"\\\"\\\"\\\"...\") cannot be negated"
+"string (\"aaaaaaaaaaaaaaaaaaaaaaa\\...\") cannot be negated"
+"string (\"aaaaaaaaaaaaaaaaaaaaaaaa...\") cannot be negated"
+"array ([\"aaaaaaaaaaaaaaaaaaaaaaa...]) cannot be negated"
+"object ({\"a\":\"aaaaaaaaaaaaaaaaaaa...}) cannot be negated"
+"array ([\"a\",\"aaaaaaaaaaaaaaaaaaa...]) cannot be negated"
+
+.[] | try -. catch .
+[[1,2,3,4,5,6,7,8,9,10,11,12,13], {"aaaaaaaaaaaaaaaaaaaaaaaaaa":1}, [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [{"a":[1,2,3,4,5,6,7,8,9,10]}]]
+"array ([1,2,3,4,5,6,7,8,9,10,11,...]) cannot be negated"
+"object ({\"aaaaaaaaaaaaaaaaaaaaaaa...}) cannot be negated"
+"array ([[[[[[[[[[[[[[[[[[[[[[[[[...]) cannot be negated"
+"array ([{\"a\":[1,2,3,4,5,6,7,8,9,...]) cannot be negated"

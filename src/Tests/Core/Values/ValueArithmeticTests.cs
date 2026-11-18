@@ -39,7 +39,7 @@ public class ValueArithmeticTests
     [InlineData("true", "true", "error: boolean (true) and boolean (true) cannot be added")]
     [InlineData("false", "1", "error: boolean (false) and number (1) cannot be added")]
     [InlineData("{\"a\":\"very long string\"}", "1", "error: object ({\"a\":\"very long string\"}) and number (1) cannot be added")]
-    [InlineData("[1,2,3,4,5,6,7,8,9,10,11,12,13]", "1", "error: array ([1,2,3,4,5,6,7,8,9,10,11,...) and number (1) cannot be added")]
+    [InlineData("[1,2,3,4,5,6,7,8,9,10,11,12,13]", "1", "error: array ([1,2,3,4,5,6,7,8,9,10,11,...]) and number (1) cannot be added")]
     public void Add(string a, string b, string expected) => Assert.Equal(expected, Apply("+", a, b));
 
     [Theory]
@@ -138,7 +138,7 @@ public class ValueArithmeticTests
     [InlineData("nan", "null")]
     [InlineData("null", "error: null (null) cannot be negated")]
     [InlineData("\"a\"", "error: string (\"a\") cannot be negated")]
-    [InlineData("\"very-long-long-long-long-string\"", "error: string (\"very-long-long-long-long...) cannot be negated")]
+    [InlineData("\"very-long-long-long-long-string\"", "error: string (\"very-long-long-long-long...\") cannot be negated")]
     public void Negation(string a, string expected) => Assert.Equal(expected, Negate(a));
 
     [Fact]
