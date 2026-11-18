@@ -355,7 +355,8 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 - `E as P | B` with a pattern `P` destructures each `v`:
   - `$name` binds `v`;
   - `[P1, …, Pn]` matches `Pi` against `v[i-1]` (index semantics, §7.6: `null` gives `null`, a non-array is an index error), from the last position to the first: `1 | . as [$a, $b] | 0` fails with `Cannot index number with number (1)`;
-  - `{key: P, …}` matches `P` against `v[key]`, entries from the first to the last; `$name` binds `$name` to `v.name`; `$name: P` binds `$name` to `v.name` and also matches `P` against it; `(e): P` evaluates `e` (in the binding's scope, input `v`) and matches each output key; a key expression with several outputs gives several bindings, in order.
+  - `{key: P, …}` matches `P` against `v[key]`, entries from the first to the last; `$name` binds `$name` to `v.name`; `$name: P` binds `$name` to `v.name` and also matches `P` against it; `(e): P` evaluates `e` with input `v` in the scope *outside* the binding (variables of the same pattern are not visible to it: `"z" as $x | {"a":"b","b":2} | . as {a: $x, ($x): $y} | [$x, $y]` → `["b",null]`; with no outer `$x`, the `$x` of the key is a host variable, §7.5) and matches each output key; a key expression with several outputs gives several bindings, in order.
+- **A variable twice in one pattern.** *Matching order* is: array elements from the last to the first, object entries from the first to the last, each nested pattern matched completely where it occurs. Without `?//`, the **first** occurrence in matching order gives the value; in a binding with `?//` (every alternative), the **last** one does. Examples: `[1,2] | . as [$a, $a] | $a` → `2`; `{"a":1,"b":2} | . as {$a, b: $a} | $a` → `1`; `[3,[1,2]] | . as [$a, [$a, $a]] | $a` → `2`; `[1,2] | . as [$a, $a] ?// $b | $a` → `1`; `{"a":1,"b":2} | . as {$a, b: $a} ?// $c | $a` → `2`. The same rule holds for the patterns of `reduce` and `foreach`.
 - `E as P1 ?// P2 ?// … | B`: every variable of every pattern is bound in `B`; those absent from the pattern in use are `null`. For each output `v` of `E`, try `P1`: if destructuring fails, or `B` raises an error, try the next pattern with the same `v` (outputs already produced stay); errors with the last pattern propagate.
 - Scope is lexical: a variable is visible in `B` (and nested definitions there), shadowing outer bindings of the same name.
 - `$ENV` is predefined in the outermost scope: an object of the host environment variables (§12). It can be shadowed.
@@ -383,10 +384,11 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 ### 7.7 Functions
 
 - `def f: B; R` and `def f(p1; …; pn): B; R` define `f/n` for `R` and for `B` itself (recursion). A definition is visible after its own `def` keyword only; later definitions with the same name and arity shadow earlier ones. Definitions inside a function body are local to it.
-- A call `f(a1; …; an)` resolves at bind time to the innermost visible definition of `f/n`, else the builtin `f/n`, else the error `f/n is not defined`. A closure parameter `p` is a definition of `p/0` that shadows functions of that name.
+- A call `f(a1; …; an)` resolves at bind time to the innermost visible definition of `f/n`, else the builtin `f/n`, else the error `f/n is not defined`. A closure parameter `p` is a definition of `p/0`: it shadows functions named `p` of arity 0 only (`def x(a): 7; def f(x): x(0); f(1)` → `7`), and a definition inside the body shadows it in turn (`def f(x): def x: 5; x; f(1)` → `5`).
 - The body `B` is evaluated with the call's input in the environment where `f` was **defined** (plus its parameters). Free variables, functions and labels of `B` are those visible at the definition: `1 as $x | def f: $x; 2 as $x | f` → `1`.
 - A filter argument `ai` is a closure: each time the body evaluates `pi`, `ai` is evaluated on the input given to `pi` at that point, in the caller's environment. Example: `[1] | def f(x): x | x; f(. + [2])` → `[1,2,2]`.
-- A `$p` parameter binds each output of the argument (evaluated on the call's input) as `$p`, first parameter outermost (§3.3).
+- A `$p` parameter binds each output of the argument (evaluated on the call's input) as `$p`, first parameter outermost (§3.3); it also defines the filter `p/0`.
+- Parameters are bound from left to right, so a later parameter shadows an earlier one of the same name: `def f(a; a): a; f(1; 2)` → `2`; `def f(a; $a): [a, $a]; f(1; 2)` → `[2,2]`; `def f($a; a): [a, $a]; f(1; 2)` → `[2,1]`.
 - Builtins are resolved like user functions, after them; a user definition of a builtin's name and arity shadows it.
 
 ### 7.8 reduce
@@ -881,7 +883,7 @@ A port MAY leave out the whole group: `import`, `include`, `module` and `modulem
 - **Code modules** consist of `ModuleBody` (§3.2). A module sees the builtins, its own imports and its own top-level definitions, nothing of the importer. Only its top-level definitions are exported; definitions nested in function bodies are not.
 - `import "p" as name;` makes every exported `f/n` of `p` callable as `name::f(…)`. `include "p";` makes them callable unqualified, as if defined at that point (later definitions shadow earlier ones). Re-importing under the same alias: the later import wins.
 - `import "p" as $name;` reads a **data** module: its text is a sequence of JSON values (§5.3, separated by whitespace), bound as an array to both `$name` and `$name::name`.
-- `module {…};` attaches a metadata object to a module.
+- `module {…};` attaches a metadata object to a module file. In a main program it is accepted and has no effect (`module {"x":1}; 5` → `5`).
 - `modulemeta`: input a module path string (resolved as from the main program); output the module's metadata object, followed by `"deps"`: one object per import in order (`include` too), with the import's metadata keys first, then `"as"` (the alias, without `$`; absent for `include`), `"is_data"`, `"relpath"`; then `"defs"`: the exported `"name/arity"` in definition order. Errors: non-string input `modulemeta input module name must be a string`; resolution errors as above.
 
 Example: for a module `c` with `module {"whatever":null}; import "a" as foo; include "b" {"search":"./"}; import "data" as $d; def c: 1; def aa: 2;`, `"c" | modulemeta` → `{"whatever":null,"deps":[{"as":"foo","is_data":false,"relpath":"a"},{"search":"./","is_data":false,"relpath":"b"},{"as":"d","is_data":true,"relpath":"data"}],"defs":["c/0","aa/0"]}`.
