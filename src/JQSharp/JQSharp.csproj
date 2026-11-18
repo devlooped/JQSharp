@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <IsAotCompatible>true</IsAotCompatible>
     <PackageId>Devlooped.JQSharp</PackageId>
     <Description>A .NET implementation of the jq filter language for querying and transforming JSON.</Description>
   </PropertyGroup>
