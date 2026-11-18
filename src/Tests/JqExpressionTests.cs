@@ -12,17 +12,22 @@ public class JqExpressionTests
         Assert.NotNull(expression);
     }
 
-    [Fact]
-    public void Parse_throws_for_empty_expression()
-        => Assert.Throws<JqException>(() => Jq.Parse(""));
+    // As in jq, a program of nothing (or of definitions only) is `.`.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("# only a comment")]
+    [InlineData("def f: 1;")]
+    public void An_empty_expression_is_the_identity(string expression)
+        => Assert.Equal(["[1]"], EvaluateToStrings(expression, "[1]"));
 
     [Fact]
-    public void Parse_throws_for_whitespace_expression()
-        => Assert.Throws<JqException>(() => Jq.Parse("   "));
+    public void Parse_throws_for_null_expression()
+        => Assert.Throws<ArgumentNullException>(() => Jq.Parse(null!));
 
     [Fact]
     public void Parse_throws_for_invalid_expression()
-        => Assert.Throws<JqException>(() => Jq.Parse("[invalid!!!"));
+        => Assert.Throws<JqParseException>(() => Jq.Parse("[invalid!!!"));
 
     [Fact]
     public void Parsed_expression_evaluates_correctly()

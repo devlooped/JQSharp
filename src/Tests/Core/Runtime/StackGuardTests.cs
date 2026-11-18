@@ -80,7 +80,7 @@ public class StackGuardTests
     {
         var program = Compile("def f: if . == 0 then (1, 2, 3) else (. - 1 | f) + 0 end; 900 | f");
         string[]? outputs = null;
-        var thread = new Thread(() => outputs = Run(program, Json("null"), take: 1), stack);
+        var thread = new Thread(() => outputs = Run(program, Evaluate.Json("null"), take: 1), stack);
         thread.Start();
         thread.Join();
         Assert.Equal(["1"], outputs!);
@@ -95,7 +95,7 @@ public class StackGuardTests
     {
         var bound = Compile(program);
         string? result = null;
-        var thread = new Thread(() => result = string.Join(", ", Run(bound, Json("null"), options)), stack);
+        var thread = new Thread(() => result = string.Join(", ", Run(bound, Evaluate.Json("null"), options)), stack);
         thread.Start();
         thread.Join();
         return result!;

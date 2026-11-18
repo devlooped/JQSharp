@@ -1,158 +1,77 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Devlooped.Core.Binding;
+using Devlooped.Host;
 
 namespace Devlooped;
 
-/// <summary>
-/// Provides methods for parsing and evaluating jq filter expressions against JSON data.
-/// </summary>
+/// <summary>Parses and evaluates jq expressions (the jqlite profile of jq 1.8) on <see cref="JsonElement"/> values.</summary>
 public static class Jq
 {
-    /// <summary>
-    /// Parses a jq filter expression and returns a reusable <see cref="JqExpression"/>
-    /// that can be evaluated against multiple JSON inputs without re-parsing.
-    /// </summary>
-    /// <param name="expression">The jq filter expression to parse.</param>
-    /// <param name="resolver">
-    /// An optional <see cref="JqResolver"/> used to resolve <c>include</c> and <c>import</c> statements in
-    /// the expression. When <see langword="null"/>, any <c>include</c> or <c>import</c> statement encountered
-    /// during parsing will throw a <see cref="JqException"/>.
-    /// </param>
-    /// <returns>A parsed <see cref="JqExpression"/> ready for evaluation.</returns>
-    /// <exception cref="JqException">Thrown when the expression is empty or invalid.</exception>
-    /// <remarks>
-    /// The returned <see cref="JqExpression"/> is thread-safe and can be cached and
-    /// evaluated concurrently from multiple threads.
-    /// </remarks>
-    public static JqExpression Parse(string expression, JqResolver? resolver = null)
-    {
-        if (string.IsNullOrWhiteSpace(expression))
-            throw new JqException("Filter expression cannot be empty.");
+    static readonly JqOptions defaults = new();
 
-        return new JqExpression(JqParser.Parse(expression, resolver));
+    /// <summary>
+    /// Parses and binds <paramref name="expression"/>, loading its modules through the options'
+    /// resolver, into an expression to evaluate any number of times, concurrently if need be.
+    /// An empty expression is <c>.</c>.
+    /// </summary>
+    /// <param name="expression">The jq expression.</param>
+    /// <param name="options">Modules, <c>$ENV</c>, clock and depth limit for every evaluation of it; the defaults when <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="expression"/> is <see langword="null"/>.</exception>
+    /// <exception cref="JqParseException">A syntax or binding error (an unknown function, label or module, a cycle of imports), with its line and column.</exception>
+    public static JqExpression Parse(string expression, JqOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        options ??= defaults;
+        var modules = options.Resolver is { } resolver ? new ResolverSource(resolver) : null;
+        if (!Resolver.TryCompile(expression, out var program, out var error, modules: modules))
+        {
+            var where = error.Module is null ? "" : $"{error.Module}, ";
+            throw new JqParseException($"{error.Message} at {where}line {error.Line}, column {error.Column}", error.Line, error.Column);
+        }
+
+        return new JqExpression(program, options);
     }
 
-    /// <summary>
-    /// Evaluates a jq filter expression against the given JSON input and returns the matching results.
-    /// </summary>
-    /// <param name="expression">The jq filter expression to evaluate.</param>
-    /// <param name="input">The JSON element to use as input for the filter.</param>
-    /// <returns>An enumerable of <see cref="JsonElement"/> values produced by the filter.</returns>
-    /// <exception cref="JqException">Thrown when the expression is empty, invalid, or causes an error during evaluation.</exception>
-    public static IEnumerable<JsonElement> Evaluate(string expression, JsonElement input)
-        => Parse(expression).Evaluate(input);
-
-    /// <summary>
-    /// Evaluates a jq filter expression against the given JSON input and returns the matching results,
-    /// with optional external variable bindings.
-    /// </summary>
-    /// <param name="expression">The jq filter expression to evaluate.</param>
-    /// <param name="input">The JSON element to use as input for the filter.</param>
-    /// <param name="variables">
-    /// Optional external variables to bind before evaluation, analogous to jq's
-    /// <c>--arg</c>/<c>--argjson</c>. Dictionary keys are variable names without a
-    /// leading <c>$</c> and must be valid jq identifiers (for example, <c>"root"</c>
-    /// binds <c>$root</c>).
-    /// </param>
-    /// <returns>An enumerable of <see cref="JsonElement"/> values produced by the filter.</returns>
-    /// <exception cref="ArgumentException">
-    /// Thrown when a variable name is empty, starts with <c>$</c>, or is not a valid jq identifier.
-    /// </exception>
-    /// <exception cref="JqException">Thrown when the expression is empty, invalid, or causes an error during evaluation.</exception>
-    public static IEnumerable<JsonElement> Evaluate(string expression, JsonElement input, IReadOnlyDictionary<string, JsonElement>? variables)
+    /// <summary>Parses <paramref name="expression"/> with the default options and evaluates it on <paramref name="input"/>, returning all its results.</summary>
+    /// <param name="expression">The jq expression.</param>
+    /// <param name="input">The input value.</param>
+    /// <param name="variables">Host variables, as for <see cref="JqExpression.Evaluate(JsonElement, IReadOnlyDictionary{string, JsonElement}?)"/>.</param>
+    /// <exception cref="ArgumentException">A variable name is not valid.</exception>
+    /// <exception cref="JqException">A syntax or binding error (<see cref="JqParseException"/>), or an error that reached the top of the expression.</exception>
+    public static IReadOnlyList<JsonElement> Evaluate(string expression, JsonElement input, IReadOnlyDictionary<string, JsonElement>? variables = null)
         => Parse(expression).Evaluate(input, variables);
 
     /// <summary>
-    /// Evaluates a jq filter expression against each element in an asynchronous sequence and yields the matching results.
+    /// Parses <paramref name="expression"/> with the default options and evaluates it on each value of
+    /// <paramref name="input"/> in turn (a JSON Lines stream, for example), yielding the results of each.
     /// </summary>
-    /// <param name="expression">The jq filter expression to evaluate.</param>
-    /// <param name="input">The asynchronous sequence of <see cref="JsonElement"/> values to evaluate the filter against.</param>
-    /// <param name="cancellationToken">A token to cancel the asynchronous iteration.</param>
-    /// <returns>
-    /// An asynchronous sequence of <see cref="JsonElement"/> values produced by applying the filter
-    /// to each element in <paramref name="input"/>.
-    /// </returns>
-    /// <exception cref="JqException">Thrown when the expression is empty, invalid, or causes an error during evaluation.</exception>
-    public static IAsyncEnumerable<JsonElement> EvaluateAsync(string expression, IAsyncEnumerable<JsonElement> input, CancellationToken cancellationToken = default)
-        => EvaluateAsync(expression, input, variables: null, cancellationToken);
-
-    /// <summary>
-    /// Evaluates a jq filter expression against each element in an asynchronous sequence and yields the matching results,
-    /// with optional external variable bindings.
-    /// </summary>
-    /// <param name="expression">The jq filter expression to evaluate.</param>
-    /// <param name="input">The asynchronous sequence of <see cref="JsonElement"/> values to evaluate the filter against.</param>
-    /// <param name="variables">
-    /// Optional external variables to bind before evaluation, analogous to jq's
-    /// <c>--arg</c>/<c>--argjson</c>. Dictionary keys are variable names without a
-    /// leading <c>$</c> and must be valid jq identifiers.
-    /// </param>
-    /// <param name="cancellationToken">A token to cancel the asynchronous iteration.</param>
-    /// <returns>
-    /// An asynchronous sequence of <see cref="JsonElement"/> values produced by applying the filter
-    /// to each element in <paramref name="input"/>.
-    /// </returns>
-    /// <exception cref="ArgumentException">
-    /// Thrown when a variable name is empty, starts with <c>$</c>, or is not a valid jq identifier.
-    /// </exception>
-    /// <exception cref="JqException">Thrown when the expression is empty, invalid, or causes an error during evaluation.</exception>
-    public static async IAsyncEnumerable<JsonElement> EvaluateAsync(
-        string expression,
-        IAsyncEnumerable<JsonElement> input,
-        IReadOnlyDictionary<string, JsonElement>? variables,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    /// <param name="expression">The jq expression.</param>
+    /// <param name="input">The input values.</param>
+    /// <param name="variables">Host variables for every evaluation.</param>
+    /// <param name="cancellationToken">Stops reading <paramref name="input"/>.</param>
+    /// <exception cref="JqException">A syntax or binding error, when the sequence is first enumerated, or an error that reached the top of the expression for one of the inputs.</exception>
+    public static async IAsyncEnumerable<JsonElement> EvaluateAsync(string expression, IAsyncEnumerable<JsonElement> input,
+        IReadOnlyDictionary<string, JsonElement>? variables = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var parsed = Parse(expression);
-        await foreach (var element in EvaluateAsync(parsed, input, variables, cancellationToken))
-            yield return element;
+        await foreach (var result in EvaluateAsync(Parse(expression), input, variables, cancellationToken))
+            yield return result;
     }
 
     /// <summary>
-    /// Evaluates a parsed <see cref="JqExpression"/> against each element in an asynchronous sequence and yields the matching results.
+    /// Evaluates <paramref name="expression"/> on each value of <paramref name="input"/> in turn (a
+    /// JSON Lines stream, for example), yielding the results of each; the results of one input are
+    /// computed before they are yielded.
     /// </summary>
-    /// <param name="expression">The pre-parsed <see cref="JqExpression"/> to evaluate.</param>
-    /// <param name="input">The asynchronous sequence of <see cref="JsonElement"/> values to evaluate the expression against.</param>
-    /// <param name="cancellationToken">A token to cancel the asynchronous iteration.</param>
-    /// <returns>
-    /// An asynchronous sequence of <see cref="JsonElement"/> values produced by applying the expression
-    /// to each element in <paramref name="input"/>.
-    /// </returns>
-    /// <remarks>
-    /// Prefer this overload when evaluating the same expression against multiple streams, as it avoids
-    /// re-parsing the filter on every call.
-    /// </remarks>
-    public static IAsyncEnumerable<JsonElement> EvaluateAsync(JqExpression expression, IAsyncEnumerable<JsonElement> input, CancellationToken cancellationToken = default)
-        => EvaluateAsync(expression, input, variables: null, cancellationToken);
-
-    /// <summary>
-    /// Evaluates a parsed <see cref="JqExpression"/> against each element in an asynchronous sequence and yields the matching results,
-    /// with optional external variable bindings.
-    /// </summary>
-    /// <param name="expression">The pre-parsed <see cref="JqExpression"/> to evaluate.</param>
-    /// <param name="input">The asynchronous sequence of <see cref="JsonElement"/> values to evaluate the expression against.</param>
-    /// <param name="variables">
-    /// Optional external variables to bind before evaluation, analogous to jq's
-    /// <c>--arg</c>/<c>--argjson</c>. Dictionary keys are variable names without a
-    /// leading <c>$</c> and must be valid jq identifiers.
-    /// </param>
-    /// <param name="cancellationToken">A token to cancel the asynchronous iteration.</param>
-    /// <returns>
-    /// An asynchronous sequence of <see cref="JsonElement"/> values produced by applying the expression
-    /// to each element in <paramref name="input"/>.
-    /// </returns>
-    /// <remarks>
-    /// Prefer this overload when evaluating the same expression against multiple streams, as it avoids
-    /// re-parsing the filter on every call.
-    /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// Thrown when a variable name is empty, starts with <c>$</c>, or is not a valid jq identifier.
-    /// </exception>
-    public static async IAsyncEnumerable<JsonElement> EvaluateAsync(
-        JqExpression expression,
-        IAsyncEnumerable<JsonElement> input,
-        IReadOnlyDictionary<string, JsonElement>? variables,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    /// <param name="expression">The parsed expression.</param>
+    /// <param name="input">The input values.</param>
+    /// <param name="variables">Host variables for every evaluation.</param>
+    /// <param name="cancellationToken">Stops reading <paramref name="input"/>.</param>
+    /// <exception cref="JqException">An error that reached the top of the expression for one of the inputs.</exception>
+    public static async IAsyncEnumerable<JsonElement> EvaluateAsync(JqExpression expression, IAsyncEnumerable<JsonElement> input,
+        IReadOnlyDictionary<string, JsonElement>? variables = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(expression);
         await foreach (var element in input.WithCancellation(cancellationToken))
         {
             foreach (var result in expression.Evaluate(element, variables))

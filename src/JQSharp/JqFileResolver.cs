@@ -1,48 +1,29 @@
+using System.Text.Json;
+
 namespace Devlooped;
 
 /// <summary>
-/// A <see cref="JqResolver"/> that resolves module paths against the file system.
-/// Relative paths are resolved from the directory of the including module (or
-/// <see cref="BaseDirectory"/> for top-level includes). The <c>.jq</c> extension
-/// is appended automatically when the path has no extension.
+/// A <see cref="JqResolver"/> over the file system: a path is relative to the directory of the
+/// importing module, or to <see cref="BaseDirectory"/> for the expression itself, and gets the
+/// extension <c>.jq</c> (code) or <c>.json</c> (data) when it has none. The canonical path is the
+/// full file path. Safe to use from several threads.
 /// </summary>
-/// <remarks>
-/// Initializes a new instance of <see cref="JqFileResolver"/> rooted at
-/// <paramref name="baseDirectory"/>.
-/// </remarks>
+/// <param name="baseDirectory">The directory of the expression's own directives.</param>
 public class JqFileResolver(string baseDirectory) : JqResolver
 {
-    /// <summary>
-    /// Gets the base directory used to resolve top-level (non-relative) includes.
-    /// </summary>
+    /// <summary>The directory that the expression's own directives are relative to.</summary>
     public string BaseDirectory { get; } = Path.GetFullPath(baseDirectory);
 
     /// <inheritdoc/>
-    public override TextReader Resolve(string path, string? fromPath)
+    public override string? GetCanonicalPath(string path, JqModuleKind kind, JsonElement? metadata, string? fromPath)
     {
-        var fullPath = GetCanonicalPath(path, fromPath);
-        if (!File.Exists(fullPath))
-            throw new JqException($"Module not found: '{path}' (resolved to '{fullPath}')");
-
-        return new StreamReader(fullPath);
+        var directory = fromPath is null ? BaseDirectory : Path.GetDirectoryName(fromPath) ?? BaseDirectory;
+        var file = Path.GetFullPath(Path.Combine(directory, path));
+        if (!Path.HasExtension(file))
+            file += kind == JqModuleKind.Data ? ".json" : ".jq";
+        return File.Exists(file) ? file : null;
     }
 
-    /// <summary>
-    /// Returns the absolute file path for <paramref name="path"/>, appending <c>.jq</c>
-    /// when the path has no extension. Resolution is relative to <paramref name="fromPath"/>'s
-    /// directory (if provided) or <see cref="BaseDirectory"/>.
-    /// </summary>
-    public override string GetCanonicalPath(string path, string? fromPath)
-    {
-        var searchDir = fromPath is not null
-            ? Path.GetDirectoryName(fromPath) ?? BaseDirectory
-            : BaseDirectory;
-
-        var candidate = Path.GetFullPath(Path.Combine(searchDir, path));
-
-        if (!Path.HasExtension(candidate))
-            candidate += ".jq";
-
-        return candidate;
-    }
+    /// <inheritdoc/>
+    public override TextReader Open(string canonicalPath) => new StreamReader(canonicalPath);
 }

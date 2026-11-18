@@ -72,7 +72,7 @@ public class JqVariableTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() => Jq.Evaluate("$root", input.RootElement, variables).ToArray());
-        Assert.Contains("must not start with '$'", exception.Message);
+        Assert.Equal("variables", exception.ParamName);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class JqVariableTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() => Jq.Evaluate(".", input.RootElement, variables).ToArray());
-        Assert.Contains("is not a valid jq identifier", exception.Message);
+        Assert.Equal("variables", exception.ParamName);
     }
 
     [Fact]

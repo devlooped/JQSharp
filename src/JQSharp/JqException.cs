@@ -2,40 +2,52 @@ using System.Text.Json;
 
 namespace Devlooped;
 
-/// <summary>
-/// Represents errors that occur during jq filter parsing or evaluation.
-/// </summary>
-public sealed class JqException : Exception
+/// <summary>An error of a jq expression: an uncaught runtime error, or (as <see cref="JqParseException"/>) a syntax or binding error.</summary>
+public class JqException : Exception
 {
-    /// <summary>
-    /// Gets the JSON value passed to the jq <c>error</c> builtin, if any.
-    /// </summary>
-    /// <value>
-    /// The <see cref="JsonElement"/> that caused the error when using the jq <c>error</c> builtin,
-    /// or <see langword="null"/> when the exception was raised from a plain error message.
-    /// </value>
-    public JsonElement? Value { get; }
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="JqException"/> with the specified error message.
-    /// </summary>
-    /// <param name="message">The message that describes the error.</param>
+    /// <summary>Creates an exception with a message and no error value.</summary>
     public JqException(string message)
         : base(message)
     {
     }
 
+    /// <summary>Creates an exception for a jq error value: <paramref name="message"/> describes it.</summary>
+    public JqException(string message, JsonElement value)
+        : base(message)
+        => Value = value;
+
     /// <summary>
-    /// Initializes a new instance of <see cref="JqException"/> from a JSON value produced
-    /// by the jq <c>error</c> builtin.
+    /// The error value of an uncaught runtime error (what <c>error(v)</c> raised, or the message
+    /// string of a builtin's error), or <see langword="null"/>. The <see cref="Exception.Message"/> is
+    /// the value itself when it is a string, else its JSON text followed by <c>(not a string)</c>.
     /// </summary>
-    /// <param name="value">
-    /// The <see cref="JsonElement"/> passed to <c>error</c>. String values are used directly
-    /// as the exception message; all other values use their raw JSON text.
-    /// </param>
-    public JqException(JsonElement value)
-        : base(value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText())
-    {
-        Value = value;
-    }
+    public JsonElement? Value { get; }
+}
+
+/// <summary>A syntax or binding error, thrown by <see cref="Jq.Parse"/> before any evaluation.</summary>
+public sealed class JqParseException : JqException
+{
+    internal JqParseException(string message, int line, int column)
+        : base(message)
+        => (Line, Column) = (line, column);
+
+    /// <summary>The 1-based line of the error, in the expression or in the module the message names.</summary>
+    public int Line { get; }
+
+    /// <summary>The 1-based column of the error, counting code points.</summary>
+    public int Column { get; }
+}
+
+/// <summary>
+/// <c>halt_error</c> ended the evaluation: <see cref="JqException.Value"/> is the value it was given
+/// and <see cref="ExitCode"/> its code. (<c>halt</c> ends an evaluation normally, without an exception.)
+/// </summary>
+public sealed class JqHaltException : JqException
+{
+    internal JqHaltException(string message, JsonElement value, int exitCode)
+        : base(message, value)
+        => ExitCode = exitCode;
+
+    /// <summary>The exit code given to <c>halt_error</c>.</summary>
+    public int ExitCode { get; }
 }
