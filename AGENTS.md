@@ -71,10 +71,10 @@ Values, the bound program and the prelude are immutable and shared between threa
 
 - `dnx --yes retest` runs everything; `dotnet format whitespace` and `dotnet format style` must
   pass (see `.github/copilot-instructions.md`).
-- `src/Tests/ConformanceTests.cs` runs every case of `spec/tests/*.test` through the core twice,
-  with and without the native overrides of prelude builtins, with a clock fixed at UTC+02:00 for
-  `localtime.test` and a module source over `spec/tests/modules/` for `modules.test`. While
-  `spec/tests/pending.txt` exists, it lists the cases the old public engine fails.
+- `src/Tests/ConformanceTests.cs` runs every case of `spec/tests/*.test` twice: through the public
+  API (`Jq.Parse` with `JqOptions`), and through the core without the native overrides of prelude
+  builtins. Both use an empty environment, a zone fixed at UTC+02:00 (for `localtime.test`) and the
+  modules of `spec/tests/modules/` (for `modules.test`).
 - `src/Tests/Core/<Layer>/` holds the unit tests of each layer: what the corpus cannot show
   (positions, limits on small host stacks, binding printed as hops and slots, value sharing).
   `BuiltinCatalogueTests` reads the N/P lists of §9 from the spec and checks the catalogue and the
@@ -98,16 +98,23 @@ Values, the bound program and the prelude are immutable and shared between threa
 
 Only `src/JQSharp` outside `Core` knows .NET's JSON types:
 
-- `Json/JsonElementAdapter.cs` converts `JsonElement` to `JqValue` and back; it is the only file
-  that uses `System.Text.Json` with the engine.
+- `Json/JsonElementAdapter.cs` converts `JsonElement` to `JqValue` and back; no other file converts
+  values between them. `Host/ResolverSource.cs` adapts a `JqResolver` to the core's `IModuleSource`
+  (a resolver's `JqException` or I/O exception becomes the binding error), and
+  `Host/TimeProviderClock.cs` adapts a `TimeProvider` to `IClock` (no zone abbreviations: `%Z`
+  prints the offset).
 - `Jq.Parse(expression, JqOptions? options)` returns a `JqExpression` (sealed, parse once, evaluate
   many times, thread-safe). `Jq.Evaluate` / `JqExpression.Evaluate` return all outputs (buffered);
   the overload with `Func<JsonElement, bool> onResult` streams them and stops when it returns
-  false. The JSONL `EvaluateAsync` helpers stay, one overload each.
-- `JqOptions`: `Resolver` (`JqResolver`, for `import`/`include`), `Environment` (`$ENV`; null is
+  false. The JSONL `Jq.EvaluateAsync` helpers take the expression as a string or a `JqExpression`.
+- `JqOptions`: `Resolver` (for `import`/`include`/`modulemeta`), `Environment` (`$ENV`; null is
   the process environment), `TimeProvider` (`now` and the local zone), `MaxDepth` (default 1000).
-- Exceptions exist only here: `JqException` (an uncaught jqlite error, with its `Value`) and
-  `JqParseException` (`Line`, `Column`).
+- `JqResolver`: `GetCanonicalPath(path, JqModuleKind, metadata, fromPath)` returns the module's
+  identity or null, `Open(canonicalPath)` reads it. `JqFileResolver` (files, relative to the
+  importing module) and `JqResourceResolver` (embedded resources) are the two built in.
+- Exceptions exist only here: `JqException` (an uncaught jqlite error, with its `Value`),
+  `JqParseException` (`Line`, `Column`) and `JqHaltException` (`halt_error`, with `ExitCode`;
+  `halt` ends normally).
 
 ## External variable bindings
 
