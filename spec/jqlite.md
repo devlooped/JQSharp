@@ -1,6 +1,6 @@
 # jqlite 1.0
 
-jqlite is the profile of the [jq](https://jqlang.org) language that JQSharp implements and that its ports (JavaScript/TypeScript, Python, Java, Go, Rust) reproduce. This file is normative: a port is written from it, from `spec/prelude.jq` (the builtins written in jqlite, assembled from §9) and from the conformance corpus `spec/tests/` (§14), without reading the C# code or the jq manual.
+jqlite is the profile of the [jq](https://jqlang.org) language that JQLite implements and that its ports (JavaScript/TypeScript, Python, Java, Go, Rust) reproduce. This file is normative: a port is written from it, from `spec/prelude.jq` (the builtins written in jqlite, assembled from §9) and from the conformance corpus `spec/tests/` (§14), without reading the C# code or the jq manual.
 
 Inside the profile jqlite behaves as **jq 1.8**, except for the differences listed in §13. "jq" below always means jq 1.8; every example of this file was checked against jq 1.8.2 and matches it unless it illustrates a difference of §13.
 

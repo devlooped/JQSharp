@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Devlooped;
+using JQLite;
 
-namespace Devlooped.Tests;
+namespace JQLite.Tests;
 
 /// <summary>
 /// Runaway recursion through the public API (spec §11): the error is <c>Maximum call depth exceeded</c>

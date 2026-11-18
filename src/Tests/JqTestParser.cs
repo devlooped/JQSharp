@@ -1,4 +1,4 @@
-namespace Devlooped.Tests;
+namespace JQLite.Tests;
 
 public record JqTestCase(
     string Program,

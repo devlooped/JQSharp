@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\JQSharp\JQSharp.csproj" />
+    <ProjectReference Include="..\JQLite\JQLite.csproj" />
   </ItemGroup>
 
   <ItemGroup>

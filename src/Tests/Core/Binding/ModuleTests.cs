@@ -1,9 +1,9 @@
-using Devlooped.Core.Binding;
-using Devlooped.Core.Syntax;
-using Devlooped.Core.Values;
-using Devlooped.Tests.Core.Runtime;
+using JQLite.Core.Binding;
+using JQLite.Core.Syntax;
+using JQLite.Core.Values;
+using JQLite.Tests.Core.Runtime;
 
-namespace Devlooped.Tests.Core.Binding;
+namespace JQLite.Tests.Core.Binding;
 
 /// <summary>The modules group (spec §9.11) beyond the corpus: errors and where they are, loading once, limits, modulemeta.</summary>
 public class ModuleTests
@@ -85,7 +85,7 @@ public class ModuleTests
     {
         var modules = new MemoryModules(new Dictionary<string, string> { ["v.jq"] = "def v: $x;" });
         Assert.True(Resolver.TryCompile("import \"v\" as v; v::v, $x", out var bound, out _, modules: modules));
-        var options = new Devlooped.Core.Runtime.EvaluationOptions { Variables = new Dictionary<string, JqValue> { ["x"] = JqValue.FromNumber(7) } };
+        var options = new JQLite.Core.Runtime.EvaluationOptions { Variables = new Dictionary<string, JqValue> { ["x"] = JqValue.FromNumber(7) } };
         Assert.Equal(["7", "7"], Evaluate.Run(bound, JqValue.Null, options));
     }
 

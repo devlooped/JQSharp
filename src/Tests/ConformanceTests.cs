@@ -1,14 +1,14 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Devlooped;
-using Devlooped.Core.Binding;
-using Devlooped.Core.Values;
-using EvaluationOptions = Devlooped.Core.Runtime.EvaluationOptions;
-using IClock = Devlooped.Core.Runtime.IClock;
-using Interpreter = Devlooped.Core.Runtime.Interpreter;
-using OutcomeKind = Devlooped.Core.Runtime.OutcomeKind;
+using JQLite;
+using JQLite.Core.Binding;
+using JQLite.Core.Values;
+using EvaluationOptions = JQLite.Core.Runtime.EvaluationOptions;
+using IClock = JQLite.Core.Runtime.IClock;
+using Interpreter = JQLite.Core.Runtime.Interpreter;
+using OutcomeKind = JQLite.Core.Runtime.OutcomeKind;
 
-namespace Devlooped.Tests;
+namespace JQLite.Tests;
 
 /// <summary>
 /// Runs every case of the jqlite conformance corpus (spec/tests/*.test), by the rules of

@@ -2,7 +2,7 @@
 
 ## Goal
 
-JQSharp is the reference implementation of **jqlite**, the profile of the [jq](https://jqlang.org)
+JQLite is the .NET reference implementation of **jqlite**, the profile of the [jq](https://jqlang.org)
 language that is to be ported 1:1 to JavaScript/TypeScript, Python, Java, Go and Rust. Two rules
 follow from that goal:
 
@@ -33,7 +33,7 @@ cases use `-L spec/tests/modules`.
 
 ## Layers
 
-`src/JQSharp/Core` is the engine; each folder is one layer and uses only the layers before it, except
+`src/JQLite/Core` is the engine; each folder is one layer and uses only the layers before it, except
 the two links of `Builtins` named in 5:
 
 1. `Values`: `JqValue`, arrays, objects, `ValueOps` (equality, ordering, arithmetic),
@@ -50,7 +50,7 @@ The public .NET API and the `JsonElement` adapter sit outside `Core` (see Host b
 
 ## Portability rules
 
-Code under `src/JQSharp/Core` must not use:
+Code under `src/JQLite/Core` must not use:
 
 - `System.Text.Json`, or any other host JSON library;
 - `yield return`, LINQ lazy operators or other iterators to produce outputs (outputs are pushed);
@@ -82,7 +82,7 @@ Values, the bound program and the prelude are immutable and shared between threa
 - `src/Tests/PortabilityTests.cs` enforces the portability rules above, with a per-file allow-list
   for each exception; `JqConcurrencyTests` and `JqDepthTests` cover thread safety and `MaxDepth`
   through the public API.
-- `src/Benchmarks` (BenchmarkDotNet) compares JQSharp with `Devlooped.JQ` (the jq executable) on
+- `src/Benchmarks` (BenchmarkDotNet) compares JQLite with `Devlooped.JQ` (the jq executable) on
   the WhatsApp `Message.jq` filter, with and without a cached `JqExpression`, and measures four
   programs whose cost must stay linear or lazy (`ScalingBenchmarks`). Run one with
   `dotnet run -c Release --project src/Benchmarks -- --filter *Scaling*`.
@@ -101,7 +101,7 @@ Values, the bound program and the prelude are immutable and shared between threa
 
 ## Host boundary
 
-Only `src/JQSharp` outside `Core` knows .NET's JSON types:
+Only `src/JQLite` outside `Core` knows .NET's JSON types:
 
 - `Json/JsonElementAdapter.cs` converts `JsonElement` to `JqValue` and back; no other file converts
   values between them. `Host/ResolverSource.cs` adapts a `JqResolver` to the core's `IModuleSource`

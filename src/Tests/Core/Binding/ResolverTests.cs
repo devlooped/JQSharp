@@ -1,7 +1,7 @@
-using Devlooped.Core.Binding;
-using static Devlooped.Tests.Core.Binding.BoundPrinter;
+using JQLite.Core.Binding;
+using static JQLite.Tests.Core.Binding.BoundPrinter;
 
-namespace Devlooped.Tests.Core.Binding;
+namespace JQLite.Tests.Core.Binding;
 
 /// <summary>Lexical binding (spec §7.5, §7.7, §7.15) stated on the printed bound program, and the binding errors of §10.2.</summary>
 public class ResolverTests

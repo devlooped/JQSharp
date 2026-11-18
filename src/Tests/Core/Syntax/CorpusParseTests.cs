@@ -1,6 +1,6 @@
-using Devlooped.Core.Syntax;
+using JQLite.Core.Syntax;
 
-namespace Devlooped.Tests.Core.Syntax;
+namespace JQLite.Tests.Core.Syntax;
 
 /// <summary>
 /// The conformance corpus and the prelude as parser tests: every program of spec/tests/*.test

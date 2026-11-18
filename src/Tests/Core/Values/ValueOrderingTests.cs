@@ -1,7 +1,7 @@
-using Devlooped.Core.Values;
-using static Devlooped.Tests.Core.Values.ValueHelpers;
+using JQLite.Core.Values;
+using static JQLite.Tests.Core.Values.ValueHelpers;
 
-namespace Devlooped.Tests.Core.Values;
+namespace JQLite.Tests.Core.Values;
 
 public class ValueOrderingTests
 {

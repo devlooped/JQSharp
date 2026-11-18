@@ -1,9 +1,9 @@
 using System.Text;
-using Devlooped.Core.Binding;
-using Devlooped.Core.Values;
-using static Devlooped.Tests.Core.Runtime.Evaluate;
+using JQLite.Core.Binding;
+using JQLite.Core.Values;
+using static JQLite.Tests.Core.Runtime.Evaluate;
 
-namespace Devlooped.Tests.Core.Runtime;
+namespace JQLite.Tests.Core.Runtime;
 
 /// <summary>
 /// The native <c>_modify</c> and <c>_assign</c> against their prelude definitions (§8.3): each

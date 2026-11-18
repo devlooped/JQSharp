@@ -1,6 +1,6 @@
-using Devlooped.Core.Builtins;
+using JQLite.Core.Builtins;
 
-namespace Devlooped.Tests.Core.Runtime;
+namespace JQLite.Tests.Core.Runtime;
 
 public class NativeTableTests
 {

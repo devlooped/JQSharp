@@ -1,12 +1,12 @@
 using System.Text;
-using Devlooped.Core.Syntax;
-using Devlooped.Core.Values;
+using JQLite.Core.Syntax;
+using JQLite.Core.Values;
 using Xunit.Sdk;
 
-namespace Devlooped.Tests.Core.Syntax;
+namespace JQLite.Tests.Core.Syntax;
 
 // The AST node, not System.Index.
-using Index = Devlooped.Core.Syntax.Index;
+using Index = JQLite.Core.Syntax.Index;
 
 /// <summary>
 /// Prints an AST as an S-expression so tests can state structure: <c>.</c>, literals as JSON,
@@ -64,7 +64,7 @@ static class AstPrinter
         Iterate iterate => $"(iter {Print(iterate.Target)})",
         Variable variable => "$" + variable.Name,
         Call call => call.Arguments.Length == 0 ? call.Name : $"({call.Name} {string.Join(" ", call.Arguments.Select(Print))})",
-        Devlooped.Core.Syntax.Pipe pipe => $"(| {Print(pipe.Left)} {Print(pipe.Right)})",
+        JQLite.Core.Syntax.Pipe pipe => $"(| {Print(pipe.Left)} {Print(pipe.Right)})",
         Comma comma => $"(, {Print(comma.Left)} {Print(comma.Right)})",
         Binary binary => $"({Symbol(binary.Op)} {Print(binary.Left)} {Print(binary.Right)})",
         And and => $"(and {Print(and.Left)} {Print(and.Right)})",

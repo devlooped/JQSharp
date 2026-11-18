@@ -1,7 +1,7 @@
-using Devlooped.Core.Binding;
-using Devlooped.Core.Syntax;
+using JQLite.Core.Binding;
+using JQLite.Core.Syntax;
 
-namespace Devlooped.Tests.Core.Binding;
+namespace JQLite.Tests.Core.Binding;
 
 /// <summary>
 /// The conformance corpus as binding tests: every program of spec/tests/*.test binds, and every

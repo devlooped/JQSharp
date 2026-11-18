@@ -1,7 +1,7 @@
-using Devlooped.Core.Syntax;
-using static Devlooped.Tests.Core.Syntax.AstPrinter;
+using JQLite.Core.Syntax;
+using static JQLite.Tests.Core.Syntax.AstPrinter;
 
-namespace Devlooped.Tests.Core.Syntax;
+namespace JQLite.Tests.Core.Syntax;
 
 public class ParserTests
 {
@@ -408,12 +408,12 @@ public class ParserTests
     public void Nodes_carry_the_position_of_their_token()
     {
         Assert.True(Parser.TryParse("1 +\n  .a[0] |\n\tf(2)", out var program, out _));
-        var pipe = Assert.IsType<Devlooped.Core.Syntax.Pipe>(program.Body);
+        var pipe = Assert.IsType<JQLite.Core.Syntax.Pipe>(program.Body);
         Assert.Equal(new Position(2, 9), pipe.Position);
         var add = Assert.IsType<Binary>(pipe.Left);
         Assert.Equal(new Position(1, 3), add.Position);
         Assert.Equal(new Position(1, 1), add.Left.Position);
-        var index = Assert.IsType<Devlooped.Core.Syntax.Index>(add.Right);
+        var index = Assert.IsType<JQLite.Core.Syntax.Index>(add.Right);
         Assert.Equal(new Position(2, 5), index.Position);
         Assert.Equal(new Position(2, 3), index.Target.Position);
         var call = Assert.IsType<Call>(pipe.Right);

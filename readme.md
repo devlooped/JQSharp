@@ -1,9 +1,9 @@
-# ./jq# 
+# ./jqlite
 
-[![Version](https://img.shields.io/nuget/vpre/Devlooped.JQSharp.svg?color=royalblue)](https://www.nuget.org/packages/Devlooped.JQSharp)
-[![Downloads](https://img.shields.io/nuget/dt/Devlooped.JQSharp.svg?color=darkmagenta)](https://www.nuget.org/packages/Devlooped.JQSharp)
-[![EULA](https://img.shields.io/badge/EULA-OSMF-blue?labelColor=black&color=C9FF30)](https://github.com/devlooped/JQSharp/blob/main/osmfeula.txt)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/devlooped/JQSharp/blob/main/license.txt)
+[![Version](https://img.shields.io/nuget/vpre/JQLite.svg?color=royalblue)](https://www.nuget.org/packages/JQLite)
+[![Downloads](https://img.shields.io/nuget/dt/JQLite.svg?color=darkmagenta)](https://www.nuget.org/packages/JQLite)
+[![EULA](https://img.shields.io/badge/EULA-OSMF-blue?labelColor=black&color=C9FF30)](https://github.com/devlooped/jqlite/blob/main/osmfeula.txt)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/devlooped/jqlite/blob/main/license.txt)
 
 
 <!-- #description -->
@@ -12,7 +12,7 @@ A .NET implementation of the [jq](https://jqlang.org) filter language for queryi
 
 ## Open Source Maintenance Fee
 
-To ensure the long-term sustainability of this project, use of JQSharp requires an 
+To ensure the long-term sustainability of this project, use of JQLite requires an 
 [Open Source Maintenance Fee](https://opensourcemaintenancefee.org). While the source 
 code is freely available under the terms of the [OSMF EULA](./osmfeula.txt), all other 
 aspects of the project—including opening or commenting on issues, participating in 
@@ -25,13 +25,13 @@ To pay the Maintenance Fee, [become a Sponsor](https://github.com/sponsors/devlo
 <!-- #content -->
 ## Usage
 
-JQSharp exposes a minimal API surface via the `Jq` static class in the `Devlooped` namespace.
+JQLite exposes a minimal API surface via the `Jq` static class in the `JQLite` namespace.
 
 ### One-shot evaluation
 
 ```csharp
 using System.Text.Json;
-using Devlooped;
+using JQLite;
 
 using var doc = JsonDocument.Parse(
     """
@@ -87,8 +87,8 @@ AMD Ryzen AI 9 HX 370 w/ Radeon 890M 2.00GHz, 1 CPU, 24 logical and 12 physical 
 | Method                  | Mean         | Error      | StdDev       | Ratio | RatioSD | Gen0    | Gen1   | Allocated | Alloc Ratio |
 |-------------------------|-------------:|-----------:|-------------:|------:|--------:|--------:|-------:|----------:|------------:|
 | jq executable           | 27,689.45 us | 548.792 us | 1,017.221 us | 1.001 |    0.05 |       - |      - | 122.15 KB |        1.00 |
-| JQSharp no caching      |    148.33 us |   2.953 us |     7.674 us | 0.005 |    0.00 | 30.1514 | 5.4932 | 246.83 KB |        2.02 |
-| JQSharp w/query caching |     12.46 us |   0.249 us |     0.601 us | 0.000 |    0.00 |  1.9684 | 0.0458 |  16.15 KB |        0.13 |
+| JQLite no caching       |    148.33 us |   2.953 us |     7.674 us | 0.005 |    0.00 | 30.1514 | 5.4932 | 246.83 KB |        2.02 |
+| JQLite w/query caching  |     12.46 us |   0.249 us |     0.601 us | 0.000 |    0.00 |  1.9684 | 0.0458 |  16.15 KB |        0.13 |
 
 Programs whose cost must grow in step with their size, each on the input `null` with a cached expression. "1.x" is the previous engine, measured as one warm run each (not with BenchmarkDotNet), so compare orders of magnitude, not digits:
 
@@ -358,7 +358,7 @@ for `topLevelValues`) to turn a stream of newline-delimited JSON objects into an
 
 ```csharp
 using System.Text.Json;
-using Devlooped;
+using JQLite;
 
 // users.jsonl — one JSON object per line:
 // {"id":1,"name":"Alice","dept":"Engineering"}
@@ -486,21 +486,21 @@ class DictionaryResolver(IReadOnlyDictionary<string, string> modules) : JqResolv
 
 ## The jqlite profile
 
-JQSharp is the reference implementation of **jqlite**, the profile of [jq 1.8](https://jqlang.org/manual/v1.8/) 
-specified in [`spec/jqlite.md`](https://github.com/devlooped/JQSharp/blob/main/spec/jqlite.md). The 
-builtins written in jq ([`spec/prelude.jq`](https://github.com/devlooped/JQSharp/blob/main/spec/prelude.jq)) 
-and the conformance tests ([`spec/tests`](https://github.com/devlooped/JQSharp/tree/main/spec/tests)) 
+JQLite is the .NET reference implementation of **jqlite**, the profile of [jq 1.8](https://jqlang.org/manual/v1.8/) 
+specified in [`spec/jqlite.md`](https://github.com/devlooped/jqlite/blob/main/spec/jqlite.md). The 
+builtins written in jq ([`spec/prelude.jq`](https://github.com/devlooped/jqlite/blob/main/spec/prelude.jq)) 
+and the conformance tests ([`spec/tests`](https://github.com/devlooped/jqlite/tree/main/spec/tests)) 
 are shared by every implementation, and the engine is written to be ported to other languages 
-([`docs/porting.md`](https://github.com/devlooped/JQSharp/blob/main/docs/porting.md)).
+([`docs/porting.md`](https://github.com/devlooped/jqlite/blob/main/docs/porting.md)).
 
 The profile has the jq language: paths, pipes, generators, array and object construction, 
 string interpolation, variables and destructuring (including `?//`), `def`, `reduce`, `foreach`, 
 `label`/`break`, `try`/`catch` and `?`, path expressions and every assignment operator, and modules. 
-Its [builtins](https://github.com/devlooped/JQSharp/blob/main/spec/jqlite.md#9-builtins) cover types and 
+Its [builtins](https://github.com/devlooped/jqlite/blob/main/spec/jqlite.md#9-builtins) cover types and 
 selection, objects, arrays and collections, paths, strings, formats (`@base64`, `@uri`, `@csv`, 
 `@tsv`, `@html`, `@json`, `@text`, `@sh`), dates, math and regular expressions.
 
-jq programs behave as in jq 1.8, except for the [differences](https://github.com/devlooped/JQSharp/blob/main/spec/jqlite.md#13-differences-from-jq-18) 
+jq programs behave as in jq 1.8, except for the [differences](https://github.com/devlooped/jqlite/blob/main/spec/jqlite.md#13-differences-from-jq-18) 
 that make the profile portable. Those you are most likely to notice:
 
 - Numbers are doubles, written in one canonical form (`1.0` is `1`; `1e-7`, `1e+21`, `-0`); NaN is 
@@ -519,6 +519,7 @@ that make the profile portable. Those you are most likely to notice:
 
 ## Upgrading from 1.x
 
+- The package is now `JQLite` (it was `Devlooped.JQSharp`), and its namespace is `JQLite` (it was `Devlooped`).
 - `Jq.Evaluate` and `JqExpression.Evaluate` return an `IReadOnlyList<JsonElement>`; the new 
   callback overload streams results.
 - `Jq.Parse(expression, resolver)` is now `Jq.Parse(expression, new JqOptions { Resolver = resolver })`.
@@ -539,8 +540,8 @@ that make the profile portable. Those you are most likely to notice:
 
 ## Dogfooding
 
-[![CI Version](https://img.shields.io/endpoint?url=https://shields.kzu.app/vpre/Devlooped.JQSharp/main&label=nuget.ci&color=brightgreen)](https://pkg.kzu.app/index.json)
-[![Build](https://github.com/devlooped/JQSharp/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/devlooped/JQSharp/actions/workflows/build.yml)
+[![CI Version](https://img.shields.io/endpoint?url=https://shields.kzu.app/vpre/JQLite/main&label=nuget.ci&color=brightgreen)](https://pkg.kzu.app/index.json)
+[![Build](https://github.com/devlooped/jqlite/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/devlooped/jqlite/actions/workflows/build.yml)
 
 CI packages are produced from every branch and pull request so you can dogfood builds as 
 quickly as they are produced.

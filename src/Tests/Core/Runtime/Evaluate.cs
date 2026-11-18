@@ -1,9 +1,9 @@
-using Devlooped.Core.Binding;
-using Devlooped.Core.Runtime;
-using Devlooped.Core.Values;
+using JQLite.Core.Binding;
+using JQLite.Core.Runtime;
+using JQLite.Core.Values;
 using Xunit.Sdk;
 
-namespace Devlooped.Tests.Core.Runtime;
+namespace JQLite.Tests.Core.Runtime;
 
 /// <summary>Runs programs on the new core for the runtime tests: outputs as canonical text, and how the evaluation ended.</summary>
 static class Evaluate

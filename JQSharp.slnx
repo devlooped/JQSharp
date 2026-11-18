@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="src/Benchmarks/Benchmarks.csproj" />
-  <Project Path="src/JQSharp/JQSharp.csproj" />
-  <Project Path="src/Tests/Tests.csproj" />
-</Solution>

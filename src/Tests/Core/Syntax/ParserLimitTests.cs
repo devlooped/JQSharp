@@ -1,8 +1,8 @@
 using System.Text;
-using Devlooped.Core.Syntax;
+using JQLite.Core.Syntax;
 using Xunit.Sdk;
 
-namespace Devlooped.Tests.Core.Syntax;
+namespace JQLite.Tests.Core.Syntax;
 
 /// <summary>
 /// The nesting limit of spec §11, and programs that must not exhaust the host stack. Each parse runs

@@ -2,9 +2,9 @@ using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Text.Json;
-using Devlooped;
+using JQLite;
 
-namespace Devlooped.Tests;
+namespace JQLite.Tests;
 
 /// <summary>
 /// System.Reactive over the streaming <c>Evaluate</c>: which adapters to <see cref="IObservable{T}"/>

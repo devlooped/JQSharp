@@ -1,13 +1,13 @@
 using System.Text;
-using Devlooped.Core.Binding;
-using Devlooped.Core.Values;
+using JQLite.Core.Binding;
+using JQLite.Core.Values;
 using Xunit.Sdk;
 
-namespace Devlooped.Tests.Core.Binding;
+namespace JQLite.Tests.Core.Binding;
 
 // The bound node, not System.Index; the operators are the syntax's.
-using BinaryOp = Devlooped.Core.Syntax.BinaryOp;
-using Index = Devlooped.Core.Binding.Index;
+using BinaryOp = JQLite.Core.Syntax.BinaryOp;
+using Index = JQLite.Core.Binding.Index;
 
 /// <summary>
 /// Prints a bound program as an S-expression stating what every reference resolved to, in the
@@ -76,7 +76,7 @@ static class BoundPrinter
                 : $"({Name(program, call.Function)}^{call.Hops}{All(call.Arguments)})",
             CallParameter parameter => $"param^{parameter.Hops}.{parameter.Slot}",
             CallNative call => call.Arguments.Length == 0 ? $"native:{call.Native}" : $"(native:{call.Native}{All(call.Arguments)})",
-            Devlooped.Core.Binding.Pipe pipe => $"(| {P(pipe.Left)} {P(pipe.Right)})",
+            JQLite.Core.Binding.Pipe pipe => $"(| {P(pipe.Left)} {P(pipe.Right)})",
             Comma comma => $"(,{All(comma.Items)})",
             Binary binary => $"({Symbol(binary.Op)} {P(binary.Left)} {P(binary.Right)})",
             And and => $"(and {P(and.Left)} {P(and.Right)})",

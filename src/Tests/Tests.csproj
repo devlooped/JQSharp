@@ -22,12 +22,12 @@
 
   <ItemGroup>
     <!-- Modules for JqResourceResolver, named as JqModuleTests expects. -->
-    <EmbeddedResource Include="Modules\greet.jq" LogicalName="Devlooped.Tests.Modules.greet.jq" />
-    <EmbeddedResource Include="Modules\sub\helper.jq" LogicalName="Devlooped.Tests.Modules.sub.helper.jq" />
+    <EmbeddedResource Include="Modules\greet.jq" LogicalName="JQLite.Tests.Modules.greet.jq" />
+    <EmbeddedResource Include="Modules\sub\helper.jq" LogicalName="JQLite.Tests.Modules.sub.helper.jq" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\JQSharp\JQSharp.csproj" />
+    <ProjectReference Include="..\JQLite\JQLite.csproj" />
   </ItemGroup>
 
 </Project>

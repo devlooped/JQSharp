@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Devlooped;
+using JQLite;
 
-namespace Devlooped.Tests;
+namespace JQLite.Tests;
 
 /// <summary>The .NET boundary: options, exceptions, streaming, variables and value conversion.</summary>
 public class JqBoundaryTests

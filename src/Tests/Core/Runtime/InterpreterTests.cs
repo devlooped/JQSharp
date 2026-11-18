@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using Devlooped.Core.Runtime;
-using Devlooped.Core.Values;
-using static Devlooped.Tests.Core.Runtime.Evaluate;
+using JQLite.Core.Runtime;
+using JQLite.Core.Values;
+using static JQLite.Tests.Core.Runtime.Evaluate;
 
-namespace Devlooped.Tests.Core.Runtime;
+namespace JQLite.Tests.Core.Runtime;
 
 /// <summary>
 /// The interpreter (spec §6 to §8, §11, §12) beyond the corpus: signals through every construct,
