@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using Devlooped.Core.Builtins;
 using Devlooped.Core.Syntax;
+using Devlooped.Core.Values;
 using S = Devlooped.Core.Syntax;
 
 namespace Devlooped.Core.Binding;
@@ -29,7 +30,7 @@ namespace Devlooped.Core.Binding;
 /// per level of pattern nesting, which the parser limits.
 /// </para>
 /// </remarks>
-sealed class Resolver
+sealed partial class Resolver
 {
     enum EntryKind
     {
@@ -37,9 +38,11 @@ sealed class Resolver
         Parameter,
         Label,
         Function,
+        Constant,
     }
 
     // Variable, Parameter, Label: Depth is the frame holding it, Slot its slot there.
+    // Constant: a data module's value (Modules.cs), constants[Slot].
     // Function: Depth is the number of frames where it is defined, Slot its index in functions,
     // TopLevel whether it is a top-level definition of the program or module.
     readonly record struct Entry(EntryKind Kind, string Name, int Arity, int Depth, int Slot, bool TopLevel = false);
@@ -74,9 +77,11 @@ sealed class Resolver
     // Whether builtins with a native override bind to it (Native.OverridesPrelude).
     readonly bool nativeOverrides;
     readonly List<Entry> scope = [];
-    readonly List<Function?> functions = [];
+    // Shared by the main program and its modules (Modules.cs): one function table, one list of host variables.
+    readonly List<Function?> functions;
     readonly List<int> exports = [];
-    readonly List<string> hostVariables = [];
+    readonly List<string> hostVariables;
+    readonly List<JqValue> constants;
     readonly List<Task> tasks = [];
     readonly List<Node> results = [];
     // The binders made and not yet built into their node, with the names of their slots.
@@ -84,38 +89,45 @@ sealed class Resolver
     int depth;
     SyntaxError? error;
 
-    Resolver(Prelude? prelude, bool nativeOverrides)
+    Resolver(Prelude? prelude, bool nativeOverrides, ModuleLoader? loader, List<Function?>? functions = null, List<string>? hostVariables = null, List<JqValue>? constants = null)
     {
         this.prelude = prelude;
         this.nativeOverrides = nativeOverrides;
-        if (prelude is not null)
-            functions.AddRange(prelude.Functions);
+        this.loader = loader;
+        this.hostVariables = hostVariables ?? [];
+        this.constants = constants ?? [];
+        this.functions = functions ?? [];
+        if (functions is null && prelude is not null)
+            this.functions.AddRange(prelude.Functions);
     }
 
     /// <summary>
-    /// Binds a program against the prelude and the natives. Without <paramref name="nativeOverrides"/>
-    /// every prelude builtin binds to its definition, even where a native overrides it.
+    /// Binds a program against the prelude and the natives, loading its modules from
+    /// <paramref name="modules"/> (§9.11). Without <paramref name="nativeOverrides"/> every prelude
+    /// builtin binds to its definition, even where a native overrides it.
     /// </summary>
-    public static bool TryBind(S.Program program, [NotNullWhen(true)] out BoundProgram? bound, [NotNullWhen(false)] out SyntaxError? error, bool nativeOverrides = true)
+    public static bool TryBind(S.Program program, [NotNullWhen(true)] out BoundProgram? bound, [NotNullWhen(false)] out SyntaxError? error, bool nativeOverrides = true, IModuleSource? modules = null)
     {
         var prelude = nativeOverrides ? Prelude.Instance : Prelude.WithoutOverrides;
-        var resolver = new Resolver(prelude, nativeOverrides);
-        bound = resolver.BindProgram(program) is { } body ? new BoundProgram(resolver.Functions(), [.. resolver.hostVariables], body) : null;
+        var resolver = new Resolver(prelude, nativeOverrides, new ModuleLoader(modules));
+        bound = resolver.BindProgram(program) is { } body
+            ? new BoundProgram(resolver.Functions(), [.. resolver.hostVariables], body) { Modules = resolver.loader!.Table() }
+            : null;
         error = resolver.error;
         return bound is not null;
     }
 
     /// <summary>Parses and binds a program.</summary>
-    public static bool TryCompile(string source, [NotNullWhen(true)] out BoundProgram? bound, [NotNullWhen(false)] out SyntaxError? error, bool nativeOverrides = true)
+    public static bool TryCompile(string source, [NotNullWhen(true)] out BoundProgram? bound, [NotNullWhen(false)] out SyntaxError? error, bool nativeOverrides = true, IModuleSource? modules = null)
     {
         bound = null;
-        return Parser.TryParse(source, out var program, out error) && TryBind(program, out bound, out error, nativeOverrides);
+        return Parser.TryParse(source, out var program, out error) && TryBind(program, out bound, out error, nativeOverrides, modules);
     }
 
     /// <summary>Binds the prelude module against the natives only: all its functions, and its top-level definitions in order.</summary>
     internal static bool TryBindPrelude(S.Program module, bool nativeOverrides, out ImmutableArray<Function> functions, out ImmutableArray<Function> definitions, [NotNullWhen(false)] out SyntaxError? error)
     {
-        var resolver = new Resolver(null, nativeOverrides);
+        var resolver = new Resolver(null, nativeOverrides, null);
         functions = definitions = [];
         error = null;
         if (resolver.BindProgram(module) is null)
@@ -162,17 +174,6 @@ sealed class Resolver
         }
 
         return error is null ? results[0] : null;
-    }
-
-    // Where modules enter the scope (step 9): the exported functions of each import become Function
-    // entries (qualified by the alias for import, unqualified for include, at the point of the
-    // directive), and data imports become constants for $alias and $alias::alias.
-    bool BindImports(ImmutableArray<S.Import> imports)
-    {
-        if (imports.Length == 0)
-            return true;
-        Fail(BindingMessages.ModulesNotSupported, imports[0].Position);
-        return false;
     }
 
     void Run(Task task)
@@ -503,6 +504,8 @@ sealed class Resolver
             var entry = scope[i];
             if (entry.Kind == EntryKind.Variable && entry.Name == variable.Name)
                 return new Variable(depth - entry.Depth, entry.Slot);
+            if (entry.Kind == EntryKind.Constant && entry.Name == variable.Name)
+                return new Literal(constants[entry.Slot]);
         }
 
         if (variable.Name == "ENV")
@@ -754,7 +757,7 @@ sealed class Resolver
 
     Node? Fail(string message, Position position)
     {
-        error ??= new SyntaxError(message, position.Line, position.Column);
+        error ??= new SyntaxError(message, position.Line, position.Column, module?.Identity);
         return null;
     }
 }
@@ -768,5 +771,13 @@ static class BindingMessages
 
     public static string VariableNotDefined(string name) => $"${name} is not defined";
 
-    public const string ModulesNotSupported = "import/include are not supported yet";
+    // The modules group (Modules.cs); the texts are jq's.
+    public static string ModuleNotFound(string path) => $"module not found: {path}";
+
+    public static string CircularImport(string identity) => $"circular import of {identity}";
+
+    public static string InvalidData(string identity, string reason) => $"error loading data file {identity}: {reason}";
+
+    /// <summary>An error of a module, with where it is: <c>… at &lt;identity&gt;, line L, column C</c>.</summary>
+    public static string InModule(string message, string identity, int line, int column) => $"{message} at {identity}, line {line}, column {column}";
 }

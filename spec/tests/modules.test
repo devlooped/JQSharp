@@ -1,0 +1,281 @@
+# modules.test - import, include, module and modulemeta (spec §9.11), the optional group.
+# Runs with the module files of modules/ (see README.md for how a path maps to a file); a port
+# without the modules group skips this file. Format and comparison rule: see README.md.
+
+# include: the exported definitions, callable unqualified.
+include "double"; double
+5
+10
+
+include "math"; [double, triple]
+5
+[10,15]
+
+include "helpers" {"origin": "."}; negate
+5
+-5
+
+include "outer"; outer
+5
+30
+
+include "funcs"; addtwo_twice
+5
+9
+
+include "pf"; add(3)
+5
+8
+
+include "b"; f, f(0)
+null
+"b.f"
+"b.f1"
+
+# import: the exported definitions, callable as alias::name only.
+import "double" as m; m::double
+5
+10
+
+import "math" as m; [m::double, m::triple]
+5
+[10,15]
+
+%%FAIL
+import "double" as m; double
+double/0 is not defined
+
+import "helpers" as h {"origin": "."}; h::negate
+5
+-5
+
+import "funcs" as m; m::addtwo_twice
+5
+9
+
+import "pf" as m; m::add(3)
+5
+8
+
+import "math" as m; import "str" as s; m::double, ("x" | s::upper)
+5
+10
+"X"
+
+include "bare"; import "ns" as n; [bare_fn, n::ns_fn]
+5
+[6,50]
+
+import "outer" as o; o::outer
+5
+30
+
+import "a" as a; a::f, a::g, a::h
+null
+"a.f"
+"a.f!"
+1
+
+# The same module under two aliases is loaded once.
+import "one" as o; import "one" as p; o::k + p::k
+null
+2
+
+# A module exports its own top-level definitions only: not nested ones, not what it includes or imports.
+%%FAIL
+import "a" as a; a::inner
+a::inner/0 is not defined
+
+%%FAIL
+include "a"; inner
+inner/0 is not defined
+
+%%FAIL
+import "incb" as x; x::f
+x::f/0 is not defined
+
+import "incb" as x; x::k
+null
+"b.f"
+
+%%FAIL
+import "derived" as d; d::b::base_fn
+d::b::base_fn/0 is not defined
+
+# A module sees the builtins, its imports and its own definitions, nothing of the importer.
+%%FAIL
+import "usesmain" as u; def mainf: 1; u::usesmain
+mainf/0 is not defined
+
+include "a"; def f: "main"; g, f
+null
+"a.f!"
+"main"
+
+include "usesmap"; def map(f): "main map"; k, ([1] | map(.))
+null
+[2]
+"main map"
+
+import "redef" as r; r::k, ([2] | map(. * 3))
+null
+"mod map"
+[6]
+
+# include acts as definitions at that point: later definitions and includes shadow earlier ones.
+include "first"; include "second"; f
+null
+"second"
+
+include "first"; def f: "main"; f
+null
+"main"
+
+# Re-importing under the same alias: the later import wins.
+import "first" as x; import "second" as x; x::f
+null
+"second"
+
+# Qualified names are ordinary names in the scope: a later definition of alias::f shadows the import.
+import "a" as a; def a::f: "local"; a::f
+null
+"local"
+
+import "a" as a; [a::f, (def a::f: 2; a::f)]
+null
+["a.f",2]
+
+def a::f: "local"; a::f
+null
+"local"
+
+%%FAIL
+import "a" as a; a::zz
+a::zz/0 is not defined
+
+%%FAIL
+import "a" as a; a::f(1)
+a::f/1 is not defined
+
+# Data modules: a sequence of JSON values, bound as an array to $name and $name::name.
+import "config" as $cfg; $cfg::cfg
+null
+[{"key":"value"}]
+
+import "config" as $cfg; $cfg[0].key
+null
+"value"
+
+import "numbers" as $d; $d::d | length
+null
+1
+
+import "answer" as $n; $n
+null
+[42]
+
+import "values" as $d; [$d, $d::d]
+null
+[[{"k":1},[2,3],"x"],[{"k":1},[2,3],"x"]]
+
+import "empty" as $e; $e
+null
+[]
+
+%%FAIL
+import "values" as $d; $d::x
+$d::x is not defined
+
+import "uses_data" as m; m::get_data
+null
+[{"key":"value"}]
+
+# module {...}: metadata of a module file, no effect in a main program.
+import "meta" as m; m::double
+5
+10
+
+module {"x":1}; 5
+null
+5
+
+# modulemeta: the metadata, then deps (one per directive, includes and data too), then defs.
+"c" | modulemeta
+null
+{"whatever":null,"deps":[{"as":"foo","is_data":false,"relpath":"a"},{"search":"./","is_data":false,"relpath":"b"},{"as":"d","is_data":true,"relpath":"values"}],"defs":["c/0","aa/0"]}
+
+"meta" | modulemeta
+null
+{"version":"1.0","homepage":"https://example.com","deps":[],"defs":["double/0"]}
+
+import "math" as m; "math" | modulemeta | .defs
+null
+["double/0","triple/0"]
+
+"derived" | modulemeta | .deps
+null
+[{"as":"b","is_data":false,"relpath":"base"}]
+
+include "incmod"; ("incmod" | modulemeta | .type), (8 | half)
+null
+"include-test"
+4
+
+"uses_data" | modulemeta | .deps
+null
+[{"as":"d","is_data":true,"relpath":"config"}]
+
+"uses_include" | modulemeta | .deps
+null
+[{"search":".","is_data":false,"relpath":"base"}]
+
+"uses_import" | modulemeta | .deps
+null
+[{"search":".","as":"b","is_data":false,"relpath":"base"}]
+
+"mixed" | modulemeta | .deps
+null
+[{"is_data":false,"relpath":"base"},{"as":"m","is_data":false,"relpath":"math"}]
+
+import "mixed" as x; 5 | x::run
+null
+11
+
+"dup" | modulemeta
+null
+{"deps":[],"defs":["x/0","y/0","x/1"]}
+
+import "dup" as d; d::x, d::x(0)
+null
+2
+3
+
+try (1 | modulemeta) catch .
+null
+"modulemeta input module name must be a string"
+
+try ("nope" | modulemeta) catch .
+null
+"module not found: nope"
+
+# Binding errors: a missing module, a cycle, a module that does not parse, data that does not read.
+%%FAIL IGNORE MSG
+import "nope" as n; 1
+
+%%FAIL IGNORE MSG
+import "nope" as $n; 1
+
+%%FAIL IGNORE MSG
+include "config"; 1
+
+%%FAIL IGNORE MSG
+import "cycle1" as c; 1
+
+%%FAIL IGNORE MSG
+import "self" as s; 1
+
+%%FAIL IGNORE MSG
+import "broken" as b; 1
+
+%%FAIL IGNORE MSG
+import "bad" as $b; $b

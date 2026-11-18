@@ -236,4 +236,8 @@ sealed record Function(string Name, int Arity, Node Body)
 /// A bound program: immutable and shareable between threads. <see cref="Functions"/> starts with the
 /// prelude's functions (shared by every program), followed by the program's own.
 /// </summary>
-sealed record BoundProgram(ImmutableArray<Function> Functions, ImmutableArray<string> HostVariables, Node Body);
+sealed record BoundProgram(ImmutableArray<Function> Functions, ImmutableArray<string> HostVariables, Node Body)
+{
+    /// <summary>The modules loaded, for <c>modulemeta</c>; null when the host gave no module source (§9.11).</summary>
+    public ModuleTable? Modules { get; init; }
+}

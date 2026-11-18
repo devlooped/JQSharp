@@ -27,7 +27,8 @@ public class CorpusParseTests
         foreach (var test in JqTestParser.ParseFile(Path.Combine(SpecDirectory, file)))
         {
             var parses = Parser.TryParse(test.Program, out _, out var error);
-            if (test.ShouldFail && !BindingFailures.Contains(test.Program))
+            // The failures of modules.test are all binding errors: missing modules, cycles, names.
+            if (test.ShouldFail && !BindingFailures.Contains(test.Program) && file != "modules.test")
             {
                 if (parses)
                     failures.Add($"{file}:{test.LineNumber}: '{test.Program}' parses but is a %%FAIL case");

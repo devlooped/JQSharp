@@ -57,6 +57,14 @@ and compared *structurally* with it:
 Number formatting and string escaping are therefore not compared on outputs: cases that test the
 text of a value produce it as a string inside the program (`tojson`, `tostring`, `@json`, `@text`).
 
+## Module files
+
+`modules.test` runs with the module files of `modules/` (spec §9.11, §14.2): a path `p` in an
+`import` or `include` names the file `p.jq` (code) or `p.json` (data) in the directory of the file
+that holds the directive, the main program's directory being `modules/`. The identity of a module
+is that file. A path that names no file is a missing module. A port without the modules group
+skips this file.
+
 ## Host requirements
 
 Expected outputs do not depend on the machine (environment variables, current time, culture), except:
