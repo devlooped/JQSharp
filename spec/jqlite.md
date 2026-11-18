@@ -22,7 +22,7 @@ Source text is a sequence of code points. Tokens are matched longest-first.
 | Token | Definition |
 | --- | --- |
 | whitespace | `U+0020`, `U+0009`, `U+000A`, `U+000D` (only these) |
-| comment | `#` up to the end of the line. If the line ends with an odd number of `\` before the line break, the comment continues on the next line. Line breaks: `\n`, `\r\n`, `\r`. |
+| comment | `#` up to the end of the line. If the line ends with an odd number of `\` before the line break, the comment continues on the next line. Only U+000A ends a line (a lone U+000D does not: `1 # c` CR `+ 1` → `1`; with CRLF the CR is whitespace before the LF). |
 | `IDENT` | `[A-Za-z_][A-Za-z0-9_]*` optionally followed by `(::[A-Za-z_][A-Za-z0-9_]*)` (a module-qualified name, one `::` at most) |
 | `FIELD` | `.` immediately followed by `[A-Za-z_][A-Za-z0-9_]*` (no whitespace between) |
 | `VAR` | `$` immediately followed by `[A-Za-z_][A-Za-z0-9_]*`, optionally `::[A-Za-z_][A-Za-z0-9_]*` |
@@ -36,7 +36,7 @@ Rules:
 
 - Identifiers are ASCII only. Letters outside ASCII are a syntax error.
 - Keywords are reserved as function names and bare identifiers. They are allowed after `.` (`FIELD`: `.end`), as object keys (`{if: 1}`), as variable and label names (`$then`, `label $if`), and as keys of object patterns.
-- `null`, `true`, `false` are identifiers that always denote the literals; they cannot be redefined. `not` is an ordinary function (§9).
+- `null`, `true`, `false` as bare identifiers always denote the literals. `def true: 1;` is accepted but has no effect on them (`def true: 1; true` → `true`). `not` is an ordinary function (§9).
 - `.` followed by a digit starts a `NUMBER` (`.5`). `1.` is a number. `.e0` is a `FIELD`.
 - `?//` is valid only between the patterns of a binding (§3.2); anywhere else it is a syntax error (`.a?//1` fails; write `.a? // 1`).
 - A `NUMBER` is converted to the nearest double (round half to even); overflow gives ±Infinity, underflow gives 0.
@@ -52,7 +52,7 @@ Rules:
 
 Any other escape is the syntax error `Invalid escape`.
 
-**Positions.** Lines and columns are 1-based; columns count code points. Every syntax or binding error reports the position of the token where it was detected.
+**Positions.** Lines and columns are 1-based; lines are counted at U+000A only; columns count code points. Every syntax or binding error reports the position of the token where it was detected.
 
 ## 3. Syntax
 
@@ -92,6 +92,8 @@ Examples that follow from it:
 | `try 1 * 2 catch 3` | `(try 1) * 2`, then `catch`: syntax error | |
 | `try -.? catch .` on `"a"` | `try (-(.?)) catch .` | `"string (\"a\") cannot be negated"` |
 | `def f: 1; f \| f, 2` | `def f: 1; (f \| (f, 2))` | `1, 2` |
+| `{a: 1 \| 2, b: 3}` | `{a: (1 \| 2), b: 3}` | `{"a":2,"b":3}` |
+| `{a: 1 as $x \| $x}` | | syntax error (no `as` in an object value) |
 
 ### 3.2 Grammar (EBNF)
 
@@ -106,13 +108,15 @@ PathString  = STRING                                  (no interpolation: "Import
 Body        = FuncDef* Pipe?                          (only definitions: the program is `.`)
 ModuleBody  = ModuleDecl? Import* FuncDef*            (a module file)
 
-FuncDef     = 'def' IDENT Params? ':' Pipe ';'        (IDENT: not a keyword, no '::')
+FuncDef     = 'def' IDENT Params? ':' Pipe ';'        (IDENT: not a keyword; it may contain '::', as `def f::g: 1;`)
 Params      = '(' Param (';' Param)* ')'
-Param       = IDENT | VAR
+Param       = IDENT | VAR                             (an IDENT parameter may contain '::')
 
 Pipe        = Comma ('|' Pipe)?
 Comma       = Item (',' Item)*
-Item        = Alt ('as' Patterns '|' Pipe)?           (a binding consumes the rest of the pipe)
+Item        = FuncDef Pipe                            (a definition consumes the rest of the pipe)
+            | 'label' VAR '|' Pipe                    (idem)
+            | Alt ('as' Patterns '|' Pipe)?           (a binding consumes the rest of the pipe)
 Alt         = Assign ('//' Alt)?
 Assign      = Or (AssignOp Or)?
 AssignOp    = '=' | '|=' | '+=' | '-=' | '*=' | '/=' | '%=' | '//='
@@ -125,29 +129,26 @@ Mul         = Unary (('*' | '/' | '%') Unary)*
 Unary       = '-' Unary | Postfix
 Postfix     = Term Suffix*
 Suffix      = '?' | FIELD | '.' STRING | '.'? '[' Index? ']'
-Index       = Pipe | Pipe? ':' Pipe?                  (Pipe alone: index; with ':' a slice; nothing: iterate)
+Index       = Pipe | Pipe ':' Pipe? | ':' Pipe         (Pipe alone: index; with ':' a slice with at least one bound; nothing: iterate)
 
 Term        = '.' | '..' | NUMBER | String | FORMAT
             | FIELD | '.' STRING
             | VAR
             | '(' Pipe ')'
             | '[' Pipe? ']'
-            | '{' (Entry (',' Entry)*)? '}'
+            | '{' (Entry (',' Entry)* ','?)? '}'       (one trailing ',' allowed: `{a: 1,}`)
             | IDENT ('(' Pipe (';' Pipe)* ')')?       (function call; null/true/false: literals)
             | 'reduce' Alt 'as' Patterns '(' Pipe ';' Pipe ')'
             | 'foreach' Alt 'as' Patterns '(' Pipe ';' Pipe (';' Pipe)? ')'
             | 'if' Pipe 'then' Pipe ('elif' Pipe 'then' Pipe)* ('else' Pipe)? 'end'
             | 'try' Unary ('catch' Unary)?
             | 'break' VAR
-            | FuncDef Pipe                            (consumes the rest of the enclosing pipe)
-            | 'label' VAR '|' Pipe                    (idem)
 String      = FORMAT? STRING                          (STRING may contain interpolations)
 Keyword     = any keyword of §2
 
 Entry       = (IDENT | Keyword | VAR | String | '(' Pipe ')') ':' ObjVal
             | IDENT | Keyword | VAR | String          (shorthand, §7.11)
-ObjVal      = ObjItem ('|' ObjVal)?                   (a Pipe without a top-level ',')
-ObjItem     = Alt ('as' Patterns '|' ObjVal)?
+ObjVal      = Alt ('|' Alt)*                          (no ',', no `as`, no `def` or `label` at the top level)
 
 Patterns    = Pattern ('?//' Pattern)*
 Pattern     = VAR
@@ -158,7 +159,7 @@ PEntry      = VAR (':' Pattern)?
 
 ConstObject = '{' (CEntry (',' CEntry)*)? '}'         (a constant: "Module metadata must be constant")
 CEntry      = (IDENT | Keyword | STRING) ':' Const
-Const       = NUMBER | '-' NUMBER | STRING | 'null' | 'true' | 'false'
+Const       = NUMBER | STRING | 'null' | 'true' | 'false'  (no sign, no operator: §13)
             | '[' (Const (',' Const)*)? ']' | ConstObject
 ```
 
@@ -167,6 +168,7 @@ Static rules (checked when the program is parsed and bound; violations are synta
 - An object key that is not an identifier, keyword, variable, string or parenthesized expression is the error `May need parentheses around object key expression` (`{1+2: 3}`).
 - A parenthesized key whose expression is a number, `true`, `false` or `null` literal is the error `Cannot use <T> (<D>) as object key` (`{(0): 1}`, `. as {(true): $x} | …`).
 - `ModuleDecl` and `ConstObject` metadata must be constant objects (`Module metadata must be constant`, `Module metadata must be an object`).
+- `def` and `label` start a pipe or a comma item only (`[1, def f: 2; f]`, `1 | label $x | 2`); as an operand (`1 + def f: 1; f`, `-def …`, `try def …`, `{a: def …}`) they are a syntax error.
 - Program nesting is limited (§11).
 
 ### 3.3 Desugaring
@@ -181,7 +183,8 @@ The following are defined by rewriting; ports MAY implement them directly with t
 | `T.name` | `T \| .name`, but the input of the index expression is the input of `T` (§7.6) |
 | `if c then a end` | `if c then a else . end` (also for a final `elif`) |
 | `try E` | `try E catch empty` |
-| `{a}`, `{"s"}`, `{$x}`, `{"\(e)"}` | `{a: .a}`, `{"s": ."s"}`, `{x: $x}`, `{"\(e)": .["\(e)"]}` |
+| `{a}`, `{"s"}`, `{$x}` | `{a: .a}`, `{"s": ."s"}`, `{x: $x}` |
+| `{"\(e)"}` | for each output `k` of the key (evaluated once), `{(k): .[k]}`: `{"x1":"a","x2":"b"} \| [{"x\(1,2)"}]` → `[{"x1":"a"},{"x2":"b"}]` (not the cartesian product of a rewrite to `{"\(e)": .["\(e)"]}`) |
 | `def f($a; g): B;` | `def f(a; g): a as $a \| B;` (the filter `a` is also callable) |
 | `L = R` | `_assign(L; R)` |
 | `L \|= R` | `_modify(L; R)` |
@@ -257,7 +260,7 @@ One writer is used by `tojson`, `tostring`, `@json`, `@text`, string interpolati
 - Numbers: §5.2.
 - Strings: `"`, then each code point: `"` → `\"`; `\` → `\\`; U+0008 → `\b`; U+000C → `\f`; U+000A → `\n`; U+000D → `\r`; U+0009 → `\t`; other U+0000–U+001F and U+007F → `\u` and 4 lowercase hex digits; every other code point as itself (no escaping of `/`, non-ASCII or U+2028); then `"`.
 - Arrays: `[` elements separated by `,` `]`. Objects: `{` `"key":value` pairs in insertion order separated by `,` `}`.
-- A container nested deeper than 10001 levels (the outermost container is level 1) is written as the text `<skipped: too deep>`.
+- A value nested deeper than 10001 levels (the value written is level 1; scalars count) is written as the text `<skipped: too deep>`: `reduce range(10001) as $i (1; [.]) | tojson` ends with `[<skipped: too deep>]]]…`, while `reduce range(10000) as $i (1; [.])` is written whole.
 
 Example: `"é<" | tojson` → `"\"é<\""`.
 
@@ -282,7 +285,7 @@ Used by `fromjson`, `tonumber`, module data files and the conformance harness. I
 - Duplicate object keys: the later value replaces the earlier one, at the earlier position.
 - Containers nested deeper than 10000 levels: the error `Exceeds depth limit for parsing`.
 - `fromjson` requires exactly one value (only whitespace around it): no value is `Expected JSON value`, more than one is `Unexpected extra JSON values`.
-- Errors: `<reason> (while parsing '<text>')` where `<text>` is the whole input string and `<reason>` is implementation-defined text (jq adds a line and column).
+- Errors: `<reason> (while parsing '<text>')` where `<text>` is the whole input string. `<reason>` is `Expected JSON value` (no value) or `Unexpected extra JSON values` (more than one) without a position, and otherwise a description followed by ` at line L, column C` whose wording is implementation-defined (the reference uses jq's: `Unfinished JSON term at EOF`, `Invalid literal`, `Invalid numeric literal`, `Objects must consist of key:value pairs`, …). The depth limit's reason is `Exceeds depth limit for parsing`.
 
 ## 6. Evaluation
 
@@ -408,7 +411,7 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 | `"s": v`, `@f "s": v` | the string (with interpolation, possibly several) | outputs of `v` |
 | `$x: v` | the value of `$x` | outputs of `v` |
 | `(e): v` | each output of `e` | outputs of `v` |
-| `name`, `keyword`, `"s"` | as above | `.[key]` |
+| `name`, `keyword`, `"s"` (interpolation allowed) | each output `k` of the key, evaluated once | `.[k]` for that `k` (one object per key output) |
 | `$x` | `"x"` | `$x` |
 
 A key that is not a string: `Cannot use <T> (<D>) as object key`. A value expression with no output gives no object (`{a: empty}` → no output). Duplicate keys: the later one wins at the earlier position.
@@ -1020,7 +1023,7 @@ All runtime errors, including `depth`, are ordinary `Error` signals: `try` catch
 | Call depth: calls of jqlite-defined functions (user and prelude) active at the same time on the evaluation stack | host option `MaxDepth`, default 1000 | error `Maximum call depth exceeded` (catchable) |
 | Program nesting: brackets `(`, `[`, `{`, interpolations and `if`/`reduce`/`foreach`/`try`/`def` constructs open at once | 1000 | syntax error `Program too deeply nested` |
 | JSON reader nesting | 10000 levels | error `Exceeds depth limit for parsing` |
-| JSON writer nesting | 10001 levels | `<skipped: too deep>` (§5.1) |
+| JSON writer nesting | values at level 10002 or deeper | written as `<skipped: too deep>` (§5.1) |
 | Array index set by `setpath` | 536870911 | error `Array index too large` |
 | String repetition result | 2^31 − 1 UTF-8 bytes | error `Repeat string result too long` |
 | Regex repetition count | 1000 | invalid regex |
@@ -1072,6 +1075,7 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 | `fromjson` error text | `<reason> (while parsing '<text>')`, reason implementation-defined | jq parser messages with line and column | parser-specific |
 | `builtins` | sorted, only this profile's names | unsorted, jq's names | deterministic |
 | Host variable `ENV` | rejected | `$ENV` wins | no ambiguity |
+| Module metadata | literal constants only: `module {a: 1+1};` is `Module metadata must be constant` | folds constant expressions (`{a: 1+1}` accepted), yet rejects `{a: -1}` | no constant folder to specify and port |
 
 **Not in the profile.** jq 1.8 has these; JQSharp does not, so jqlite 1.0 does not (a program using one gets `name/arity is not defined`, or the host-variable error for `$__loc__`):
 
