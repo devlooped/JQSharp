@@ -71,9 +71,8 @@ Expected outputs do not depend on the machine (environment variables, current ti
 
 - `localtime.test` runs with the host time zone fixed at UTC+02:00, with no daylight saving time.
 
-## pending.txt and pending-core.txt
+## pending.txt
 
-`pending.txt` lists the cases the current engine of JQSharp fails, and `pending-core.txt` those the
-new core (`src/JQSharp/Core`) fails, grouped by cause; one per line: file name, program and input,
-separated by tabs. They belong to the C# runner (`src/Tests/ConformanceTests.cs`), not to the
-corpus: a port starts from an empty list.
+`pending.txt` lists the cases the current engine of JQSharp fails, grouped by cause; one per line:
+file name, program and input, separated by tabs. The new core (`src/JQSharp/Core`) passes every
+case. The list belongs to the C# runner (`src/Tests/ConformanceTests.cs`), not to the corpus.

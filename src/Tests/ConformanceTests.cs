@@ -13,9 +13,9 @@ namespace Devlooped.Tests;
 /// <summary>
 /// Runs every case of the jqlite conformance corpus (spec/tests/*.test) twice, by the rules of
 /// spec/tests/README.md: through <see cref="Jq"/> (the current engine) and through the new core
-/// (parse, bind, evaluate on <see cref="JqValue"/>). Cases listed in spec/tests/pending.txt and
-/// spec/tests/pending-core.txt are known failures of each: such a case must fail, and the run
-/// fails as soon as it passes, so the lists only ever shrink.
+/// (parse, bind, evaluate on <see cref="JqValue"/>). The core must pass every case. Cases listed
+/// in spec/tests/pending.txt are known failures of the current engine: such a case must fail, and
+/// the run fails as soon as it passes, so the list only ever shrinks.
 /// </summary>
 public partial class ConformanceTests
 {
@@ -30,7 +30,6 @@ public partial class ConformanceTests
     static readonly DirectoryModules CorpusModules = new(Path.Combine(SpecDirectory, "modules"));
 
     static readonly Lazy<HashSet<string>> Pending = new(() => LoadPending("pending.txt"));
-    static readonly Lazy<HashSet<string>> PendingCore = new(() => LoadPending("pending-core.txt"));
 
     public static IEnumerable<object?[]> Cases(bool core)
     {
@@ -59,14 +58,16 @@ public partial class ConformanceTests
     [Theory]
     [MemberData(nameof(Cases), true)]
     public void Core_corpus_case(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
-        => Check("pending-core.txt", PendingCore.Value, file, line, program, input, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: true));
+        => Pass(file, line, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: true));
 
     // The same with every prelude builtin bound to its definition: the natives that override some
     // (Native.OverridesPrelude) must change nothing.
     [Theory]
     [MemberData(nameof(Cases), true)]
     public void Core_corpus_case_without_native_overrides(string file, int line, string program, string input, string expected, bool shouldFail, string? expectedError)
-        => Check("pending-core.txt", PendingCore.Value, file, line, program, input, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: false));
+        => Pass(file, line, RunCore(program, input, expected, shouldFail, expectedError, nativeOverrides: false));
+
+    static void Pass(string file, int line, string? failure) => Assert.True(failure is null, $"{file}:{line}: {failure}");
 
     static void Check(string list, HashSet<string> pending, string file, int line, string program, string input, string? failure)
     {
@@ -76,11 +77,10 @@ public partial class ConformanceTests
             Assert.True(failure is null, $"{file}:{line}: {failure}");
     }
 
-    [Theory]
-    [InlineData("pending.txt")]
-    [InlineData("pending-core.txt")]
-    public void Pending_cases_exist_in_corpus(string list)
+    [Fact]
+    public void Pending_cases_exist_in_corpus()
     {
+        const string list = "pending.txt";
         var keys = Directory.GetFiles(SpecDirectory, "*.test")
             .SelectMany(file => JqTestParser.ParseFile(file).Select(test => Key(Path.GetFileName(file), test.Program, test.Input)))
             .ToHashSet();

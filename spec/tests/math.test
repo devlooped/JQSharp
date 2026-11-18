@@ -406,3 +406,14 @@ null
 [0, -2, nan, infinite, -infinite] | map([tgamma, j0, j1, erf] | map(. * 1e9 | round))
 null
 [[1.7976931348623157e+308,1000000003,0,0],[1.7976931348623157e+308,223890782,-576724808,-995322140],[null,null,null,null],[null,null,null,1000000000],[1.7976931348623157e+308,null,null,-1000000000]]
+
+# ldexp and scalbln with a NaN or infinite exponent: x * 2^trunc(e) (NaN; +-Infinity or 0, spec 9.8).
+# jq 1.8.2 converts the exponent to a C int and gives [0,0,0,0,1.7976931348623157e+308,-0].
+[ldexp(1; nan), ldexp(1; infinite), ldexp(1; -infinite), scalbln(0; infinite), ldexp(infinite; -infinite), scalbln(-3; nan)]
+null
+[null,1.7976931348623157e+308,0,0,1.7976931348623157e+308,null]
+
+# An exponent beyond +-4000 acts as +-4000 (spec 9.8); jq 1.8.2 gives [0,0,1.7976931348623157e+308,1.7976931348623157e+308].
+[ldexp(1; 1e10), ldexp(1; -1e10), ldexp(3; 5000), ldexp(1e-300; 4500)]
+null
+[1.7976931348623157e+308,0,1.7976931348623157e+308,1.7976931348623157e+308]

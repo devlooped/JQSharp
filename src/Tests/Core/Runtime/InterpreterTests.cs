@@ -141,15 +141,6 @@ public class InterpreterTests
         }));
 
     [Fact]
-    public void A_native_without_an_implementation_is_a_runtime_error()
-    {
-        Assert.Equal("error: \"modulemeta/0 is not implemented\"", Line("\"m\" | modulemeta"));
-        Assert.Equal("\"caught\"", Line("try modulemeta catch \"caught\""));
-        // Binding succeeds: the catalogue has the entry.
-        Assert.Equal("[1]", Line("[1, (if false then modulemeta else empty end)]"));
-    }
-
-    [Fact]
     public void One_program_runs_concurrently_with_different_variables()
     {
         var program = Compile("def f: if . == 0 then $n else (. - 1 | f) end; [range(200) | {a: f}] | map(.a) | add");

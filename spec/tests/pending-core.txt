@@ -1,6 +1,0 @@
-# Cases of spec/tests/*.test that the new core (src/JQSharp/Core) fails, grouped by cause.
-#
-# One case per line: the file name, the program and the input line, separated by tabs
-# (a %%FAIL case has no input). ConformanceTests fails when a listed case passes, when an
-# unlisted case fails, and when a line here matches no case. Steps 7 to 9 of the jqlite plan
-# shrink the list; step 10 deletes it with pending.txt.

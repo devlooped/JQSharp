@@ -10,7 +10,8 @@ namespace Devlooped.Core.Builtins;
 static class MathNatives
 {
     // The functions of one number: the exactly specified ones, the library functions (the host's
-    // libm, except exp2, expm1 and log1p, written portably), and those defined by formula.
+    // libm, which every target language has, cbrt and hypot included), and those the spec defines by
+    // formula (MathExtra: exp2, expm1, log1p and the special functions).
     static readonly (string Name, Func<double, double> Function)[] unary =
     [
         ("floor", Math.Floor),
@@ -31,7 +32,7 @@ static class MathNatives
         ("cos", Math.Cos),
         ("cosh", Math.Cosh),
         ("exp", Math.Exp),
-        ("exp2", static x => Math.Pow(2, x)),
+        ("exp2", MathExtra.Exp2),
         ("expm1", MathExtra.Expm1),
         ("log", Math.Log),
         ("log10", Math.Log10),
