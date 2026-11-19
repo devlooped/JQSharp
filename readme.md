@@ -490,8 +490,11 @@ JQLite is the .NET reference implementation of **jqlite**, the profile of [jq 1.
 specified in [`spec/jqlite.md`](https://github.com/devlooped/jqlite/blob/main/spec/jqlite.md). The 
 builtins written in jq ([`spec/prelude.jq`](https://github.com/devlooped/jqlite/blob/main/spec/prelude.jq)) 
 and the conformance tests ([`spec/tests`](https://github.com/devlooped/jqlite/tree/main/spec/tests)) 
-are shared by every implementation, and the engine is written to be ported to other languages 
-([`docs/porting.md`](https://github.com/devlooped/jqlite/blob/main/docs/porting.md)).
+are shared by every implementation, and the engine is ported file by file 
+([`docs/porting.md`](https://github.com/devlooped/jqlite/blob/main/docs/porting.md)) to 
+[Go](https://github.com/devlooped/jqlite/tree/main/go), [Java](https://github.com/devlooped/jqlite/tree/main/java), 
+[Python](https://github.com/devlooped/jqlite/tree/main/python), [Rust](https://github.com/devlooped/jqlite/tree/main/rust) 
+and [TypeScript](https://github.com/devlooped/jqlite/tree/main/typescript).
 
 The profile has the jq language: paths, pipes, generators, array and object construction, 
 string interpolation, variables and destructuring (including `?//`), `def`, `reduce`, `foreach`, 
