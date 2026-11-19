@@ -79,7 +79,7 @@ static class CollectionNatives
     // _sort_by_impl(keys): the input stably sorted by the corresponding keys.
     static bool SortBy(Interpreter interpreter, JqValue input, JqValue[] arguments, out JqValue result, out JqValue error)
     {
-        if (!BothArrays(input, arguments[0]))
+        if (!SameLengthArrays(input, arguments[0]))
             return Fail(Errors.CannotBeSortedBy(input, arguments[0]), out result, out error);
         var items = input.AsArray();
         var order = ValueOps.SortOrder(arguments[0].AsArray());
@@ -92,7 +92,7 @@ static class CollectionNatives
     // _group_by_impl(keys): sorted as _sort_by_impl, then consecutive elements with equal keys grouped.
     static bool GroupBy(Interpreter interpreter, JqValue input, JqValue[] arguments, out JqValue result, out JqValue error)
     {
-        if (!BothArrays(input, arguments[0]))
+        if (!SameLengthArrays(input, arguments[0]))
             return Fail(Errors.CannotBeSortedBy(input, arguments[0]), out result, out error);
         var items = input.AsArray();
         var keys = arguments[0].AsArray();
@@ -123,6 +123,8 @@ static class CollectionNatives
             return Fail(Errors.CannotBeIterated(input, keys), out result, out error);
         var items = input.AsArray();
         var by = keys.AsArray();
+        if (items.Count != by.Count)
+            return Fail(Errors.WrongLength(input, keys), out result, out error);
         if (items.Count == 0)
             return Ok(JqValue.Null, out result, out error);
         var best = 0;
@@ -158,4 +160,6 @@ static class CollectionNatives
     }
 
     static bool BothArrays(JqValue a, JqValue b) => a.Kind == JqKind.Array && b.Kind == JqKind.Array;
+
+    static bool SameLengthArrays(JqValue a, JqValue b) => BothArrays(a, b) && a.AsArray().Count == b.AsArray().Count;
 }

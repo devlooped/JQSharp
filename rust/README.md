@@ -181,7 +181,6 @@ the reason.
 | Regular expressions are translated (`regex_syntax.rs`) for an engine that works on code points: `\x{…}` escapes, explicit classes, `(?s:.)`, `\z`, `(?-u:\b)`; the engine's offsets are bytes and are converted to code points. | Guide §3.3. No surrogate pairs to handle. |
 | A pattern has two limits, with one reason: `Regex failure: the pattern is too large`. At most 1,000 groups are open at once (`regex_syntax::MAX_NESTING`), and the compiled pattern takes at most 10 MiB (`regex_engine::SIZE_LIMIT`: about 200,000 repeated literals, or 10,000 repeated classes as wide as `.`). | The `regex` crate unrolls counted repetitions and compiles groups by recursion, and the dialect bounds neither a nest of `{n,m}` nor the nesting of groups. The crate's own defaults (250 levels of its syntax tree, its message) are replaced: its nesting limit is lifted and a nested pattern is compiled on a stack of its size. The reference has other limits: any nesting, but .NET's linear-time engine refuses a pattern of more than 1,000 automaton nodes (`a{1000}`). |
 | `regex_natives.rs` keeps the last prepared searches per thread; `regex_engine.rs` caches compiled patterns per process behind a mutex. | A program applies the same pattern to every record. |
-| `_min_by_impl` and `_max_by_impl` with fewer keys than elements use the elements that have a key. | The reference indexes out of range there (an unhandled host exception); the prelude never calls them that way. |
 
 ### Host boundary
 

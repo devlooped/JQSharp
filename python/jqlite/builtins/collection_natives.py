@@ -65,7 +65,7 @@ def _unique(interpreter: Any, input: JqValue, arguments: Any) -> JqValue | Fail:
 def _sort_by(interpreter: Any, input: JqValue, arguments: Any) -> JqValue | Fail:
     # _sort_by_impl(keys): the input stably sorted by the corresponding keys.
     keys = arguments[0]
-    if type(input) is not JqArray or type(keys) is not JqArray:
+    if not _same_length_arrays(input, keys):
         return Fail(errors.cannot_be_sorted_by(input, keys))
     items = input.to_list()  # type: ignore[union-attr]
     return JqArray.from_owned([items[i] for i in value_ops.sort_order(keys)])
@@ -74,7 +74,7 @@ def _sort_by(interpreter: Any, input: JqValue, arguments: Any) -> JqValue | Fail
 def _group_by(interpreter: Any, input: JqValue, arguments: Any) -> JqValue | Fail:
     # _group_by_impl(keys): sorted as _sort_by_impl, then consecutive elements with equal keys grouped.
     keys = arguments[0]
-    if type(input) is not JqArray or type(keys) is not JqArray:
+    if not _same_length_arrays(input, keys):
         return Fail(errors.cannot_be_sorted_by(input, keys))
     items = input.to_list()  # type: ignore[union-attr]
     by = keys.to_list()  # type: ignore[union-attr]
@@ -99,6 +99,8 @@ def _extreme(input: JqValue, keys: JqValue, maximum: bool) -> JqValue | Fail:
         return Fail(errors.cannot_be_iterated(input, keys))
     items = input.to_list()  # type: ignore[union-attr]
     by = keys.to_list()  # type: ignore[union-attr]
+    if len(items) != len(by):
+        return Fail(errors.wrong_length(input, keys))
     if not items:
         return None
     compare = value_ops.compare
@@ -128,3 +130,7 @@ def _binary_search(interpreter: Any, input: JqValue, arguments: Any) -> JqValue 
         else:
             high = middle - 1
     return float(-1 - low)
+
+
+def _same_length_arrays(a: JqValue, b: JqValue) -> bool:
+    return type(a) is JqArray and type(b) is JqArray and a.count == b.count  # type: ignore[union-attr]

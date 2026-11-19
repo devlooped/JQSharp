@@ -90,7 +90,7 @@ final class CollectionNatives {
 
     // _sort_by_impl(keys): the input stably sorted by the corresponding keys.
     private static Result sortBy(Interpreter interpreter, JqValue input, JqValue[] arguments) {
-        if (!bothArrays(input, arguments[0])) {
+        if (!sameLengthArrays(input, arguments[0])) {
             return fail(Errors.cannotBeSortedBy(input, arguments[0]));
         }
         JqArray items = input.asArray();
@@ -104,7 +104,7 @@ final class CollectionNatives {
 
     // _group_by_impl(keys): sorted as _sort_by_impl, then consecutive elements with equal keys grouped.
     private static Result groupBy(Interpreter interpreter, JqValue input, JqValue[] arguments) {
-        if (!bothArrays(input, arguments[0])) {
+        if (!sameLengthArrays(input, arguments[0])) {
             return fail(Errors.cannotBeSortedBy(input, arguments[0]));
         }
         JqArray items = input.asArray();
@@ -135,6 +135,9 @@ final class CollectionNatives {
         }
         JqArray items = input.asArray();
         JqArray by = keys.asArray();
+        if (items.count() != by.count()) {
+            return fail(Errors.wrongLength(input, keys));
+        }
         if (items.count() == 0) {
             return JqValue.NULL;
         }
@@ -174,5 +177,9 @@ final class CollectionNatives {
 
     private static boolean bothArrays(JqValue a, JqValue b) {
         return a.kind() == JqKind.ARRAY && b.kind() == JqKind.ARRAY;
+    }
+
+    private static boolean sameLengthArrays(JqValue a, JqValue b) {
+        return bothArrays(a, b) && a.asArray().count() == b.asArray().count();
     }
 }

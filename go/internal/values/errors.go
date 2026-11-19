@@ -205,6 +205,10 @@ func (errorCatalogue) CannotBeIterated(a, b Value) Value {
 	return message(Errors.Describe(a) + " and " + Errors.Describe(b) + " cannot be iterated over")
 }
 
+func (errorCatalogue) WrongLength(a, b Value) Value {
+	return message(Errors.Describe(a) + " and " + Errors.Describe(b) + " have wrong length")
+}
+
 func (errorCatalogue) CannotBeSearched(value Value) Value {
 	return message(Errors.Describe(value) + " cannot be searched from")
 }

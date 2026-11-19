@@ -67,16 +67,16 @@ fn unique(_: &Interpreter<'_>, input: Input<'_>, _: &mut [JqValue]) -> Fallible 
 
 // _sort_by_impl(keys): the input stably sorted by the corresponding keys.
 fn sort_by(_: &Interpreter<'_>, input: Input<'_>, arguments: &mut [JqValue]) -> Fallible {
-    let (JqValue::Array(items), JqValue::Array(keys)) = (&*input, &arguments[0]) else {
+    let Some((items, keys)) = same_length_arrays(&input, &arguments[0]) else {
         return Err(errors::cannot_be_sorted_by(&input, &arguments[0]));
     };
     let order = value_ops::sort_order(keys);
-    Ok(JqValue::Array(JqArray::from_owned(order.iter().map(|index| element(items, *index)).collect())))
+    Ok(JqValue::Array(JqArray::from_owned(order.iter().map(|index| items.get(*index).clone()).collect())))
 }
 
 // _group_by_impl(keys): sorted as _sort_by_impl, then consecutive elements with equal keys grouped.
 fn group_by(_: &Interpreter<'_>, input: Input<'_>, arguments: &mut [JqValue]) -> Fallible {
-    let (JqValue::Array(items), JqValue::Array(keys)) = (&*input, &arguments[0]) else {
+    let Some((items, keys)) = same_length_arrays(&input, &arguments[0]) else {
         return Err(errors::cannot_be_sorted_by(&input, &arguments[0]));
     };
     let order = value_ops::sort_order(keys);
@@ -86,7 +86,7 @@ fn group_by(_: &Interpreter<'_>, input: Input<'_>, arguments: &mut [JqValue]) ->
         if i > 0 && value_ops::compare(keys.get(order[i - 1]), keys.get(*index)) != Ordering::Equal {
             groups.push(JqValue::Array(JqArray::from_owned(std::mem::take(&mut group))));
         }
-        group.push(element(items, *index));
+        group.push(items.get(*index).clone());
     }
     if !group.is_empty() {
         groups.push(JqValue::Array(JqArray::from_owned(group)));
@@ -95,23 +95,22 @@ fn group_by(_: &Interpreter<'_>, input: Input<'_>, arguments: &mut [JqValue]) ->
     Ok(JqValue::Array(JqArray::from_owned(groups)))
 }
 
-// The element a key stands for; the prelude gives one key per element.
-fn element(items: &JqArray, index: usize) -> JqValue {
-    if index < items.count() { items.get(index).clone() } else { JqValue::Null }
-}
-
 // _min_by_impl, _max_by_impl, min, max: null for an empty input; else the first element with the
 // smallest key, or the last with the largest.
 fn extreme(input: &JqValue, keys: &JqValue, max: bool) -> Fallible {
     let (JqValue::Array(items), JqValue::Array(by)) = (input, keys) else {
         return Err(errors::cannot_be_iterated(input, keys));
     };
+    if items.count() != by.count() {
+        return Err(errors::wrong_length(input, keys));
+    }
+
     if items.is_empty() {
         return Ok(JqValue::Null);
     }
 
     let mut best = 0;
-    for i in 1..items.count().min(by.count()) {
+    for i in 1..items.count() {
         let c = value_ops::compare(by.get(i), by.get(best));
         if if max { c != Ordering::Less } else { c == Ordering::Less } {
             best = i;
@@ -137,4 +136,12 @@ fn binary_search(_: &Interpreter<'_>, input: Input<'_>, arguments: &mut [JqValue
     }
 
     Ok(JqValue::Number((-1 - low) as f64))
+}
+
+// The input and its keys, when both are arrays of the same length.
+fn same_length_arrays<'a>(input: &'a JqValue, keys: &'a JqValue) -> Option<(&'a JqArray, &'a JqArray)> {
+    match (input, keys) {
+        (JqValue::Array(items), JqValue::Array(by)) if items.count() == by.count() => Some((items, by)),
+        _ => None,
+    }
 }

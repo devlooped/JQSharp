@@ -225,6 +225,10 @@ public final class Errors {
         return message(describe(a) + " and " + describe(b) + " cannot be iterated over");
     }
 
+    public static JqValue wrongLength(JqValue a, JqValue b) {
+        return message(describe(a) + " and " + describe(b) + " have wrong length");
+    }
+
     public static JqValue cannotBeSearched(JqValue value) {
         return message(describe(value) + " cannot be searched from");
     }

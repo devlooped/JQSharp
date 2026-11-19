@@ -94,7 +94,7 @@ func unique(_ *interpreter, input value, _ []value) (value, value, bool) {
 
 // sortBy: _sort_by_impl(keys): the input stably sorted by the corresponding keys.
 func sortBy(_ *interpreter, input value, arguments []value) (value, value, bool) {
-	if !bothArrays(input, arguments[0]) {
+	if !sameLengthArrays(input, arguments[0]) {
 		return fail(values.Errors.CannotBeSortedBy(input, arguments[0]))
 	}
 	items := input.AsArray()
@@ -109,7 +109,7 @@ func sortBy(_ *interpreter, input value, arguments []value) (value, value, bool)
 // groupBy: _group_by_impl(keys): sorted as _sort_by_impl, then consecutive elements with equal
 // keys grouped.
 func groupBy(_ *interpreter, input value, arguments []value) (value, value, bool) {
-	if !bothArrays(input, arguments[0]) {
+	if !sameLengthArrays(input, arguments[0]) {
 		return fail(values.Errors.CannotBeSortedBy(input, arguments[0]))
 	}
 	items := input.AsArray()
@@ -137,6 +137,9 @@ func extreme(input, keys value, isMax bool) (value, value, bool) {
 	}
 	items := input.AsArray()
 	by := keys.AsArray()
+	if items.Count() != by.Count() {
+		return fail(values.Errors.WrongLength(input, keys))
+	}
 	if items.Count() == 0 {
 		return ok(values.Null)
 	}
@@ -172,3 +175,7 @@ func binarySearch(_ *interpreter, input value, arguments []value) (value, value,
 }
 
 func bothArrays(a, b value) bool { return a.Kind() == values.KindArray && b.Kind() == values.KindArray }
+
+func sameLengthArrays(a, b value) bool {
+	return bothArrays(a, b) && a.AsArray().Count() == b.AsArray().Count()
+}

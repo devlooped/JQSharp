@@ -64,7 +64,7 @@ function unique(_: Interpreter, input: JqValue): JqValue | Fail {
 
 // _sort_by_impl(keys): the input stably sorted by the corresponding keys.
 function sortBy(_: Interpreter, input: JqValue, args: JqValue[]): JqValue | Fail {
-  if (!bothArrays(input, args[0]!)) return new Fail(Errors.cannotBeSortedBy(input, args[0]!));
+  if (!sameLengthArrays(input, args[0]!)) return new Fail(Errors.cannotBeSortedBy(input, args[0]!));
   const items = input as JqArray;
   const order = ValueOps.sortOrder(args[0] as JqArray);
   const sorted: JqValue[] = [];
@@ -74,7 +74,7 @@ function sortBy(_: Interpreter, input: JqValue, args: JqValue[]): JqValue | Fail
 
 // _group_by_impl(keys): sorted as _sort_by_impl, then consecutive elements with equal keys grouped.
 function groupBy(_: Interpreter, input: JqValue, args: JqValue[]): JqValue | Fail {
-  if (!bothArrays(input, args[0]!)) return new Fail(Errors.cannotBeSortedBy(input, args[0]!));
+  if (!sameLengthArrays(input, args[0]!)) return new Fail(Errors.cannotBeSortedBy(input, args[0]!));
   const items = input as JqArray;
   const by = args[0] as JqArray;
   const order = ValueOps.sortOrder(by);
@@ -99,6 +99,7 @@ function extreme(input: JqValue, keysOf: JqValue, max: boolean): JqValue | Fail 
   if (!bothArrays(input, keysOf)) return new Fail(Errors.cannotBeIterated(input, keysOf));
   const items = input as JqArray;
   const by = keysOf as JqArray;
+  if (items.count !== by.count) return new Fail(Errors.wrongLength(input, keysOf));
   if (items.count === 0) return null;
   let best = 0;
   for (let i = 1; i < items.count; i++) {
@@ -127,4 +128,8 @@ function binarySearch(_: Interpreter, input: JqValue, args: JqValue[]): JqValue 
 
 function bothArrays(a: JqValue, b: JqValue): boolean {
   return kindOf(a) === JqKind.Array && kindOf(b) === JqKind.Array;
+}
+
+function sameLengthArrays(a: JqValue, b: JqValue): boolean {
+  return bothArrays(a, b) && (a as JqArray).count === (b as JqArray).count;
 }
