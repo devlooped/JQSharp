@@ -396,16 +396,41 @@ null
 
 [.[] | [tgamma, lgamma] | map(. * 1e9 | round)]
 [0.5, 1, 5, 4.5, -1.5, 0.1, 10, -0.5]
-[[1772453851,572364943],[1000000000,0],[24000000000,3178053830],[11631728397,2453736571],[2363271801,860047015],[9513507699,2252712652],[362880000000002,12801827480],[-3544907702,1265512123]]
+[[1772453851,572364943],[1000000000,0],[24000000000,3178053830],[11631728397,2453736571],[2363271801,860047015],[9513507699,2252712652],[362880000000000,12801827480],[-3544907702,1265512123]]
 
 [.[] | [j0, j1] | map(. * 1e9 | round)]
 [0, 1, 5, 7.9, 8, 10, 25, -3]
 [[1000000003,0],[765197684,440050586],[-177596774,-327579139],[194361850,219179396],[171650807,234636342],[-245935764,43472746],[96266783,-125350250],[-260051958,-339058958]]
 
-# Poles, NaN and infinities: the values of the formulas (spec 9.8 note), not those of libm.
+# Poles, NaN and infinities: tgamma as C; j0, j1 and erf the values of their formulas (spec 9.8 note), not those of libm.
 [0, -2, nan, infinite, -infinite] | map([tgamma, j0, j1, erf] | map(. * 1e9 | round))
 null
-[[1.7976931348623157e+308,1000000003,0,0],[1.7976931348623157e+308,223890782,-576724808,-995322140],[null,null,null,null],[null,null,null,1000000000],[1.7976931348623157e+308,null,null,-1000000000]]
+[[1.7976931348623157e+308,1000000003,0,0],[null,223890782,-576724808,-995322140],[null,null,null,null],[1.7976931348623157e+308,null,null,1000000000],[null,null,null,-1000000000]]
+
+# tgamma and lgamma over the whole double range (spec 9.8): finite up to 171.62, subnormal below -171.
+[(150 | tgamma / 1e254), (171 | tgamma / 1e300), (171.6 | tgamma / 1e302), (1e-300 | tgamma / 1e294), (-170.5 | tgamma * 1e300 * 1e14), (-171.5 | tgamma * 1e300 * 1e16), (-0.0000001 | tgamma)] | map(round)
+null
+[3808923,7257416,1585897,1000000,-3312740,1931627,-10000001]
+
+[172, 200, 1e10, 1 / -infinite] | map(tgamma)
+null
+[1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308,-1.7976931348623157e+308]
+
+map(lgamma * 1e3 | round)
+[200, 1e10, -170.5, -10000000000.5, 1e-300]
+[857934,220258509288811,-707998,-220258509322205,690776]
+
+[1e305, 2e305] | map(lgamma / 1e300 | round)
+null
+[70128845,140396320]
+
+[3e305, 1 / -infinite] | map(lgamma)
+null
+[1.7976931348623157e+308,1.7976931348623157e+308]
+
+[1, 2] | map(lgamma | fabs < 1e-15)
+null
+[true,true]
 
 # ldexp and scalbln with a NaN or infinite exponent: x * 2^trunc(e) (NaN; +-Infinity or 0, spec 9.8).
 # jq 1.8.2 converts the exponent to a C int and gives [0,0,0,0,1.7976931348623157e+308,-0].
@@ -480,6 +505,11 @@ map(lgamma_r | [(.[0] * 1e9 | round), .[1]])
 null
 [[1.7976931348623157e+308,1],[1.7976931348623157e+308,1],[1.7976931348623157e+308,1]]
 
+# The sign of lgamma_r is the sign of the gamma function, -1 for -0 (as C; jq 1.8.2 on Windows has no lgamma_r).
+[-0.5, -1.5, -200.5, 1 / -infinite, nan, 3] | map(lgamma_r[1])
+null
+[-1,1,-1,-1,1,1]
+
 map([y0, y1] | map(. * 1e6 | round))
 [1, 3, 5, 7.9, 8, 8.1, 20, 100, 0.5]
 [[88257,-781213],[376850,324674],[-308518,147863],[206521,-181721],[223521,-158060],[238091,-133149],[62641,-165512],[-77244,-20372],[-444519,-1471472]]
@@ -501,7 +531,6 @@ null
 null
 [null,null]
 
-# Spec 9.8 note: tgamma, lgamma and lgamma_r of +Infinity are NaN; jq 1.8.2 gives +Infinity.
 [infinite | lgamma_r[0], tgamma, lgamma]
 null
-[null,null,null]
+[1.7976931348623157e+308,1.7976931348623157e+308,1.7976931348623157e+308]

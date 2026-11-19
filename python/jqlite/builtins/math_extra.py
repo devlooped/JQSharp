@@ -260,36 +260,81 @@ def erfc(x: float) -> float:
     return 1.0 - erf(x)
 
 
-_LANCZOS = (
-    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
-    771.32342877765313, -176.61502916214059, 12.507343278686905,
-    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
-)
-
-
 def tgamma(x: float) -> float:
-    """Lanczos approximation, g = 7, with the reflection formula below 0.5."""
-    from .math_natives import exp, pow_, sin, sqrt
-    if x <= 0 and floor(x) == x:
+    """Γ(x): the Stirling series once x is shifted up to 10 or more, the power split so that it
+    overflows only past 171.62; the reflection formula below 0."""
+    from .math_natives import exp, pow_, sqrt
+    if x != x or x == _INF:
+        return x
+    if x == 0:
+        return -_INF if math.copysign(1.0, x) < 0 else _INF
+    if x < 0:
+        if floor(x) == x:
+            return _NAN
+        if x > -170:
+            return PI / (_sin_pi(x) * tgamma(1 - x))
+        return PI / _sin_pi(x) * exp(-lgamma(1 - x))
+    if x >= 172:
         return _INF
-    if x < 0.5:
-        return PI / (sin(PI * x) * tgamma(1 - x))
-    x = x - 1
-    total = _LANCZOS[0]
-    for i in range(1, 9):
-        total = total + _LANCZOS[i] / (x + i)
-    t = x + 7 + 0.5
-    return sqrt(2 * PI) * pow_(t, x + 0.5) * exp(-t) * total
+    q = 1.0
+    while x < 10:
+        q = q * x
+        x = x + 1
+    p = pow_(x, (x - 0.5) / 2)
+    return sqrt(2 * PI) * (p * exp(-x)) * p * exp(_stirling(x)) / q
 
 
 def lgamma(x: float) -> float:
+    """log |Γ(x)|: the Stirling series from 10 up, log(Γ(x + 1) / x) below;
+    the reflection formula below 0."""
     from .math_natives import log
-    return log(abs(tgamma(x)))
+    if x != x:
+        return x
+    if x == _INF or x == -_INF:
+        return _INF
+    if x <= 0 and floor(x) == x:
+        return _INF
+    if x < 0:
+        return log(PI) - log(abs(_sin_pi(x))) - lgamma(1 - x)
+    if x < 10:
+        return log(tgamma(x + 1)) - log(x)
+    return (x - 0.5) * log(x) - x + 0.5 * log(2 * PI) + _stirling(x)
 
 
 def gamma_sign(x: float) -> float:
-    """The sign of tgamma(x): -1 when it is negative, else 1 (lgamma_r's second element)."""
-    return -1.0 if tgamma(x) < 0 else 1.0
+    """The sign of Γ(x) (lgamma_r's second element): -1 for -0 and for a negative non-integer x
+    whose floor is odd, else 1."""
+    if x == 0:
+        return -1.0 if math.copysign(1.0, x) < 0 else 1.0
+    return -1.0 if x < 0 and floor(x) != x and _is_odd(floor(x)) else 1.0
+
+
+def _stirling(x: float) -> float:
+    """The Stirling series of log Γ(x) − ((x − 0.5) · log(x) − x + log(2π) / 2), for x >= 10:
+    B2k / (2k (2k − 1) x^(2k − 1)) for k = 1..8; the next term is below 2e-18 there."""
+    z = 1 / (x * x)
+    s = 1.0 / 12 + z * (-1.0 / 360 + z * (1.0 / 1260 + z * (-1.0 / 1680 + z * (1.0 / 1188
+        + z * (-691.0 / 360360 + z * (1.0 / 156 + z * (-3617.0 / 122400)))))))
+    return s / x
+
+
+def _sin_pi(x: float) -> float:
+    """sin(π · x) for a finite x that is not an integer, without the rounding of π · x: the
+    fraction f = x − trunc(x) is exact, and so are 1 − f and −1 − f when |f| > 0.5."""
+    from .math_natives import sin
+    n = trunc(x)
+    f = x - n
+    if f > 0.5:
+        f = 1 - f
+    elif f < -0.5:
+        f = -1 - f
+    s = sin(PI * f)
+    return -s if _is_odd(n) else s
+
+
+def _is_odd(n: float) -> bool:
+    """Whether an integer-valued double is odd; n − 2 · floor(n / 2) is exact."""
+    return n - 2 * floor(n / 2) != 0
 
 
 def j0(x: float) -> float:

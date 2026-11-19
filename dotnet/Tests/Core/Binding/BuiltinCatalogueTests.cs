@@ -84,7 +84,8 @@ public partial class BuiltinCatalogueTests
     // Section 9 of spec/jqlite.md, read only where it declares builtins, so that examples in its
     // prose cannot add any: the first cell of each table row; the §9.8 library paragraph (its
     // signatures and its list of names "(one input)"); the lines that start with signatures (the
-    // §9.8 formula headings and abs/0); the functions §9.8 defines as `name(x):`; and the group
+    // §9.8 formula headings and abs/0); the functions §9.8 defines as `name(x):` (its helpers, such as
+    // `SinPi(x):`, are capitalized); and the group
     // sentence of §9.11. Rows whose K column says N or P give the kind; §9.8 is native but abs/0.
     static SpecLists SpecBuiltins()
     {

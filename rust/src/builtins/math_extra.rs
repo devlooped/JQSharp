@@ -261,43 +261,94 @@ pub fn erfc(x: f64) -> f64 {
     1.0 - erf(x)
 }
 
-#[allow(clippy::excessive_precision)]
-const LANCZOS: [f64; 9] = [
-    0.99999999999980993,
-    676.5203681218851,
-    -1259.1392167224028,
-    771.32342877765313,
-    -176.61502916214059,
-    12.507343278686905,
-    -0.13857109526572012,
-    9.9843695780195716e-6,
-    1.5056327351493116e-7,
-];
-
-/// Lanczos approximation, g = 7, with the reflection formula below 0.5.
+/// Γ(x): the Stirling series once x is shifted up to 10 or more, the power split so that it
+/// overflows only past 171.62; the reflection formula below 0.
 pub fn tgamma(x: f64) -> f64 {
+    if x.is_nan() || x == f64::INFINITY {
+        return x;
+    }
+    if x == 0.0 {
+        return 1.0 / x;
+    }
+    if x < 0.0 {
+        if x.floor() == x {
+            return f64::NAN;
+        }
+        if x > -170.0 {
+            return PI / (sin_pi(x) * tgamma(1.0 - x));
+        }
+        return PI / sin_pi(x) * (-lgamma(1.0 - x)).exp();
+    }
+    if x >= 172.0 {
+        return f64::INFINITY;
+    }
+    let mut x = x;
+    let mut q = 1.0;
+    while x < 10.0 {
+        q *= x;
+        x += 1.0;
+    }
+    let p = x.powf((x - 0.5) / 2.0);
+    (2.0 * PI).sqrt() * (p * (-x).exp()) * p * stirling(x).exp() / q
+}
+
+/// log |Γ(x)|: the Stirling series from 10 up, log(Γ(x + 1) / x) below;
+/// the reflection formula below 0.
+pub fn lgamma(x: f64) -> f64 {
+    if x.is_nan() {
+        return x;
+    }
+    if x.is_infinite() {
+        return f64::INFINITY;
+    }
     if x <= 0.0 && x.floor() == x {
         return f64::INFINITY;
     }
-    if x < 0.5 {
-        return PI / ((PI * x).sin() * tgamma(1.0 - x));
+    if x < 0.0 {
+        return PI.ln() - sin_pi(x).abs().ln() - lgamma(1.0 - x);
     }
-    let x = x - 1.0;
-    let mut sum = LANCZOS[0];
-    for (i, coefficient) in LANCZOS.iter().enumerate().skip(1) {
-        sum += coefficient / (x + i as f64);
+    if x < 10.0 {
+        return tgamma(x + 1.0).ln() - x.ln();
     }
-    let t = x + 7.0 + 0.5;
-    (2.0 * PI).sqrt() * t.powf(x + 0.5) * (-t).exp() * sum
+    (x - 0.5) * x.ln() - x + 0.5 * (2.0 * PI).ln() + stirling(x)
 }
 
-pub fn lgamma(x: f64) -> f64 {
-    tgamma(x).abs().ln()
-}
-
-/// The sign of tgamma(x): -1 when it is negative, else 1 (lgamma_r's second element).
+/// The sign of Γ(x) (lgamma_r's second element): -1 for -0 and for a negative non-integer x whose
+/// floor is odd, else 1.
 pub fn gamma_sign(x: f64) -> f64 {
-    if tgamma(x) < 0.0 { -1.0 } else { 1.0 }
+    if x == 0.0 {
+        return if x.is_sign_negative() { -1.0 } else { 1.0 };
+    }
+    if x < 0.0 && x.floor() != x && is_odd(x.floor()) { -1.0 } else { 1.0 }
+}
+
+// The Stirling series of log Γ(x) − ((x − 0.5) · log(x) − x + log(2π) / 2), for x >= 10:
+// B2k / (2k (2k − 1) x^(2k − 1)) for k = 1..8; the next term is below 2e-18 there.
+fn stirling(x: f64) -> f64 {
+    let z = 1.0 / (x * x);
+    let s = 1.0 / 12.0
+        + z * (-1.0 / 360.0
+            + z * (1.0 / 1260.0 + z * (-1.0 / 1680.0 + z * (1.0 / 1188.0 + z * (-691.0 / 360360.0 + z * (1.0 / 156.0 + z * (-3617.0 / 122400.0)))))));
+    s / x
+}
+
+// sin(π · x) for a finite x that is not an integer, without the rounding of π · x: the fraction
+// f = x − trunc(x) is exact, and so are 1 − f and −1 − f when |f| > 0.5.
+fn sin_pi(x: f64) -> f64 {
+    let n = x.trunc();
+    let mut f = x - n;
+    if f > 0.5 {
+        f = 1.0 - f;
+    } else if f < -0.5 {
+        f = -1.0 - f;
+    }
+    let s = (PI * f).sin();
+    if is_odd(n) { -s } else { s }
+}
+
+// Whether an integer-valued double is odd; n − 2 · floor(n / 2) is exact.
+fn is_odd(n: f64) -> bool {
+    n - 2.0 * (n / 2.0).floor() != 0.0
 }
 
 /// Bessel J0, Numerical Recipes rational approximations.
