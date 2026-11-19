@@ -1,0 +1,5 @@
+{
+  "name": "go",
+  "build": [["go", "build", "-o", "bin/jqlite-bench.exe", "./cmd/bench"]],
+  "run": ["bin/jqlite-bench.exe"]
+}
