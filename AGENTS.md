@@ -33,7 +33,7 @@ cases use `-L spec/tests/modules`.
 
 ## Layers
 
-`src/JQLite/Core` is the engine; each folder is one layer and uses only the layers before it, except
+`dotnet/JQLite/Core` is the engine; each folder is one layer and uses only the layers before it, except
 the two links of `Builtins` named in 5:
 
 1. `Values`: `JqValue`, arrays, objects, `ValueOps` (equality, ordering, arithmetic),
@@ -50,7 +50,7 @@ The public .NET API and the `JsonElement` adapter sit outside `Core` (see Host b
 
 ## Portability rules
 
-Code under `src/JQLite/Core` must not use:
+Code under `dotnet/JQLite/Core` must not use:
 
 - `System.Text.Json`, or any other host JSON library;
 - `yield return`, LINQ lazy operators or other iterators to produce outputs (outputs are pushed);
@@ -69,23 +69,23 @@ Values, the bound program and the prelude are immutable and shared between threa
 
 ## Tests
 
-- `dnx --yes retest` runs everything; `dotnet format whitespace` and `dotnet format style` must
-  pass (see `.github/copilot-instructions.md`).
-- `src/Tests/ConformanceTests.cs` runs every case of `spec/tests/*.test` twice: through the public
+- `dnx --yes retest` runs everything; `dotnet format whitespace` and `dotnet format style`
+  (both with `--verify-no-changes --exclude ~/.nuget`) must pass.
+- `dotnet/Tests/ConformanceTests.cs` runs every case of `spec/tests/*.test` twice: through the public
   API (`Jq.Parse` with `JqOptions`), and through the core without the native overrides of prelude
   builtins. Both use an empty environment, a zone fixed at UTC+02:00 (for `localtime.test`) and the
   modules of `spec/tests/modules/` (for `modules.test`).
-- `src/Tests/Core/<Layer>/` holds the unit tests of each layer: what the corpus cannot show
+- `dotnet/Tests/Core/<Layer>/` holds the unit tests of each layer: what the corpus cannot show
   (positions, limits on small host stacks, binding printed as hops and slots, value sharing).
   `BuiltinCatalogueTests` reads the N/P lists of §9 from the spec and checks the catalogue and the
   prelude against them.
-- `src/Tests/PortabilityTests.cs` enforces the portability rules above, with a per-file allow-list
+- `dotnet/Tests/PortabilityTests.cs` enforces the portability rules above, with a per-file allow-list
   for each exception; `JqConcurrencyTests` and `JqDepthTests` cover thread safety and `MaxDepth`
   through the public API.
-- `src/Benchmarks` (BenchmarkDotNet) compares JQLite with `Devlooped.JQ` (the jq executable) on
+- `dotnet/Benchmarks` (BenchmarkDotNet) compares JQLite with `Devlooped.JQ` (the jq executable) on
   the WhatsApp `Message.jq` filter, with and without a cached `JqExpression`, and measures four
   programs whose cost must stay linear or lazy (`ScalingBenchmarks`). Run one with
-  `dotnet run -c Release --project src/Benchmarks -- --filter *Scaling*`.
+  `dotnet run -c Release --project dotnet/Benchmarks -- --filter *Scaling*`.
 
 ## Where a change goes
 
@@ -101,7 +101,7 @@ Values, the bound program and the prelude are immutable and shared between threa
 
 ## Host boundary
 
-Only `src/JQLite` outside `Core` knows .NET's JSON types:
+Only `dotnet/JQLite` outside `Core` knows .NET's JSON types:
 
 - `Json/JsonElementAdapter.cs` converts `JsonElement` to `JqValue` and back; no other file converts
   values between them. `Host/ResolverSource.cs` adapts a `JqResolver` to the core's `IModuleSource`

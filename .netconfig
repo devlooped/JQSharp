@@ -9,7 +9,7 @@
 [file ".github/workflows/combine-prs.yml"]
 	url = https://github.com/devlooped/oss/blob/main/.github/workflows/combine-prs.yml
 	skip
-[file "src/kzu.snk"]
+[file "dotnet/kzu.snk"]
 	url = https://github.com/devlooped/oss/blob/main/src/kzu.snk
 	skip
 [file ".github/workflows/dotnet-file-core.yml"]
@@ -65,9 +65,7 @@
 	weak
 [file ".github/workflows/includes.yml"]
 	url = https://github.com/devlooped/oss/blob/main/.github/workflows/includes.yml
-	sha = d571412f07b0fb3c40023dc906f64906d7ed2b46
-	etag = ab627107749577bb619b024aff93027359b66b4c3f5a85a36b235e428387cd17
-	weak
+	skip
 [file ".github/workflows/publish.yml"]
 	url = https://github.com/devlooped/oss/blob/main/.github/workflows/publish.yml
 	sha = 0ca5fd11125cd10c51b4433a86917c06ff1ae839
@@ -103,17 +101,17 @@
 	sha = 0683ee777d7d878d4bf013d7deea352685135a05
 	etag = 2c6335b37e4ae05eea7c01f5d0c9d82b49c488f868a8b5ba7bff7c6ff01f3994
 	weak
-[file "src/Directory.Build.props"]
+[file "dotnet/Directory.Build.props"]
 	url = https://github.com/devlooped/oss/blob/main/src/Directory.Build.props
 	sha = 59861ddd1e330f3da410652b4c7fc6585726c0cf
 	etag = 1561f1be53cc25ac0cd85a06b3f65d69764b174d0f60bf72ca2f8fc70573b75e
 	weak
-[file "src/Directory.Build.targets"]
+[file "dotnet/Directory.Build.targets"]
 	url = https://github.com/devlooped/oss/blob/main/src/Directory.Build.targets
 	sha = 59861ddd1e330f3da410652b4c7fc6585726c0cf
 	etag = cb1f7a3e5bf85e7307407b7b6d8b9869330e2191a2317ccf6218a552e5890b08
 	weak
-[file "src/nuget.config"]
+[file "dotnet/nuget.config"]
 	url = https://github.com/devlooped/oss/blob/main/src/nuget.config
 	sha = 032439dbf180fca0539a5bd3a019f18ab3484b76
 	etag = da7c0104131bd474b52fc9bc9f9bda6470e24ae38d4fb9f5c4f719bc01370ab5
@@ -131,6 +129,4 @@
 	skip
 [file ".github/copilot-instructions.md"]
 	url = https://github.com/devlooped/oss/blob/main/.github/copilot-instructions.md
-	etag = 6ee650d118a57494d3545d54718ccaa5257b09d54504e9c21514fe596edd9678
-	weak
-	sha = e616d89d9537c4b8ccf1c20dd277ab82104167c4
+	skip
