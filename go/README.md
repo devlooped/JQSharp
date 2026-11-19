@@ -76,6 +76,10 @@ go test ./...
   and slots, single functions), the catalogue against §9 of the spec, modules, the interpreter,
   native `_modify`/`_assign` against the prelude, the native table, the depth limit and the
   stack (`internal/runtime/stack_guard_test.go`, below);
+- the regex engine (`internal/builtins/regex_engine_test.go`): random patterns against a plain
+  backtracking matcher of the same programs, patterns and inputs that need linear time, the memory
+  of a search, the largest patterns within the limits of spec §11 (the translator checks them, the
+  engine refuses nothing);
 - the host boundary: options, errors, streaming, variables, values, depth on a fresh goroutine,
   one expression from 32 goroutines at once, and the portability rules of `AGENTS.md` on the core
   (`portability_test.go`: the core imports only `math`, `strings`, `unicode/utf8` and `slices`,
@@ -129,7 +133,7 @@ names. Where Go asks for something else:
 | `binding/natives.go` | The native catalogue (`Builtins/Natives.cs`) is in the binding package | Go forbids import cycles: the resolver binds to the catalogue, and the builtins import the binding and runtime packages |
 | `runtime/native_table.go`, `builtins/register.go` | The table and the two native types are in the runtime package; `builtins` fills them in its `init` (the static constructor of `NativeTable`), and registers `Formats.TryApply` too, which the interpreter calls for `@name` and templates | the same import cycle (guide §1.1) |
 | `runtime/stack_guard.go` | `HasStack` counts the `Eval`/`EvalOne` frames of the current goroutine (10,000) instead of probing the stack; `OnFreshStack` runs the step on a new goroutine | Go cannot ask how much stack is left; see Recursion and the stack |
-| `values/code_points.go` | `Hex` and `Decimal` write numbers for messages and regex patterns | the core uses no `fmt` or `strconv` beyond `value_text.go` |
+| `values/code_points.go` | `Hex` and `Decimal` write numbers for messages | the core uses no `fmt` or `strconv` beyond `value_text.go` |
 | `values/` | Strings are UTF-8: `CodePoints.Compare` is a byte comparison, `Advance` maps code points to bytes, `Utf8Length` is gone; `FromString` replaces each maximal ill-formed subpart with U+FFFD (`Utf8.DecodeReplacing`) | Go strings are bytes; Go's own decoders replace per byte or per run (guide §3.2) |
 | `values/value_text.go` | The reader combines `\u` surrogate pairs itself and sanitizes ill-formed UTF-8; reader error columns count code points | the reference reads UTF-16 text and lets `FromString` fix lone surrogates; the two counts differ only for characters above U+FFFF |
 | `values/jq_value.go` | `Value` is a struct of a kind, a `float64` and an `any` (32 bytes, not 16) | guide §2.1 |
@@ -137,7 +141,7 @@ names. Where Go asks for something else:
 | `syntax/parser.go` | Partial nodes of `parsePipe`, `if` and `reduce`/`foreach` get their hole filled in place | Go has no `with` copies; a node is not changed after parsing |
 | `syntax/lexer.go` | The source is sanitized first (ill-formed UTF-8 to U+FFFD) | as the reference's lone surrogates |
 | `binding/prelude.go` | `//go:embed prelude.jq`, a copy made by `go generate` (`copy_prelude.go`) | embed sees only files of the package's directory |
-| `builtins/regex_*.go` | The translator writes classes on code points (`\x{…}`), no surrogate pairs; `\b`, `\B` are `regexp`'s own ASCII boundaries, so no lookaround; a search from position p > 0 runs `^(?s:.)(?s:.*?)(P)` on the input from the code point before p. `regexp` takes every pattern within the limits of spec §11 as it is: two of them are its own (nested counts that multiply above 1000, a syntax tree of 1,000 levels) | `regexp` (RE2) works on code points and has no start position (guide §3.3) |
+| `builtins/regex_*.go` | The engine reads UTF-8 and its positions are byte offsets, which `RegexNatives` converts to code points; a match that starts with a fixed code point skips ahead with `strings.Index` on its UTF-8 bytes, whatever the code point; `RegexSyntax.Op` is `RegexOp` (`OpChar`…); the program cache counts its entries in an `atomic.Int64` | Go strings are bytes (guide §3.3); `sync.Map` has no count |
 | `builtins/math_extra.go` | Each product that is added is converted with `float64(…)`; the polynomials go through a `horner` helper | Go may fuse `x*y + z` (it does on arm64); an explicit conversion rounds first |
 | `builtins/assign_natives.go` | A draft keeps its children in attachment order | the reference walks dictionaries; Go map order is random |
 | `builtins/strftime.go` | Formatting appends to a `[]byte` | the reference upper-cases a `StringBuilder` in place |

@@ -2,42 +2,41 @@ package builtins
 
 import (
 	"slices"
-	"strings"
 
 	"github.com/devlooped/jqlite/go/internal/values"
 )
 
 type regexSyntax struct{}
 
-// RegexSyntax is the regex dialect of §9.10: reads a jqlite pattern, rejects everything outside the
-// dialect, and writes an equivalent pattern for the host engine (RegexEngine) together with the
-// names of its capturing groups in the order of their '('.
+// RegexSyntax is the regex flavor of §9.10: reads a jqlite pattern, rejects everything outside the
+// flavor, and writes an equivalent program for the engine (RegexEngine) together with the names of
+// its capturing groups in the order of their '('.
 //
-// The output is in the syntax of Go's regexp (RE2), which works on code points, so the classes are
-// written directly (the reference, on UTF-16, splits them into a BMP class and surrogate pairs).
-// The meaning the spec demands is spelled out so that no engine default leaks in: every code point
-// is written as \x{…}; . as a class without U+000A (with m or p, any code point); \d \w \s as ASCII
-// classes; $ as \z; \b \B as Go's own ASCII word boundaries; named groups as plain groups. The i flag
-// is done here, never by the engine: it folds ASCII letters only (rangeSet.addAsciiCases, the one
-// place of the rule).
+// The program is made of the instructions of RegexOp, with the meaning the spec demands spelled
+// out: ., classes and \d \w \s as sets of code points, $ as the end of the input, \b \B as ASCII
+// word boundaries. The i flag is done here: it folds ASCII letters only (rangeSet.addAsciiCases, the
+// one place of the rule). No host regex engine reads the flavor with one meaning, so none is used
+// (docs/porting.md §3.3).
 //
 // The limits of §11 are checked here, while the pattern is read (regexMeasure), so that the engine
-// meets no pattern beyond them. Two of them are RE2's own: it refuses nested counts that multiply
-// above 1000, and a syntax tree of more than 1000 levels (a group that is an alternative, a
-// sequence, a repetition and a capture takes four, so 100 groups open at once stay under it).
+// never meets a pattern beyond them and takes every one within.
+//
+// The pattern is read in one pass, without recursion, and each instruction that jumps says how far
+// (not where to), so a piece of the program can be copied or moved as it is: a quantifier wraps or
+// repeats the instructions of the atom before it.
 var RegexSyntax regexSyntax
 
 const (
-	// maxRepeat is the largest count of a quantifier, and of the counts of nested quantifiers multiplied.
-	maxRepeat = 1000
-	// maxSize is the largest size of a pattern (§9.10): its items, counted repetitions written out.
-	maxSize = 10000
-	// maxNesting is the most groups open at once.
-	maxNesting = 100
-	// maxGroups is the most capturing groups.
-	maxGroups = 1000
-	// tooLarge is the reason of a pattern beyond maxSize, maxNesting or maxGroups: a fixed text (§10.3).
-	tooLarge = "the pattern is too large"
+	// MaxRepeat is the largest count of a quantifier, and of the counts of nested quantifiers multiplied.
+	MaxRepeat = 1000
+	// MaxSize is the largest size of a pattern (§9.10): its items, counted repetitions written out.
+	MaxSize = 10000
+	// MaxNesting is the most groups open at once.
+	MaxNesting = 100
+	// MaxGroups is the most capturing groups.
+	MaxGroups = 1000
+	// TooLarge is the reason of a pattern beyond MaxSize, MaxNesting or MaxGroups: a fixed text (§10.3).
+	TooLarge = "the pattern is too large"
 )
 
 // RegexOptions are the flags of §9.10 that change the pattern itself.
@@ -47,12 +46,52 @@ type RegexOptions struct {
 	IgnoreCase bool
 }
 
-// Translation is a translated pattern: the host pattern, one name ("" when unnamed) per capturing
-// group, and whether it uses lookaround (never in Go: \b and \B are native).
+// RegexOp is an instruction of a program; a and b are its operands.
+type RegexOp int
+
+const (
+	// OpChar is the code point a.
+	OpChar RegexOp = iota
+	// OpSet is a code point of the set a of the program.
+	OpSet
+	// OpAny is any code point.
+	OpAny
+	// OpAnyButLineFeed is any code point but U+000A.
+	OpAnyButLineFeed
+	// OpSplit goes on a instructions further; if that fails, b instructions further.
+	OpSplit
+	// OpJump goes on a instructions further.
+	OpJump
+	// OpSave stores the position in slot a (2g: the start of group g; 2g + 1: its end; group 0 is
+	// the match).
+	OpSave
+	// OpBegin is the start of the input.
+	OpBegin
+	// OpEnd is the end of the input.
+	OpEnd
+	// OpWordBoundary is an ASCII word boundary.
+	OpWordBoundary
+	// OpNotWordBoundary is not an ASCII word boundary.
+	OpNotWordBoundary
+	// OpMark stores the position in mark a: where an iteration of a repetition starts.
+	OpMark
+	// OpEmptyExit goes on b instructions further when the position is the one of mark a (an
+	// iteration that matched nothing ends its repetition); else to the next instruction.
+	OpEmptyExit
+	// OpMatch: the pattern matched.
+	OpMatch
+)
+
+// Translation is a translated pattern: the program (an instruction and its operands a, b per
+// index), its sets of code points (sorted pairs low, high), the number of its marks, and one name
+// ("" when unnamed) per capturing group.
 type Translation struct {
-	Pattern    string
-	Groups     []string
-	Lookaround bool
+	Ops    []RegexOp
+	A      []int
+	B      []int
+	Sets   [][]int
+	Marks  int
+	Groups []string
 }
 
 // previous is what precedes a quantifier: only an atom may be repeated.
@@ -65,176 +104,284 @@ const (
 	previousAnchor
 )
 
-type regexError string
+// TryTranslate gives the program of a pattern, or false with why it is not of the flavor.
+func (regexSyntax) TryTranslate(pattern string, options RegexOptions) (*Translation, string, bool) {
+	t := &translator{points: decode(pattern), options: options, measure: newRegexMeasure()}
+	if !t.translate() {
+		return nil, t.reason, false
+	}
+	return &Translation{t.ops, t.a, t.b, t.sets, t.marks, t.groups}, "", true
+}
 
-func (e regexError) Error() string { return string(e) }
+// lastItem is whether the last item of an alternative can match nothing, or that it has no item.
+type lastItem int8
 
-// TryTranslate validates and translates a pattern; the error is the reason.
-func (regexSyntax) TryTranslate(pattern string, options RegexOptions) (Translation, string, bool) {
-	points := []rune(pattern)
-	var output strings.Builder
-	var groups []string
-	measure := newRegexMeasure()
-	prev := previousNone
-	for i := 0; i < len(points); {
-		c := points[i]
-		if options.Extended && (isExtendedSpace(c) || c == '#') {
-			i = skipExtended(points, i)
+const (
+	lastNone lastItem = iota
+	lastNullable
+	lastNotNullable
+)
+
+func nullability(nullable bool) lastItem {
+	if nullable {
+		return lastNullable
+	}
+	return lastNotNullable
+}
+
+// frame is an open group, or the whole pattern: where it starts, where its current alternative
+// starts, the jumps of its earlier alternatives to its end, and whether it can match nothing (for
+// the loops around it): before is whether every item of the current alternative but the last can,
+// last whether the last can (lastNone: no item), any whether an earlier alternative can.
+type frame struct {
+	start       int
+	group       int
+	alternative int
+	jumps       []int
+	last        lastItem
+	any         bool
+	before      bool
+}
+
+func newFrame(start, group int) *frame {
+	return &frame{start: start, group: group, alternative: start, before: true}
+}
+
+func (f *frame) add(nullable bool) {
+	f.before = f.before && f.last != lastNotNullable
+	f.last = nullability(nullable)
+}
+
+// close ends the current alternative.
+func (f *frame) close() {
+	f.any = f.any || f.before && f.last != lastNotNullable
+	f.before = true
+	f.last = lastNone
+}
+
+type translator struct {
+	points  []rune
+	options RegexOptions
+	ops     []RegexOp
+	a       []int
+	b       []int
+	sets    [][]int
+	groups  []string
+	frames  []*frame
+	measure *regexMeasure
+	marks   int
+	i       int
+	prev    previous
+	// Where the instructions of the last atom start.
+	atom   int
+	reason string
+}
+
+func (t *translator) translate() bool {
+	points := t.points
+	t.emit(OpSave, 0, 0)
+	f := newFrame(len(t.ops), 0)
+	t.frames = append(t.frames, f)
+	for t.i < len(points) {
+		c := points[t.i]
+		if t.options.Extended && (isExtendedSpace(c) || c == '#') {
+			t.i = skipExtended(points, t.i)
 			continue
 		}
 
-		var err error
-		// Whether the pattern read so far is within maxSize.
-		fits := true
 		switch c {
 		case '\\':
-			i, prev, err = tryEscape(points, i, &output, options, prev)
-			fits = err != nil || measure.add(1)
+			if !t.tryEscape() {
+				return false
+			}
+			if !t.measure.add(1) {
+				return t.fail(TooLarge)
+			}
 		case '[':
-			var items int
-			i, items, err = tryClass(points, i, &output, options)
-			fits = err != nil || measure.add(items)
-			prev = previousAtom
+			items, ok := t.tryClass()
+			if !ok {
+				return false
+			}
+			if !t.measure.add(items) {
+				return t.fail(TooLarge)
+			}
 		case '.':
-			if options.DotAll {
-				output.WriteString(`(?s:.)`)
+			t.startAtom()
+			if t.options.DotAll {
+				t.emit(OpAny, 0, 0)
 			} else {
-				output.WriteString(`[^\n]`)
+				t.emit(OpAnyButLineFeed, 0, 0)
 			}
-			fits = measure.add(1)
-			prev = previousAtom
-			i++
+			if !t.measure.add(1) {
+				return t.fail(TooLarge)
+			}
+			t.i++
 		case '^':
-			output.WriteByte('^')
-			fits = measure.add(1)
-			prev = previousAnchor
-			i++
+			t.anchor(OpBegin)
+			if !t.measure.add(1) {
+				return t.fail(TooLarge)
+			}
+			t.i++
 		case '$':
-			output.WriteString(`\z`)
-			fits = measure.add(1)
-			prev = previousAnchor
-			i++
+			t.anchor(OpEnd)
+			if !t.measure.add(1) {
+				return t.fail(TooLarge)
+			}
+			t.i++
 		case '|':
-			output.WriteByte('|')
-			fits = measure.add(1)
-			prev = previousNone
-			i++
+			if !t.measure.add(1) {
+				return t.fail(TooLarge)
+			}
+			// The alternative so far, or the rest: it ends with a jump to the end of the group.
+			t.insert(f.alternative, OpSplit, 1, len(t.ops)-f.alternative+2)
+			f.jumps = append(f.jumps, len(t.ops))
+			t.emit(OpJump, 0, 0)
+			f.alternative = len(t.ops)
+			f.close()
+			t.prev = previousNone
+			t.i++
 		case '(':
-			if measure.depth() == maxNesting {
-				return Translation{}, tooLarge, false
+			if t.measure.depth() == MaxNesting {
+				return t.fail(TooLarge)
 			}
-			i, groups, err = tryGroup(points, i, &output, groups)
-			fits = err != nil || measure.open()
-			prev = previousNone
+			start := len(t.ops)
+			if !t.tryGroup() {
+				return false
+			}
+			if !t.measure.open() {
+				return t.fail(TooLarge)
+			}
+			group := 0
+			if len(t.ops) > start {
+				group = len(t.groups)
+			}
+			f = newFrame(start, group)
+			f.alternative = len(t.ops)
+			t.frames = append(t.frames, f)
+			t.prev = previousNone
 		case ')':
-			if measure.depth() == 0 {
-				return Translation{}, "unmatched close parenthesis", false
+			if len(t.frames) == 1 {
+				return t.fail("unmatched close parenthesis")
 			}
-			measure.close()
-			output.WriteByte(')')
-			prev = previousAtom
-			i++
+			t.measure.close()
+			t.end(f)
+			if f.group > 0 {
+				t.emit(OpSave, 2*f.group+1, 0)
+			}
+			t.frames = t.frames[:len(t.frames)-1]
+			group := f
+			f = t.frames[len(t.frames)-1]
+			f.add(group.any)
+			t.atom = group.start
+			t.prev = previousAtom
+			t.i++
 		case '*', '+', '?', '{':
-			if prev != previousAtom {
-				if prev == previousQuantifier {
-					return Translation{}, "nested quantifier", false
+			if t.prev != previousAtom {
+				if t.prev == previousQuantifier {
+					return t.fail("nested quantifier")
 				}
-				return Translation{}, "quantifier without an operand", false
+				return t.fail("quantifier without an operand")
 			}
-			i, err = tryQuantifier(points, i, &output, options, measure)
-			prev = previousQuantifier
+			if !t.tryQuantifier(f) {
+				return false
+			}
+			t.prev = previousQuantifier
 		case ']', '}':
-			return Translation{}, "unescaped '" + string(c) + "'", false
+			return t.fail("unescaped '" + string(c) + "'")
 		default:
-			literal(&output, c, options)
-			fits = measure.add(1)
-			prev = previousAtom
-			i++
-		}
-		if err != nil {
-			return Translation{}, err.Error(), false
-		}
-		if !fits {
-			return Translation{}, tooLarge, false
+			t.literal(c)
+			if !t.measure.add(1) {
+				return t.fail(TooLarge)
+			}
+			t.i++
 		}
 	}
 
-	if measure.depth() > 0 {
-		return Translation{}, "missing close parenthesis", false
+	if len(t.frames) > 1 {
+		return t.fail("missing close parenthesis")
 	}
-	return Translation{output.String(), groups, false}, "", true
+	t.end(f)
+	t.emit(OpSave, 1, 0)
+	t.emit(OpMatch, 0, 0)
+	return true
+}
+
+// end is the end of a group or of the pattern: the jumps of its alternatives arrive here.
+func (t *translator) end(f *frame) {
+	for _, jump := range f.jumps {
+		t.a[jump] = len(t.ops) - jump
+	}
+	f.close()
+}
+
+func (t *translator) emit(op RegexOp, first, second int) {
+	t.ops = append(t.ops, op)
+	t.a = append(t.a, first)
+	t.b = append(t.b, second)
+}
+
+func (t *translator) insert(at int, op RegexOp, first, second int) {
+	t.ops = slices.Insert(t.ops, at, op)
+	t.a = slices.Insert(t.a, at, first)
+	t.b = slices.Insert(t.b, at, second)
+}
+
+// startAtom: an atom starts here, and a quantifier after it repeats the instructions from here on.
+func (t *translator) startAtom() {
+	t.atom = len(t.ops)
+	t.prev = previousAtom
+	t.frames[len(t.frames)-1].add(false)
+}
+
+func (t *translator) anchor(op RegexOp) {
+	t.emit(op, 0, 0)
+	t.prev = previousAnchor
+	t.frames[len(t.frames)-1].add(true)
 }
 
 // tryEscape: \x outside a class: a literal, a shorthand class or an anchor.
-func tryEscape(points []rune, i int, output *strings.Builder, options RegexOptions, prev previous) (int, previous, error) {
-	if i+1 == len(points) {
-		return i, prev, regexError("trailing backslash")
+func (t *translator) tryEscape() bool {
+	points := t.points
+	if t.i+1 == len(points) {
+		return t.fail("trailing backslash")
 	}
-	c := points[i+1]
+	c := points[t.i+1]
 	switch c {
-	case 'b':
-		output.WriteString(`\b`)
-		return i + 2, previousAnchor, nil
-	case 'B':
-		output.WriteString(`\B`)
-		return i + 2, previousAnchor, nil
+	case 'b', 'B':
+		if c == 'b' {
+			t.anchor(OpWordBoundary)
+		} else {
+			t.anchor(OpNotWordBoundary)
+		}
+		t.i += 2
+		return true
 	case 'd', 'w', 's', 'D', 'W', 'S':
-		set := &rangeSet{}
+		set := newRangeSet()
 		set.addShorthand(c)
-		writeClass(output, set, false)
-		return i + 2, previousAtom, nil
+		t.startAtom()
+		t.class(set, false)
+		t.i += 2
+		return true
 	}
 
-	value, next, err := tryEscapedLiteral(points, i)
-	if err != nil {
-		return i, prev, err
+	literal, next, reason, ok := tryEscapedLiteral(points, t.i)
+	if !ok {
+		return t.fail(reason)
 	}
-	literal(output, value, options)
-	return next, previousAtom, nil
+	t.i = next
+	t.literal(literal)
+	return true
 }
 
-// tryEscapedLiteral reads the escapes that stand for one code point: the metacharacters,
-// \t \n \r \f \v and \xHH.
-func tryEscapedLiteral(points []rune, i int) (rune, int, error) {
-	if i+1 == len(points) {
-		return 0, i, regexError("trailing backslash")
-	}
-	c := points[i+1]
-	switch c {
-	case '\\', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|', '^', '$', '/', '-':
-		return c, i + 2, nil
-	case 't':
-		return '\t', i + 2, nil
-	case 'n':
-		return '\n', i + 2, nil
-	case 'r':
-		return '\r', i + 2, nil
-	case 'f':
-		return '\f', i + 2, nil
-	case 'v':
-		return '\v', i + 2, nil
-	case 'x':
-		high, low := -1, -1
-		if i+2 < len(points) {
-			high = hexRune(points[i+2])
-		}
-		if i+3 < len(points) {
-			low = hexRune(points[i+3])
-		}
-		if high < 0 || low < 0 {
-			return 0, i, regexError(`\x must be followed by two hex digits`)
-		}
-		return rune(high*16 + low), i + 4, nil
-	}
-	return 0, i, regexError(`invalid escape \` + string(c))
-}
-
-// tryGroup reads ( (?: or (?<name>.
-func tryGroup(points []rune, i int, output *strings.Builder, groups []string) (int, []string, error) {
+// tryGroup reads ( (?: or (?<name>: a capturing group starts with the instruction that stores its
+// start.
+func (t *translator) tryGroup() bool {
+	points := t.points
+	i := t.i
 	if i+1 < len(points) && points[i+1] == '?' {
 		if i+2 < len(points) && points[i+2] == ':' {
-			output.WriteString("(?:")
-			return i + 3, groups, nil
+			t.i += 3
+			return true
 		}
 
 		if i+2 < len(points) && points[i+2] == '<' {
@@ -244,149 +391,222 @@ func tryGroup(points []rune, i int, output *strings.Builder, groups []string) (i
 				end++
 			}
 			if end == len(points) || !isGroupName(points, start, end) {
-				return i, groups, regexError("invalid group name")
+				return t.fail("invalid group name")
 			}
 			name := string(points[start:end])
-			if slices.Contains(groups, name) {
-				return i, groups, regexError("duplicate group name " + name)
+			if slices.Contains(t.groups, name) {
+				return t.fail("duplicate group name " + name)
 			}
-			if len(groups) == maxGroups {
-				return i, groups, regexError(tooLarge)
+			if len(t.groups) == MaxGroups {
+				return t.fail(TooLarge)
 			}
-			output.WriteByte('(')
-			return end + 1, append(groups, name), nil
+			t.groups = append(t.groups, name)
+			t.emit(OpSave, 2*len(t.groups), 0)
+			t.i = end + 1
+			return true
 		}
 
-		return i, groups, regexError("unsupported group syntax (?")
+		return t.fail("unsupported group syntax (?")
 	}
 
-	if len(groups) == maxGroups {
-		return i, groups, regexError(tooLarge)
+	if len(t.groups) == MaxGroups {
+		return t.fail(TooLarge)
 	}
-	output.WriteByte('(')
-	return i + 1, append(groups, ""), nil
+	t.groups = append(t.groups, "")
+	t.emit(OpSave, 2*len(t.groups), 0)
+	t.i++
+	return true
 }
 
 // tryQuantifier reads * + ? {n} {n,} {n,m}, each optionally followed by ? (lazy).
-func tryQuantifier(points []rune, i int, output *strings.Builder, options RegexOptions, measure *regexMeasure) (int, error) {
-	c := points[i]
+func (t *translator) tryQuantifier(f *frame) bool {
+	points := t.points
+	c := points[t.i]
+	var low int
+	// -1: no maximum.
+	var high int
 	// The count of §9.10: how many times the operand is written out.
 	count := 1
 	if c == '{' {
-		at := i + 1
-		var low, high int
-		var found bool
-		if at, low, found = tryRepeatNumber(points, at); !found {
-			return i, regexError("'{' is not a quantifier")
+		at, number, found := tryNumber(points, t.i+1)
+		if !found {
+			return t.fail("'{' is not a quantifier")
 		}
-		high = low
+		low, high = number, number
 		unbounded := false
 		if at < len(points) && points[at] == ',' {
 			at++
 			if at < len(points) && points[at] == '}' {
 				unbounded = true
-			} else if at, high, found = tryRepeatNumber(points, at); !found {
-				return i, regexError("'{' is not a quantifier")
+			} else if at, high, found = tryNumber(points, at); !found {
+				return t.fail("'{' is not a quantifier")
 			}
 		}
 
 		if at == len(points) || points[at] != '}' {
-			return i, regexError("'{' is not a quantifier")
+			return t.fail("'{' is not a quantifier")
 		}
-		if low > maxRepeat || (!unbounded && (high > maxRepeat || high < low)) {
-			return i, regexError("invalid repetition count")
+		if low > MaxRepeat || !unbounded && (high > MaxRepeat || high < low) {
+			return t.fail("invalid repetition count")
 		}
-		count = high
 		if unbounded {
-			count = low
+			count = max(low, 1)
+		} else {
+			count = max(high, 1)
 		}
-		count = max(count, 1)
-		if !measure.multiply(count) {
-			return i, regexError("invalid repetition count")
+		if !t.measure.multiply(count) {
+			return t.fail("invalid repetition count")
 		}
-		output.WriteString("{" + values.CodePoints.Decimal(low))
 		if unbounded {
-			output.WriteByte(',')
-		} else if high != low {
-			output.WriteString("," + values.CodePoints.Decimal(high))
+			high = -1
 		}
-		output.WriteByte('}')
-		i = at + 1
+		t.i = at + 1
 	} else {
-		output.WriteRune(c)
-		i++
+		low, high = 0, -1
+		if c == '+' {
+			low = 1
+		}
+		if c == '?' {
+			high = 1
+		}
+		t.i++
 	}
 
-	if !measure.repeat(count) {
-		return i, regexError(tooLarge)
+	if !t.measure.repeat(count) {
+		return t.fail(TooLarge)
 	}
-	if options.Extended {
-		for i < len(points) && (isExtendedSpace(points[i]) || points[i] == '#') {
-			i = skipExtended(points, i)
+
+	if t.options.Extended {
+		for t.i < len(points) && (isExtendedSpace(points[t.i]) || points[t.i] == '#') {
+			t.i = skipExtended(points, t.i)
 		}
 	}
 
-	if i < len(points) && points[i] == '?' {
-		output.WriteByte('?')
-		i++
+	lazy := false
+	if t.i < len(points) && points[t.i] == '?' {
+		lazy = true
+		t.i++
 	}
-	return i, nil
+
+	return t.repeat(f, low, high, lazy)
 }
 
-func tryRepeatNumber(points []rune, at int) (int, int, bool) {
-	v := 0
-	start := at
-	for at < len(points) && points[at] >= '0' && points[at] <= '9' {
-		v = min(v*10+int(points[at]-'0'), maxRepeat+1)
-		at++
+// repeat repeats the last atom: its instructions low times, then a loop (high < 0: no maximum) or
+// high - low optional copies. Each copy is an iteration. When the atom can match nothing and there can be
+// several iterations, each marks where it starts, and one that matched nothing ends the
+// repetition, whatever its counts (§9.10): "ca" | match("(c??){2}a") captures "" at 1.
+func (t *translator) repeat(f *frame, low, high int, lazy bool) bool {
+	start := t.atom
+	length := len(t.ops) - start
+	nullable := f.last != lastNotNullable
+	marked := nullable && (high < 0 || high > 1)
+	iteration := length
+	if marked {
+		iteration += 2
 	}
-	return at, v, at > start
+	size := low * iteration
+	if high < 0 {
+		size += iteration + 2
+	} else {
+		size += (high - low) * (iteration + 1)
+	}
+
+	b := body{ops: slices.Clone(t.ops[start:]), a: slices.Clone(t.a[start:]), b: slices.Clone(t.b[start:]), mark: -1, end: start + size}
+	if marked {
+		b.mark = t.marks
+		t.marks++
+	}
+	t.ops = t.ops[:start]
+	t.a = t.a[:start]
+	t.b = t.b[:start]
+	for n := 0; n < low; n++ {
+		t.copy(&b)
+	}
+	if high < 0 {
+		// again: split (iteration, end); iteration; jump again; end:
+		again := len(t.ops)
+		if lazy {
+			t.emit(OpSplit, b.end-again, 1)
+		} else {
+			t.emit(OpSplit, 1, b.end-again)
+		}
+		t.copy(&b)
+		t.emit(OpJump, again-len(t.ops), 0)
+	} else {
+		// split (iteration, end); iteration; split (iteration, end); iteration; …; end:
+		for n := high - low; n > 0; n-- {
+			exit := b.end - len(t.ops)
+			if lazy {
+				t.emit(OpSplit, exit, 1)
+			} else {
+				t.emit(OpSplit, 1, exit)
+			}
+			t.copy(&b)
+		}
+	}
+
+	f.last = nullability(low == 0 || nullable)
+	return true
 }
 
-// tryClass reads [...] or [^...]: literals, escapes, ranges of literals and shorthands; the second
-// result is the number of its items.
-func tryClass(points []rune, i int, output *strings.Builder, options RegexOptions) (int, int, error) {
-	items := 0
-	at := i + 1
+// copy writes one iteration of a repetition: the atom, between its mark and the exit of an empty
+// iteration.
+func (t *translator) copy(b *body) {
+	if b.mark >= 0 {
+		t.emit(OpMark, b.mark, 0)
+	}
+	for k := range b.ops {
+		t.emit(b.ops[k], b.a[k], b.b[k])
+	}
+	if b.mark >= 0 {
+		t.emit(OpEmptyExit, b.mark, b.end-len(t.ops))
+	}
+}
+
+// tryClass reads [...] or [^...]: literals, escapes, ranges of literals and shorthands; items is
+// their number.
+func (t *translator) tryClass() (items int, ok bool) {
+	points := t.points
+	at := t.i + 1
 	negated := at < len(points) && points[at] == '^'
 	if negated {
 		at++
 	}
 	first := at
-	set := &rangeSet{}
+	set := newRangeSet()
 	previousLiteral := rune(-1)
 	for {
 		if at == len(points) {
-			return i, 0, regexError("missing ']'")
+			return 0, t.fail("missing ']'")
 		}
 		c := points[at]
 		if c == ']' {
 			break
 		}
 		if c == '[' {
-			return i, 0, regexError("unescaped '[' in a class")
+			return 0, t.fail("unescaped '[' in a class")
 		}
 
 		if c == '-' && at != first && at+1 < len(points) && points[at+1] != ']' {
 			// A range: the item before must be a single literal, the one after a literal too.
 			if previousLiteral < 0 {
-				return i, 0, regexError("'-' must be first, last, escaped or between two literals")
+				return 0, t.fail("'-' must be first, last, escaped or between two literals")
 			}
 			at++
-			high, next, err := tryClassLiteral(points, at)
-			if err != nil {
-				return i, 0, err
+			high, next, reason, ok := tryClassLiteral(points, at)
+			if !ok {
+				return 0, t.fail(reason)
 			}
 			at = next
 			if high < previousLiteral {
-				return i, 0, regexError("range out of order")
+				return 0, t.fail("range out of order")
 			}
 			set.add(previousLiteral, high)
 			previousLiteral = -1
 			continue
 		}
 
-		if c == '\\' && at+1 < len(points) && strings.ContainsRune("dwsDWS", points[at+1]) {
+		if c == '\\' && at+1 < len(points) && isShorthand(points[at+1]) {
 			set.addShorthand(points[at+1])
 			previousLiteral = -1
 			items++
@@ -394,25 +614,72 @@ func tryClass(points []rune, i int, output *strings.Builder, options RegexOption
 			continue
 		}
 
-		value, next, err := tryClassLiteral(points, at)
-		if err != nil {
-			return i, 0, err
+		literal, next, reason, ok := tryClassLiteral(points, at)
+		if !ok {
+			return 0, t.fail(reason)
 		}
 		at = next
-		set.add(value, value)
-		previousLiteral = value
+		set.add(literal, literal)
+		previousLiteral = literal
 		items++
 	}
 
 	if at == first {
-		return i, 0, regexError("empty class")
+		return 0, t.fail("empty class")
 	}
 	// The i flag folds before a negation applies: [^a] matches neither a nor A.
-	if options.IgnoreCase {
+	if t.options.IgnoreCase {
 		set.addAsciiCases()
 	}
-	writeClass(output, set, negated)
-	return at + 1, items, nil
+	t.startAtom()
+	t.class(set, negated)
+	t.i = at + 1
+	return items, true
+}
+
+// class writes a class as a set of the program: a negated class is its complement.
+func (t *translator) class(set *rangeSet, negated bool) {
+	if negated {
+		set = set.complement()
+	}
+	ranges := set.normalize()
+	pairs := make([]int, 2*len(ranges))
+	for k, r := range ranges {
+		pairs[2*k] = int(r.low)
+		pairs[2*k+1] = int(r.high)
+	}
+
+	t.sets = append(t.sets, pairs)
+	t.emit(OpSet, len(t.sets)-1, 0)
+}
+
+// literal writes a code point; under the i flag an ASCII letter becomes the class of its two cases.
+func (t *translator) literal(c rune) {
+	t.startAtom()
+	if t.options.IgnoreCase && (c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z') {
+		set := newRangeSet()
+		set.add(c, c)
+		set.addAsciiCases()
+		t.class(set, false)
+		return
+	}
+
+	t.emit(OpChar, int(c), 0)
+}
+
+func (t *translator) fail(text string) bool {
+	t.reason = text
+	return false
+}
+
+// body is the instructions of a repeated atom; its mark (-1 when its iterations are not marked)
+// and the index where the repetition ends.
+type body struct {
+	ops  []RegexOp
+	a    []int
+	b    []int
+	mark int
+	end  int
 }
 
 // regexMeasure holds the limits of §11 on the part of a pattern read so far: its size, the groups
@@ -441,7 +708,7 @@ func (m *regexMeasure) add(itemSize int) bool {
 	m.atom = itemSize
 	m.atomProduct = 1
 	m.size += itemSize
-	return m.size <= maxSize
+	return m.size <= MaxSize
 }
 
 // open: a group opens, it counts 1; false when the pattern is too large.
@@ -462,70 +729,77 @@ func (m *regexMeasure) close() {
 }
 
 // multiply: a counted quantifier on the last item; false when the nested counts multiply above
-// maxRepeat.
+// MaxRepeat.
 func (m *regexMeasure) multiply(count int) bool {
 	product := count * m.atomProduct
 	last := len(m.products) - 1
 	m.products[last] = max(m.products[last], product)
-	return product <= maxRepeat
+	return product <= MaxRepeat
 }
 
 // repeat: a quantifier on the last item, which counts 1, and the item once more for each count
 // above 1; false when the pattern is too large.
 func (m *regexMeasure) repeat(count int) bool {
 	m.size += m.atom*(count-1) + 1
-	return m.size <= maxSize
+	return m.size <= MaxSize
 }
 
-func tryClassLiteral(points []rune, at int) (rune, int, error) {
-	value := points[at]
-	if value == '\\' {
+// tryEscapedLiteral reads the escapes that stand for one code point: the metacharacters,
+// \t \n \r \f \v and \xHH; it gives the code point and the index after the escape.
+func tryEscapedLiteral(points []rune, i int) (rune, int, string, bool) {
+	if i+1 == len(points) {
+		return 0, i, "trailing backslash", false
+	}
+	c := points[i+1]
+	switch c {
+	case '\\', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|', '^', '$', '/', '-':
+		return c, i + 2, "", true
+	case 't':
+		return '\t', i + 2, "", true
+	case 'n':
+		return '\n', i + 2, "", true
+	case 'r':
+		return '\r', i + 2, "", true
+	case 'f':
+		return '\f', i + 2, "", true
+	case 'v':
+		return '\v', i + 2, "", true
+	case 'x':
+		high, low := -1, -1
+		if i+2 < len(points) {
+			high = hexValue(points[i+2])
+		}
+		if i+3 < len(points) {
+			low = hexValue(points[i+3])
+		}
+		if high < 0 || low < 0 {
+			return 0, i, `\x must be followed by two hex digits`, false
+		}
+		return rune(high*16 + low), i + 4, "", true
+	}
+	return 0, i, `invalid escape \` + string(c), false
+}
+
+// tryNumber reads a repetition count from at (at most MaxRepeat + 1); it gives the index after it.
+func tryNumber(points []rune, at int) (int, int, bool) {
+	value := 0
+	start := at
+	for at < len(points) && points[at] >= '0' && points[at] <= '9' {
+		value = min(value*10+int(points[at]-'0'), MaxRepeat+1)
+		at++
+	}
+	return at, value, at > start
+}
+
+func tryClassLiteral(points []rune, at int) (rune, int, string, bool) {
+	literal := points[at]
+	if literal == '\\' {
 		return tryEscapedLiteral(points, at)
 	}
-	if value == '[' || value == ']' {
-		return 0, at, regexError("unescaped '" + string(value) + "' in a class")
+	if literal == '[' || literal == ']' {
+		return 0, at, "unescaped '" + string(literal) + "' in a class", false
 	}
-	return value, at + 1, nil
-}
-
-// writeClass writes a class of code points; an empty set (a negated class of everything, or no
-// code point) is a class no code point is in.
-func writeClass(output *strings.Builder, set *rangeSet, negated bool) {
-	ranges := set.normalized()
-	if negated {
-		ranges = set.complement().normalized()
-	}
-	if len(ranges) == 0 {
-		output.WriteString(`[^\x{0}-\x{10FFFF}]`)
-		return
-	}
-	output.WriteByte('[')
-	for _, r := range ranges {
-		writeCodePoint(output, r.low)
-		if r.high > r.low {
-			output.WriteByte('-')
-			writeCodePoint(output, r.high)
-		}
-	}
-	output.WriteByte(']')
-}
-
-// literal writes a code point; under the i flag an ASCII letter becomes the class of its two cases.
-func literal(output *strings.Builder, c rune, options RegexOptions) {
-	if options.IgnoreCase && ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
-		set := &rangeSet{}
-		set.add(c, c)
-		set.addAsciiCases()
-		writeClass(output, set, false)
-		return
-	}
-	writeCodePoint(output, c)
-}
-
-func writeCodePoint(output *strings.Builder, c rune) {
-	output.WriteString(`\x{`)
-	output.WriteString(values.CodePoints.Hex(int(c), 1))
-	output.WriteByte('}')
+	return literal, at + 1, "", true
 }
 
 // skipExtended: with the x flag, whitespace and a # comment up to the next line feed.
@@ -539,38 +813,58 @@ func skipExtended(points []rune, i int) int {
 	return i
 }
 
-func isExtendedSpace(c rune) bool { return (c >= 0x09 && c <= 0x0D) || c == 0x20 }
+func isExtendedSpace(c rune) bool { return c >= 0x09 && c <= 0x0D || c == 0x20 }
+
+func isShorthand(c rune) bool {
+	return c == 'd' || c == 'w' || c == 's' || c == 'D' || c == 'W' || c == 'S'
+}
 
 func isGroupName(points []rune, start, end int) bool {
-	if end == start || (points[start] >= '0' && points[start] <= '9') {
+	if end == start || points[start] >= '0' && points[start] <= '9' {
 		return false
 	}
 	for _, c := range points[start:end] {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_') {
 			return false
 		}
 	}
 	return true
 }
 
-func hexRune(c rune) int {
-	if c < 0x80 {
-		return hexDigit(byte(c))
+func hexValue(c rune) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
 	}
 	return -1
 }
 
+// decode gives the code points of a pattern: Go strings are UTF-8, well-formed in the engine (the
+// reference combines surrogate pairs here).
+func decode(text string) []rune { return []rune(text) }
+
 type codeRange struct{ low, high rune }
 
-// rangeSet is a set of code points as ranges, normalized to sorted, disjoint, non-adjacent ones
-// when read.
-type rangeSet struct{ ranges []codeRange }
+// rangeSet is a set of code points as sorted, disjoint, non-adjacent ranges.
+type rangeSet struct {
+	ranges     []codeRange
+	normalized bool
+}
 
-func (s *rangeSet) add(low, high rune) { s.ranges = append(s.ranges, codeRange{low, high}) }
+func newRangeSet() *rangeSet { return &rangeSet{normalized: true} }
+
+func (s *rangeSet) add(low, high rune) {
+	s.ranges = append(s.ranges, codeRange{low, high})
+	s.normalized = false
+}
 
 // addShorthand adds the ASCII classes of §9.10 and their complements.
 func (s *rangeSet) addShorthand(c rune) {
-	set := &rangeSet{}
+	set := newRangeSet()
 	switch c {
 	case 'd', 'D':
 		set.add('0', '9')
@@ -583,10 +877,11 @@ func (s *rangeSet) addShorthand(c rune) {
 		set.add('\t', '\r')
 		set.add(' ', ' ')
 	}
+
 	if c == 'D' || c == 'W' || c == 'S' {
 		set = set.complement()
 	}
-	for _, r := range set.normalized() {
+	for _, r := range set.normalize() {
 		s.add(r.low, r.high)
 	}
 }
@@ -595,7 +890,7 @@ func (s *rangeSet) addShorthand(c rune) {
 // and a-z, 32 apart); no other code point folds.
 func (s *rangeSet) addAsciiCases() {
 	var added []codeRange
-	for _, r := range s.normalized() {
+	for _, r := range s.normalize() {
 		if upperLow, upperHigh := max(r.low, 'A'), min(r.high, 'Z'); upperLow <= upperHigh {
 			added = append(added, codeRange{upperLow + 32, upperHigh + 32})
 		}
@@ -603,27 +898,35 @@ func (s *rangeSet) addAsciiCases() {
 			added = append(added, codeRange{lowerLow - 32, lowerHigh - 32})
 		}
 	}
-	s.ranges = append(s.ranges, added...)
+
+	for _, r := range added {
+		s.add(r.low, r.high)
+	}
 }
 
 func (s *rangeSet) complement() *rangeSet {
-	complement := &rangeSet{}
+	complement := newRangeSet()
 	next := rune(0)
-	for _, r := range s.normalized() {
+	for _, r := range s.normalize() {
 		if r.low > next {
 			complement.add(next, r.low-1)
 		}
 		next = r.high + 1
 	}
+
 	if next <= values.MaxCodePoint {
 		complement.add(next, values.MaxCodePoint)
 	}
 	return complement
 }
 
-func (s *rangeSet) normalized() []codeRange {
+// normalize sorts and merges the ranges, and gives them.
+func (s *rangeSet) normalize() []codeRange {
+	if s.normalized {
+		return s.ranges
+	}
 	slices.SortFunc(s.ranges, func(a, b codeRange) int { return int(a.low - b.low) })
-	var merged []codeRange
+	merged := make([]codeRange, 0, len(s.ranges))
 	for _, r := range s.ranges {
 		if n := len(merged); n > 0 && r.low <= merged[n-1].high+1 {
 			merged[n-1].high = max(merged[n-1].high, r.high)
@@ -631,6 +934,8 @@ func (s *rangeSet) normalized() []codeRange {
 			merged = append(merged, r)
 		}
 	}
+
 	s.ranges = merged
+	s.normalized = true
 	return merged
 }
