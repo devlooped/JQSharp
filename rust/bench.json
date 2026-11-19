@@ -1,0 +1,5 @@
+{
+  "name": "rust",
+  "build": [["cargo", "build", "--release"]],
+  "run": ["target/release/jqlite-bench"]
+}
