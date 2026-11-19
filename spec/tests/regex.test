@@ -165,6 +165,48 @@ match("(a*)b")
 "b"
 [{"offset":0,"string":"","length":0,"name":"n"},{"offset":-1,"string":null,"length":0,"name":null}]
 
+# An iteration that matches nothing ends its repetition, whatever its counts.
+match("(a*)*") | [.string, (.captures | map([.offset, .string]))]
+"b"
+["",[[0,""]]]
+
+match("(|a)*", "(|a)+") | [.string, (.captures | map([.offset, .string]))]
+"aa"
+["",[[0,""]]]
+["",[[0,""]]]
+
+match("(?:a?|b)*") | .string
+"ab"
+"a"
+
+match("(?:(?:a|(c?))(b?))*") | [.string, (.captures | map([.offset, .string]))]
+"a"
+["a",[[1,""],[1,""]]]
+
+match("(c??){2}a") | .captures | map([.offset, .length])
+"ca"
+[[1,0]]
+
+match("(c??){0,2}a") | .captures | map([.offset, .length])
+"ca"
+[[1,0]]
+
+match("(c??)*a") | .captures | map([.offset, .length])
+"ca"
+[[1,0]]
+
+[match("(a??){3}"; "g") | .length]
+"aaa"
+[0,0,0,0]
+
+match("([^a]??){0,2}[ab]") | .captures | map([.offset, .length])
+"caaa "
+[[1,0]]
+
+match("((|$.|[^a]\\w*){0,2}(?:a)){1,2}?") | .captures | map([.offset, .length])
+"cabcc"
+[[0,2],[1,0]]
+
 [match("a*?"; "g") | [.offset, .length]]
 "aa"
 [[0,0],[1,0],[2,0]]

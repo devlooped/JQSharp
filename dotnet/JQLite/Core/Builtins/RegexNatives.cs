@@ -10,7 +10,7 @@ namespace JQLite.Core.Builtins;
 /// <summary>
 /// §9.10 <c>test/2</c> and <c>match/2</c>: the flags, the search loop and the match objects, with
 /// offsets and lengths in code points. The pattern goes through <see cref="RegexSyntax"/> to the
-/// host engine (<see cref="RegexEngine"/>), which works on UTF-16 units.
+/// engine (<see cref="RegexEngine"/>), which works on UTF-16 units.
 /// </summary>
 static class RegexNatives
 {
@@ -20,12 +20,12 @@ static class RegexNatives
         Add("match", 2, Match);
     }
 
-    // A search ready to run: the input with its code point map, the compiled pattern and flags.
-    sealed class Search(string input, HostPattern pattern, string?[] groups, bool global, bool skipEmpty)
+    // A search ready to run: the input, the matcher of the pattern and the flags.
+    sealed class Search(string input, RegexMatcher matcher, bool global, bool skipEmpty)
     {
         public string Input { get; } = input;
-        public HostPattern Pattern { get; } = pattern;
-        public string?[] Groups { get; } = groups;
+        public RegexMatcher Matcher { get; } = matcher;
+        public string?[] Groups => Matcher.Program.Groups;
         public bool Global { get; } = global;
         public bool SkipEmpty { get; } = skipEmpty;
     }
@@ -34,6 +34,9 @@ static class RegexNatives
     {
         if (!TryPrepare(input, arguments[0], arguments[1], out var search, out error))
             return Fail(error, out result, out error);
+        // Whether there is a match, and nothing of it; with the n flag, a match that is not empty.
+        if (!search.SkipEmpty)
+            return Ok(JqValue.FromBool(search.Matcher.TryMatch(search.Input, 0, [])), out result, out error);
         var found = false;
         Run(search, (_, _) =>
         {
@@ -81,11 +84,10 @@ static class RegexNatives
             }
         }
 
-        if (!RegexSyntax.TryTranslate(re.AsString(), new RegexSyntax.Options(extended, dotAll, ignoreCase), out var translation, out var reason)
-            || !RegexEngine.TryCompile(translation.Pattern, translation.Lookaround, out var pattern, out reason))
+        if (!RegexEngine.TryCompile(re.AsString(), new RegexSyntax.Options(extended, dotAll, ignoreCase), out var program, out var reason))
             return Error(Errors.RegexFailure(reason), out error);
 
-        search = new Search(input.AsString(), pattern, translation.Groups, global, skipEmpty);
+        search = new Search(input.AsString(), new RegexMatcher(program), global, skipEmpty);
         error = default;
         return true;
     }
@@ -97,7 +99,7 @@ static class RegexNatives
         var spans = new int[2 * (search.Groups.Length + 1)];
         for (var p = 0; p <= map.Length;)
         {
-            if (!RegexEngine.TryMatch(search.Pattern, search.Input, map.Unit(p), spans))
+            if (!search.Matcher.TryMatch(search.Input, map.Unit(p), spans))
                 return;
             var start = map.CodePoint(spans[0]);
             var end = map.CodePoint(spans[1]);

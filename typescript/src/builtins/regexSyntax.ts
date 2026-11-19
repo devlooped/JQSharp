@@ -1,16 +1,12 @@
-// The regex dialect of §9.10: reads a jqlite pattern, rejects everything outside the dialect,
-// and writes an equivalent program for the engine (regexEngine.ts) together with the names of
-// its capturing groups in the order of their '('.
+// The regex flavor of §9.10: reads a jqlite pattern, rejects everything outside the flavor, and
+// writes an equivalent program for the engine (regexEngine.ts) together with the names of its
+// capturing groups in the order of their '('.
 //
-// The reference writes a pattern text for its host's regex engine. This port does not use
-// JavaScript's RegExp: it resets the captures of a group at every iteration of an enclosing
-// repetition, where §9.10 says a group reports its last successful participation
-// (`"ab" | match("(?:(a)|b)+")` has the capture "a"), and no rewriting of a pattern avoids
-// that. So the translation is to the instructions of the small matcher of regexEngine.ts, with
-// the meaning the spec demands spelled out: `.`, classes and `\d \w \s` as sets of code points,
-// `$` as the end of the input, `\b \B` as ASCII word boundaries. The `i` flag is done here,
-// never by the engine: it folds ASCII letters only (RangeSet.addAsciiCases, the one place of the
-// rule).
+// The program is made of the instructions of Op, with the meaning the spec demands spelled out:
+// `.`, classes and `\d \w \s` as sets of code points, `$` as the end of the input, `\b \B` as
+// ASCII word boundaries. The `i` flag is done here: it folds ASCII letters only
+// (RangeSet.addAsciiCases, the one place of the rule). No host regex engine reads the flavor with
+// one meaning, so none is used (docs/porting.md §3.3).
 //
 // The pattern is read in one pass, without recursion, and each instruction that jumps says how
 // far (not where to), so a piece of the program can be copied or moved as it is: a quantifier
@@ -43,7 +39,7 @@ export interface Options {
   readonly ignoreCase: boolean;
 }
 
-/** The instructions of a program; `a` and `b` are their operands (see regexEngine.ts). */
+/** The instructions of a program; `a` and `b` are their operands. */
 export const enum Op {
   /** The code point `a`. */
   Char,
@@ -133,7 +129,7 @@ export class RegexError {
 
 const Backslash = 0x5c;
 
-/** Translates `pattern`: the program, or why the pattern is outside the dialect. */
+/** Translates `pattern`: the program, or why the pattern is outside the flavor. */
 export function tryTranslate(pattern: string, options: Options): Translation | RegexError {
   return new Translator(decode(pattern), options).translate();
 }
@@ -476,7 +472,7 @@ class Translator {
   // Repeats the last atom: its instructions min times, then a loop (no maximum) or max - min
   // optional copies. Each copy is an iteration. When the atom can match nothing and there can be
   // several iterations, each marks where it starts, and one that matched nothing ends the
-  // repetition, whatever its counts: `"ca" | match("(c??){2}a")` captures "" at 1, as jq.
+  // repetition, whatever its counts (§9.10): `"ca" | match("(c??){2}a")` captures "" at 1.
   private repeat(frame: Frame, min: number, max: number, lazy: boolean): boolean {
     const start = this.atom;
     const length = this.ops.length - start;
