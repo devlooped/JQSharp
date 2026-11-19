@@ -508,7 +508,7 @@ that make the profile portable. Those you are most likely to notice:
 
 - Numbers are doubles, written in one canonical form (`1.0` is `1`; `1e-7`, `1e+21`, `-0`); NaN is 
   written as `null` and infinities as ±`1.7976931348623157e+308`.
-- Regular expressions use a common dialect: no lookaround, backreferences or inline flags; `\d`, `\w`, 
+- Regular expressions use a flavor common to every port instead of Oniguruma's: no lookaround, backreferences or inline flags; `\d`, `\w`, 
   `\s` and `\b` are ASCII; the `i` flag folds ASCII letters only.
 - An unbound `$name` is a host variable (see [External variables](#external-variables)), not a parse error.
 - Recursion depth is limited by `MaxDepth`, with no tail calls.
@@ -536,7 +536,7 @@ that make the profile portable. Those you are most likely to notice:
 - Semantic fixes: lexical scoping of functions and variables, the precedence of `as` and `//`, 
   `try` keeping the outputs produced before an error, object construction over generators, 
   short-circuit `and`/`or`, stable sorts, and string slices by code point.
-- Regular expressions follow the dialect described in [The jqlite profile](#the-jqlite-profile).
+- Regular expressions follow the flavor described in [The jqlite profile](#the-jqlite-profile).
 
 <!-- #content -->
 
