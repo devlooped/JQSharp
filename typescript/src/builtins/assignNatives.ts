@@ -147,7 +147,9 @@ let missing = false;
  * place, so a container is copied at most once however many paths go through it.
  *
  * Nothing a program can see is ever changed. `trySet` stores the new value as an immutable leaf
- * and opens drafts only along its path; `tryGet`, which hands a value to the update closure, and
+ * and opens drafts only along its path. A write that adds a key to an object, or the next element
+ * to an array, that holds no draft opens none: the value appends in place when it is the latest
+ * version of its storage, so `reduce ... ({}; .[$k] = $v)` copies nothing. `tryGet`, which hands a value to the update closure, and
  * `freeze` turn the drafts below the path back into values, giving them their storage without
  * copying, so a later write there copies that level again. Paths with keys the drafts do not
  * handle (slices, keys that `setpath` rejects) fall back to `getpath`/`setpath` on the frozen
@@ -206,6 +208,16 @@ export class WorkingTree {
       }
 
       const current = draft === null ? this.valueAt(slot) : this.freezeAt(slot);
+      if (draft === null && appends(current, key)) {
+        // A new key or the next element: the rest of the path is set on the null it holds,
+        // then added to the value itself, in place when it is the latest version of its
+        // storage (§2.9 of the porting guide), as . + {($k): $v} does.
+        const inner = PathNatives.trySetPath(null, keys.slice(i + 1, keys.count), value);
+        if (inner instanceof Fail) return inner;
+        this.store(slot, current instanceof JqObject ? current.set(key as string, inner) : (current as JqArray).append(inner));
+        return null;
+      }
+
       draft = this.tryOpen(current, key, slot);
       next = draft === null ? null : tryWrite(draft, key);
       if (next !== null) {
@@ -347,6 +359,14 @@ function tryWrite(draft: Draft, key: JqValue): Slot | null {
 }
 
 // setpath's index of an array of the given length: not NaN, negative counted from the end, within the limit; else -1.
+// Whether setpath with this key adds a key the object lacks, or the element just past the end of
+// the array.
+function appends(value: JqValue, key: JqValue): boolean {
+  if (value instanceof JqObject) return typeof key === "string" && !value.containsKey(key);
+  if (value instanceof JqArray) return tryArrayIndex(key, value.count) === value.count;
+  return false;
+}
+
 function tryArrayIndex(key: JqValue, length: number): number {
   if (typeof key !== "number" || Number.isNaN(key)) return -1;
   let i = Math.trunc(key);

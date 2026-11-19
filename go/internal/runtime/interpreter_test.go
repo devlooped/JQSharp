@@ -219,6 +219,26 @@ func TestNativeUpdatesAreLinear(t *testing.T) {
 	}
 }
 
+func TestUpdatesThatAddKeysInALoopAreLinear(t *testing.T) {
+	programs := []string{
+		`reduce range(10000) as $i ({}; .["k\($i)"] = $i) | length`,
+		`reduce range(10000) as $i ({}; .["k\($i)"] |= $i) | length`,
+		`[range(10000)] | INDEX(.) | length`,
+		`reduce range(10000) as $i ([]; .[$i] = $i) | length`,
+	}
+	for _, program := range programs {
+		var before, after goruntime.MemStats
+		goruntime.GC()
+		goruntime.ReadMemStats(&before)
+		check(t, "10000", line(t, program, "null", nil), program)
+		goruntime.ReadMemStats(&after)
+		// Copying the container on each step allocates 10,000 × up to 10,000 entries: gigabytes.
+		if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 64*1024*1024 {
+			t.Errorf("%s: %d bytes", program, allocated)
+		}
+	}
+}
+
 func TestPathsOfTenThousandKeys(t *testing.T) {
 	// A value nested 10,000 arrays deep and the path of its innermost 0.
 	const deep = "reduce range(10000) as $i (0; [.]) | [range(10000) | 0] as $p | "
@@ -414,4 +434,13 @@ var nativeAndPreludeAgree = [][]string{
 	{`[path(.a = 1)]`, `{"a":0}`},
 	{`.a |= (1, 2)`, `{"a":0}`},
 	{`(.a, .b) |= (.x |= 1)`, `{"a":{},"b":null}`},
+	// new keys and elements added to the value itself, then replaced, nested or failing below
+	{`(.c, .a, .d, .c) |= length`, `{"a":"xy","b":1}`},
+	{`.c.d[1] = 1, .["c", "d"] = 2`, `{"a":0}`},
+	{`(.[2], .[3], .[0], .[3]["x"]) |= 7`, `[0,1]`},
+	{`(.c, .c[-1]) |= 1`, `{"a":0}`},
+	{`.c[-1] |= 1`, `{"a":0}`},
+	{`.[2].x = 1, .[-0.5] = 1, .[2.5] = 1`, `[0,1]`},
+	{`reduce range(20) as $i ({}; .["k\($i)"] = $i) | ., .k3 = 0`, `null`},
+	{`reduce range(20) as $i ([]; .[$i] |= $i) | ., .[1] = 0`, `null`},
 }

@@ -84,7 +84,7 @@ Values, the bound program and the prelude are immutable and shared between threa
   for each exception; `JqConcurrencyTests` and `JqDepthTests` cover thread safety and `MaxDepth`
   through the public API.
 - `dotnet/Benchmarks` (BenchmarkDotNet) compares JQLite with `Devlooped.JQ` (the jq executable) on
-  the WhatsApp `Message.jq` filter, with and without a cached `JqExpression`, and measures eight
+  the WhatsApp `Message.jq` filter, with and without a cached `JqExpression`, and measures nine
   programs whose cost must stay linear or lazy (`ScalingBenchmarks`). Run one with
   `dotnet run -c Release --project dotnet/Benchmarks -- --filter *Scaling*`.
 

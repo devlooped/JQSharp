@@ -183,6 +183,22 @@ func (t *WorkingTree) TrySet(keys *values.Array, v value) (value, bool) {
 		} else {
 			current = t.freezeAt(at)
 		}
+		if d == nil && appends(current, key) {
+			// A new key or the next element: the rest of the path is set on the null it holds,
+			// then added to the value itself, in place when it is the latest version of its
+			// storage (§2.9 of the porting guide), as . + {($k): $v} does.
+			inner, err, success := PathNatives.TrySetPath(values.Null, values.FromArray(keys.Slice(i+1, keys.Count())), v)
+			if !success {
+				return err, false
+			}
+			if current.Kind() == values.KindObject {
+				t.store(at, values.FromObject(current.AsObject().Set(key.AsString(), inner)))
+			} else {
+				t.store(at, values.FromArray(current.AsArray().Append(inner)))
+			}
+			return values.Null, true
+		}
+
 		if opened := t.tryOpen(current, key, at); opened != nil {
 			if next, written := tryWrite(opened, key); written {
 				at = next
@@ -259,6 +275,19 @@ func tryWrite(d *draft, key value) (slot, bool) {
 		return slot{}, false
 	}
 	return slot{parent: d, index: index}, true
+}
+
+// appends tells whether setpath with this key adds a key the object lacks, or the element just
+// past the end of the array.
+func appends(v value, key value) bool {
+	switch v.Kind() {
+	case values.KindObject:
+		return key.Kind() == values.KindString && !v.AsObject().ContainsKey(key.AsString())
+	case values.KindArray:
+		index, success := tryArrayIndex(key, v.AsArray().Count())
+		return success && index == v.AsArray().Count()
+	}
+	return false
 }
 
 // tryArrayIndex gives setpath's index of an array of the given length: not NaN, negative counted

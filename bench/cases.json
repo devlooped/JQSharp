@@ -3,6 +3,7 @@
   { "name": "map-add",        "program": "cases/map-add.jq",        "input": "cases/null.json",    "take": 0, "what": "100,000 numbers through map and add" },
   { "name": "append-reduce",  "program": "cases/append-reduce.jq",  "input": "cases/null.json",    "take": 0, "what": "an array grown by 10,000 appends (must be linear)" },
   { "name": "update-each",    "program": "cases/update-each.jq",    "input": "cases/null.json",    "take": 0, "what": "4,000 elements updated in place with |=" },
+  { "name": "index-reduce",   "program": "cases/index-reduce.jq",   "input": "cases/null.json",    "take": 0, "what": "an object grown by 10,000 keys with INDEX (must be linear)" },
   { "name": "first-of-range", "program": "cases/first-of-range.jq", "input": "cases/null.json",    "take": 1, "what": "the first output of a long generator (must be lazy)" },
   { "name": "recursion",      "program": "cases/recursion.jq",      "input": "cases/null.json",    "take": 0, "what": "45,000 calls of a recursive function, up to 300 deep" },
   { "name": "group-by",       "program": "cases/group-by.jq",       "input": "cases/records.json", "take": 0, "what": "group, aggregate and sort 2,000 records" },
