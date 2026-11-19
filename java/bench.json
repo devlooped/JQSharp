@@ -1,0 +1,5 @@
+{
+  "name": "java",
+  "build": [["cmd", "/c", ".\\mvnw.cmd", "-q", "-DskipTests", "package"]],
+  "run": ["java", "-jar", "target/jqlite-tests.jar"]
+}
