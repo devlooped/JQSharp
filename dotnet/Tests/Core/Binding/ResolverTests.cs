@@ -35,6 +35,45 @@ public class ResolverTests
         => Assert.Equal(bound, Bind(program));
 
     [Theory]
+    // A function is single when its body is, its own calls taken as single (spec §7.7).
+    [InlineData("def fib: if . < 2 then . else (. - 1 | fib) + (. - 2 | fib) end; fib", "fib/0+ body+")]
+    [InlineData("def r: ., (.[]? | r); r", "r/0- body-")]
+    // A call is single when the function is and the argument of each $ parameter is.
+    [InlineData("def f($a): $a + 1; f(1)", "f/1+ body+")]
+    [InlineData("def f($a): $a + 1; f(1, 2)", "f/1+ body-")]
+    [InlineData("def f($a; b; $c): [b] | $a + $c; f(1; 2, 3; 4)", "f/3+ body+")]
+    [InlineData("def f($a; b; $c): [b] | $a + $c; f(1; 2; 3, 4)", "f/3+ body-")]
+    [InlineData("def f($n): if $n < 2 then $n else f($n - 1) + f($n - 2) end; f(9)", "f/1+ body+")]
+    // A call of a closure parameter is never single; a function is, when none of them comes out.
+    [InlineData("def f(g): g + 1; f(1)", "f/1- body-")]
+    [InlineData("def f(g): [g]; f(1, 2)", "f/1+ body+")]
+    // Seen from a nested definition, the function being defined is not single.
+    [InlineData("def f: def g: f; g; f", "f/0- g/0- body-")]
+    // A function found not single is bound again; the functions nested in it keep their answer and their index.
+    [InlineData("def f: def g: if . < 3 then . + 1 | g else . end; g, (. + 1 | f); f", "f/0- g/0+ body-")]
+    [InlineData("def f: def g: def h: ., (. + 1 | h); [h], (. + 1 | g); def k: 1 + k; [g] | k, f; [f]", "f/0- g/0- h/0- k/0+ body+")]
+    // Natives: with value arguments when these are single; with closures by the list of §7.7.
+    [InlineData("def f: if . then empty else last(.[]) end; f", "f/0+ body+")]
+    [InlineData("def f: getpath([\"a\"]) | until(. > 3; . + 1) | length; f", "f/0+ body+")]
+    [InlineData("def f: getpath([\"a\"], [\"b\"]); f", "f/0- body-")]
+    [InlineData("def f: limit(1; .); f", "f/0- body-")]
+    // Through the prelude: error/1, any, all and isempty are single; select is not.
+    [InlineData("def f: if any(.[]; . > 1) then error(\"x\") elif isempty(.[]) then 0 else map(f) | add end; f", "f/0+ body+")]
+    [InlineData("def f: select(. > 1); f", "f/0- body-")]
+    // An update is single like its prelude definition, with or without the native that overrides it.
+    [InlineData("def f: .a |= . + 1 | .b = 2; f", "f/0+ body+")]
+    [InlineData("def f: .a = (1, 2); f", "f/0- body-")]
+    public void Functions_and_calls_are_single_by_the_rules(string program, string expected)
+    {
+        foreach (var nativeOverrides in new[] { true, false })
+        {
+            Assert.True(Resolver.TryCompile(program, out var bound, out _, nativeOverrides));
+            var own = bound.Functions.Skip(Prelude.Instance.Functions.Length).Select(function => $"{function}{(function.Single ? '+' : '-')}");
+            Assert.Equal(expected, string.Join(" ", own.Append($"body{(bound.Body.AtMostOne ? '+' : '-')}")));
+        }
+    }
+
+    [Theory]
     // A parameter is a closure: a call of slot s of the call frame.
     [InlineData("def f(g): g; f(.)", "(def f/1#0 param^0.0) (f/1#0^0 .)")]
     [InlineData("def f(a; b): b, a; f(1; 2)", "(def f/2#0 (, param^0.1 param^0.0)) (f/2#0^0 1 2)")]

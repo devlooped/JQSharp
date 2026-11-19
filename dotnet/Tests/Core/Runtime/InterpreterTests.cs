@@ -169,6 +169,21 @@ public class InterpreterTests
     }
 
     [Fact]
+    public void A_single_call_has_ended_when_its_output_is_used()
+    {
+        // 20 | fib makes 21,891 calls, 20 deep.
+        const string Fib = "def fib: if . < 2 then . else (. - 1 | fib) + (. - 2 | fib) end; 20 | fib";
+        Assert.Equal("6765", Line(Fib, options: new EvaluationOptions { MaxDepth = 20 }));
+        Assert.Equal("error: \"Maximum call depth exceeded\"", Line(Fib, options: new EvaluationOptions { MaxDepth = 19 }));
+        Assert.Equal("6765", Line("def fib($n): if $n < 2 then $n else fib($n - 1) + fib($n - 2) end; fib(20)", options: new EvaluationOptions { MaxDepth = 20 }));
+
+        // A call that is not single stays active while its outputs are consumed: the two calls nest.
+        const string Many = "def g: if . < 2 then ., empty else (. - 1 | g) + (. - 2 | g) end; ";
+        Assert.Equal("55", Line(Many + "10 | g"));
+        Assert.Equal("error: \"Maximum call depth exceeded\"", Line(Many + "15 | g"));
+    }
+
+    [Fact]
     public void Tail_recursion_reaches_the_limit_without_the_host_stack()
         => Assert.Equal("error: \"Maximum call depth exceeded\"", OnSmallStack("def f: if . == 0 then 0 else (. - 1 | f) end; 100000 | f"));
 

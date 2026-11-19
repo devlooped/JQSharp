@@ -97,3 +97,54 @@ null
 8
 16
 32
+
+# Single calls (spec §7.7, §11): a call that yields at most one output has ended when its output
+# is used, so the depth of a tree recursion is the depth of the recursion.
+def fib: if . < 2 then . else (. - 1 | fib) + (. - 2 | fib) end; fib
+20
+6765
+
+def fib($n): if $n < 2 then $n else fib($n - 1) + fib($n - 2) end; fib(.)
+20
+6765
+
+def fib: if . < 0 then error("negative") elif . < 2 then . else (. - 1 | fib) + (. - 2 | fib) end; fib, (try (-1 | fib) catch .)
+18
+2584
+"negative"
+
+def f: if . == 0 then empty elif . < 3 then 1 else (. - 1 | f) + (. - 2 | f) end; [f], [0 | f]
+18
+[2584]
+[]
+
+def t: if . <= 1 then 1 elif any(1, 2; . == 3) then 0 else (. / 2 | floor | t) + (. - (. / 2 | floor) | t) end; t
+2048
+2048
+
+def f($a): if $a < 2 then $a else f($a - 1) + f($a - 2) end; [f(5, 6)]
+null
+[5,8]
+
+def r: ., (.[]? | r); [r] | length
+[1,[2,[3]]]
+6
+
+def outer: def inner: if . < 3 then . + 1 | inner else . end; inner, (if . < 2 then . + 1 | outer else empty end); [outer]
+0
+[3,3,3]
+
+def f: def g: if . > 0 then . - 1 | f else . end; g; f
+5
+0
+
+def pick: if has("a") then .a else empty end; [path(pick | pick)], [path(getpath(["b"]) | getpath(["b"]))], [path(.b | pick)]
+{"a":{"a":1,"b":2},"b":{"b":3}}
+[["a","a"]]
+[["b","b"]]
+[]
+
+# Not in jq, which has no depth limit (§13).
+def f: 1 + f; try f catch .
+null
+"Maximum call depth exceeded"
