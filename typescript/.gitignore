@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# The root .gitignore ignores lock files; this one is kept.
+!package-lock.json

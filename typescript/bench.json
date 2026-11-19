@@ -1,0 +1,5 @@
+{
+  "name": "typescript",
+  "build": [["npm", "ci", "--no-audit", "--no-fund"], ["npm", "run", "build"]],
+  "run": ["node", "dist/bench/crossBench.js"]
+}
