@@ -12,7 +12,7 @@ What every port shares, unchanged:
 
 ## 1. The map
 
-`src/JQLite/Core` is the whole engine. Nothing in it uses `System.Text.Json`, LINQ iterators, `yield return`, reflection, culture-sensitive APIs or exceptions as control flow, so each file ports on its own. The public .NET API (`Jq`, `JqExpression`, `JqOptions`, the exceptions, the resolvers) and its adapters (`Json/JsonElementAdapter.cs` for values, `Host/ResolverSource.cs` and `Host/TimeProviderClock.cs` for the module source and the clock) sit outside `Core` and are not ported: each port writes its own host boundary (3.8).
+`dotnet/JQLite/Core` is the whole engine. Nothing in it uses `System.Text.Json`, LINQ iterators, `yield return`, reflection, culture-sensitive APIs or exceptions as control flow, so each file ports on its own. The public .NET API (`Jq`, `JqExpression`, `JqOptions`, the exceptions, the resolvers) and its adapters (`Json/JsonElementAdapter.cs` for values, `Host/ResolverSource.cs` and `Host/TimeProviderClock.cs` for the module source and the clock) sit outside `Core` and are not ported: each port writes its own host boundary (3.8).
 
 ### 1.1 Layers
 
@@ -422,7 +422,7 @@ modules.test with a module source over spec/tests/modules/ (README path rule), o
 
 ### 4.3 What the reference's unit tests cover beyond the corpus
 
-`src/Tests/Core/` (worth porting with the code):
+`dotnet/Tests/Core/` (worth porting with the code):
 
 | Tests | Cover |
 | --- | --- |

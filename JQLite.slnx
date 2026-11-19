@@ -1,5 +1,5 @@
 <Solution>
-  <Project Path="src/Benchmarks/Benchmarks.csproj" />
-  <Project Path="src/JQLite/JQLite.csproj" />
-  <Project Path="src/Tests/Tests.csproj" />
+  <Project Path="dotnet/Benchmarks/Benchmarks.csproj" />
+  <Project Path="dotnet/JQLite/JQLite.csproj" />
+  <Project Path="dotnet/Tests/Tests.csproj" />
 </Solution>

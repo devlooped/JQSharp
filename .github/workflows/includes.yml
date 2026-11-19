@@ -38,7 +38,7 @@ jobs:
         shell: pwsh
         run: |
           $file = "osmfeula.txt"
-          $props = "src/Directory.Build.props"
+          $props = "dotnet/Directory.Build.props"
           if (-not (test-path $file) -or -not (test-path $props)) {
             exit 0
           }

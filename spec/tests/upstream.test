@@ -1,4 +1,4 @@
-# upstream.test - Cases copied from jq's own test suite (src/Tests/suite/jq.test).
+# upstream.test - Cases copied from jq's own test suite (dotnet/Tests/suite/jq.test).
 # Format and comparison rule: see README.md.
 
 .

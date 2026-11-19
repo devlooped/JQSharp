@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace JQLite.Tests;
 
 /// <summary>
-/// The portability rules of AGENTS.md as tests: the core (src/JQLite/Core) must read the same in
+/// The portability rules of AGENTS.md as tests: the core (dotnet/JQLite/Core) must read the same in
 /// every language, so a host feature in its code fails here, naming the file and the line. Comments
 /// and string literals are not code and are not matched. Where a rule has exceptions, they are
 /// listed by file with the reason: a new use anywhere else must be justified by adding it here.
@@ -83,7 +83,7 @@ public class PortabilityTests
     public void Core_does_not_use(string name)
     {
         var (_, pattern, allowed) = CoreRules.Single(rule => rule.Name == name);
-        var violations = Violations(Path.Combine(Root, "src", "JQLite", "Core"), pattern, allowed.Keys);
+        var violations = Violations(Path.Combine(Root, "dotnet", "JQLite", "Core"), pattern, allowed.Keys);
         Assert.True(violations.Count == 0, $"{name} is not allowed in the core outside {(allowed.Count == 0 ? "nowhere" : string.Join(", ", allowed.Keys))}:\n{string.Join('\n', violations)}");
     }
 
@@ -91,7 +91,7 @@ public class PortabilityTests
     public void Core_allowances_are_still_used()
     {
         // An allowance nothing uses any more is removed, so the lists stay the truth.
-        var core = Path.Combine(Root, "src", "JQLite", "Core");
+        var core = Path.Combine(Root, "dotnet", "JQLite", "Core");
         foreach (var (name, pattern, allowed) in CoreRules)
         {
             foreach (var file in allowed.Keys)
@@ -102,7 +102,7 @@ public class PortabilityTests
     [Fact]
     public void Only_the_adapter_converts_on_System_Text_Json()
     {
-        var directory = Path.Combine(Root, "src", "JQLite");
+        var directory = Path.Combine(Root, "dotnet", "JQLite");
         var project = Directory.EnumerateFiles(directory, "*.cs", SearchOption.AllDirectories)
             .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
             .Select(file => Path.GetRelativePath(directory, file).Replace('\\', '/'))
@@ -254,9 +254,9 @@ public class PortabilityTests
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
-            if (Directory.Exists(Path.Combine(directory.FullName, "src", "JQLite", "Core")))
+            if (Directory.Exists(Path.Combine(directory.FullName, "dotnet", "JQLite", "Core")))
                 return directory.FullName;
         }
-        throw new DirectoryNotFoundException("The repository root (the folder with src/JQLite/Core) is not above the test output.");
+        throw new DirectoryNotFoundException("The repository root (the folder with dotnet/JQLite/Core) is not above the test output.");
     }
 }
