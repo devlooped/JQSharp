@@ -93,6 +93,7 @@ fn accumulators_grow_in_place() {
         ("reduce range(10000) as $i ([]; setpath([$i]; $i)) | length", "10000", 8),
         ("reduce range(10000) as $i ({}; . + {(\"k\\($i)\"): $i}) | length", "10000", 16),
         ("reduce range(10000) as $i ({}; .[\"k\\($i)\"] = $i) | length", "10000", 16),
+        ("reduce range(10000) as $i ({}; .[\"k\\($i)\"] |= $i) | length", "10000", 16),
         ("reduce range(10000) as $i ({}; setpath([\"k\\($i)\"]; $i)) | length", "10000", 16),
         ("reduce range(10000) as $i ({a: {b: []}}; .a.b += [$i]) | .a.b | length", "10000", 16),
         ("reduce range(10000) as $i (\"\"; . + \"x\") | length", "10000", 4),

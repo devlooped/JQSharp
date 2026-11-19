@@ -208,6 +208,15 @@ class AssignTests(unittest.TestCase):
             ("INDEX(.id)", '[{"id":1},{"id":2}]'), ('sub("b"; "x")', '"abc"'), ("path(.a |= 1)", '{"a":0}'),
             ("path(empty = 1)", '{"a":0}'), ("[path(.a = 1)]", '{"a":0}'), (".a |= (1, 2)", '{"a":0}'),
             ("(.a, .b) |= (.x |= 1)", '{"a":{},"b":null}'),
+            # new keys and elements added to the value itself, then replaced, nested or failing below
+            ('(.c, .a, .d, .c) |= length', '{"a":"xy","b":1}'),
+            ('.c.d[1] = 1, .["c", "d"] = 2', '{"a":0}'),
+            ('(.[2], .[3], .[0], .[3]["x"]) |= 7', '[0,1]'),
+            ('(.c, .c[-1]) |= 1', '{"a":0}'),
+            ('.c[-1] |= 1', '{"a":0}'),
+            ('.[2].x = 1, .[-0.5] = 1, .[2.5] = 1', '[0,1]'),
+            ('reduce range(20) as $i ({}; .["k\\($i)"] = $i) | ., .k3 = 0', 'null'),
+            ('reduce range(20) as $i ([]; .[$i] |= $i) | ., .[1] = 0', 'null'),
         ]
         for program, input in cases:
             with self.subTest(program=program):
@@ -233,6 +242,28 @@ class AssignTests(unittest.TestCase):
         self.assertLess(native, 16, f"the native update grows {native:.1f} times for 8 times the elements")
         prelude = growth(False)
         self.assertGreater(prelude, 16, f"the measure no longer tells: the quadratic prelude grows only {prelude:.1f} times")
+
+    def test_updates_that_add_keys_in_a_loop_are_linear(self) -> None:
+        # The same measure for an object or an array grown by one key per step, from 2,000 to
+        # 16,000 steps. The prelude definition is linear here too (setpath adds a new key in place).
+        programs = [
+            'reduce range(N) as $i ({}; .["k\\($i)"] = $i) | length',
+            'reduce range(N) as $i ({}; .["k\\($i)"] |= $i) | length',
+            "[range(N)] | INDEX(.) | length",
+            "reduce range(N) as $i ([]; .[$i] = $i) | length",
+        ]
+        for source in programs:
+            def best(n: int) -> float:
+                program = compile(source.replace("range(N)", f"range({n})"), True)
+                times = []
+                for _ in range(3):
+                    start = time.perf_counter()
+                    self.assertEqual(str(n), line(program))
+                    times.append(time.perf_counter() - start)
+                return min(times)
+            with self.subTest(program=source):
+                growth = best(16_000) / best(2_000)
+                self.assertLess(growth, 16, f"the update grows {growth:.1f} times for 8 times the steps")
 
     def test_paths_of_ten_thousand_keys(self) -> None:
         deep = "reduce range(10000) as $i (0; [.]) | [range(10000) | 0] as $p | "

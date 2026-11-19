@@ -34,6 +34,20 @@ test("native updates are linear", () => {
   assert.ok(performance.now() - started < 5000);
 });
 
+test("updates that add keys in a loop are linear", () => {
+  // A copy per step is 100,000 × up to 100,000 entries.
+  for (const program of [
+    'reduce range(100000) as $i ({}; .["k\\($i)"] = $i) | length',
+    'reduce range(100000) as $i ({}; .["k\\($i)"] |= $i) | length',
+    "[range(100000)] | INDEX(.) | length",
+    "reduce range(100000) as $i ([]; .[$i] = $i) | length",
+  ]) {
+    const started = performance.now();
+    assert.equal(outputs(compile(program, true), "null"), "100000", program);
+    assert.ok(performance.now() - started < 5000, program);
+  }
+});
+
 test("paths of ten thousand keys", () => {
   // A value nested 10,000 arrays deep and the path of its innermost 0.
   const deep = "reduce range(10000) as $i (0; [.]) | [range(10000) | 0] as $p | ";

@@ -116,6 +116,16 @@ class _Draft:
 _ROOT_SLOT = (None, 0, None)
 
 
+def _appends(value: JqValue, key: JqValue) -> bool:
+    # Whether setpath with this key adds a key the object lacks, or the element just past the end
+    # of the array.
+    if type(value) is JqObject:
+        return type(key) is str and not value.contains_key(key)
+    if type(value) is JqArray:
+        return _array_index(key, value.count) == value.count
+    return False
+
+
 def _array_index(key: JqValue, length: int) -> int:
     # setpath's index of an array of the given length: not NaN, negative counted from the end,
     # within the limit; -1 when setpath would not write there without an error.
@@ -136,6 +146,9 @@ class WorkingTree:
 
     Each node is either an immutable value or a draft: a container the tree copied (one level) and
     then updates in place, so a container is copied at most once however many paths go through it.
+    A write that adds a key to an object, or the next element to an array, that holds no draft
+    opens none: the value appends in place when it is the latest version of its storage, so
+    ``reduce ... ({}; .[$k] = $v)`` copies nothing.
     Nothing a program can see is ever changed (see AssignNatives.cs). Paths with keys the drafts do
     not handle fall back to ``getpath``/``setpath`` on the frozen value below that point. No walk
     recurses: paths and drafts are followed with loops and an explicit stack.
@@ -181,6 +194,15 @@ class WorkingTree:
                     slot = nxt
                     continue
             current = self._value_at(slot) if draft is None else self._freeze_at(slot)
+            if draft is None and _appends(current, key):
+                # A new key or the next element: the rest of the path is set on the null it holds,
+                # then added to the value itself, in place when it is the latest version of its
+                # storage (§2.9 of the porting guide), as . + {($k): $v} does.
+                inner = path_natives.try_set_path(None, keys.slice(i + 1, keys.count), value)
+                if type(inner) is Fail:
+                    return inner  # type: ignore[return-value]
+                self._store(slot, current.set(key, inner) if type(current) is JqObject else current.append(inner))  # type: ignore[union-attr, arg-type]
+                return None
             draft = self._try_open(current, key, slot)
             if draft is not None:
                 nxt = _try_write(draft, key)

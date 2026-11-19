@@ -13,6 +13,7 @@ public class ScalingBenchmarks
     JqExpression mapAndAdd = default!;
     JqExpression appendInReduce = default!;
     JqExpression updateEachElement = default!;
+    JqExpression addKeysInReduce = default!;
     JqExpression longRange = default!;
     JqExpression gsubManyMatches = default!;
     JqExpression splitManyMatches = default!;
@@ -26,6 +27,7 @@ public class ScalingBenchmarks
         mapAndAdd = Jq.Parse("[range(100000)] | map(. + 1) | add");
         appendInReduce = Jq.Parse("reduce range(10000) as $i ([]; . + [$i]) | length");
         updateEachElement = Jq.Parse("[range(4000)] | .[] |= . + 1 | length");
+        addKeysInReduce = Jq.Parse("[range(10000)] | INDEX(.) | length");
         longRange = Jq.Parse("range(2000000)");
         gsubManyMatches = Jq.Parse("\"ab\" * 20000 | gsub(\"a\"; \"\") | length");
         splitManyMatches = Jq.Parse("\"ab\" * 20000 | split(\"a\"; null) | length");
@@ -35,6 +37,7 @@ public class ScalingBenchmarks
         Check("5000050000", MapAndAdd());
         Check("10000", AppendInReduce());
         Check("4000", UpdateEachElement());
+        Check("10000", AddKeysInReduce());
         Check("0", FirstOfLongRange());
         Check("20000", GsubManyMatches());
         Check("20001", SplitManyMatches());
@@ -53,6 +56,10 @@ public class ScalingBenchmarks
 
     [Benchmark]
     public JsonElement UpdateEachElement() => updateEachElement.Evaluate(document.RootElement)[0];
+
+    // An object grown by one key per step through |= (INDEX): the update must not copy it.
+    [Benchmark]
+    public JsonElement AddKeysInReduce() => addKeysInReduce.Evaluate(document.RootElement)[0];
 
     // "Taking only the first result" is the streaming overload: it stops the evaluation when the callback returns false.
     [Benchmark]

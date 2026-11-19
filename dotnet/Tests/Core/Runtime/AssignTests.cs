@@ -66,6 +66,15 @@ public class AssignTests
     [InlineData("[path(.a = 1)]", "{\"a\":0}")]
     [InlineData(".a |= (1, 2)", "{\"a\":0}")]
     [InlineData("(.a, .b) |= (.x |= 1)", "{\"a\":{},\"b\":null}")]
+    // new keys and elements added to the value itself, then replaced, nested or failing below
+    [InlineData("(.c, .a, .d, .c) |= length", "{\"a\":\"xy\",\"b\":1}")]
+    [InlineData(".c.d[1] = 1, .[\"c\", \"d\"] = 2", "{\"a\":0}")]
+    [InlineData("(.[2], .[3], .[0], .[3][\"x\"]) |= 7", "[0,1]")]
+    [InlineData("(.c, .c[-1]) |= 1", "{\"a\":0}")]
+    [InlineData(".c[-1] |= 1", "{\"a\":0}")]
+    [InlineData(".[2].x = 1, .[-0.5] = 1, .[2.5] = 1", "[0,1]")]
+    [InlineData("reduce range(20) as $i ({}; .[\"k\\($i)\"] = $i) | ., .k3 = 0", "null")]
+    [InlineData("reduce range(20) as $i ([]; .[$i] |= $i) | ., .[1] = 0", "null")]
     public void Native_and_prelude_agree(string program, string input)
     {
         var native = Line(Compile(program, nativeOverrides: true), input);
@@ -80,6 +89,20 @@ public class AssignTests
         Assert.Equal("4000", Line(Compile("[range(4000)] | .[] |= . + 1 | length", nativeOverrides: true), "null"));
         // The prelude definition copies the array once per element: 4000 × 64 KB.
         Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 32 * 1024 * 1024);
+    }
+
+    [Theory]
+    [InlineData("reduce range(10000) as $i ({}; .[\"k\\($i)\"] = $i) | length")]
+    [InlineData("reduce range(10000) as $i ({}; .[\"k\\($i)\"] |= $i) | length")]
+    [InlineData("[range(10000)] | INDEX(.) | length")]
+    [InlineData("reduce range(10000) as $i ([]; .[$i] = $i) | length")]
+    public void Updates_that_add_keys_in_a_loop_are_linear(string program)
+    {
+        var compiled = Compile(program, nativeOverrides: true);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Assert.Equal("10000", Line(compiled, "null"));
+        // Copying the container on each step allocates 10,000 × up to 10,000 entries: gigabytes.
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 64 * 1024 * 1024);
     }
 
     [Fact]

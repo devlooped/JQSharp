@@ -508,6 +508,15 @@ fn native_and_prelude_agree() {
         ("[path(.a = 1)]", "{\"a\":0}"),
         (".a |= (1, 2)", "{\"a\":0}"),
         ("(.a, .b) |= (.x |= 1)", "{\"a\":{},\"b\":null}"),
+        // new keys and elements added to the value itself, then replaced, nested or failing below
+        ("(.c, .a, .d, .c) |= length", "{\"a\":\"xy\",\"b\":1}"),
+        (".c.d[1] = 1, .[\"c\", \"d\"] = 2", "{\"a\":0}"),
+        ("(.[2], .[3], .[0], .[3][\"x\"]) |= 7", "[0,1]"),
+        ("(.c, .c[-1]) |= 1", "{\"a\":0}"),
+        (".c[-1] |= 1", "{\"a\":0}"),
+        (".[2].x = 1, .[-0.5] = 1, .[2.5] = 1", "[0,1]"),
+        ("reduce range(20) as $i ({}; .[\"k\\($i)\"] = $i) | ., .k3 = 0", "null"),
+        ("reduce range(20) as $i ([]; .[$i] |= $i) | ., .[1] = 0", "null"),
         // the paths that are one expression (§7.7): the path is taken before anything is written
         (".a |= empty", "{\"a\":1,\"b\":2}"),
         (".a.b |= empty", "null"),

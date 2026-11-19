@@ -86,7 +86,10 @@ static class AssignNatives
 /// </summary>
 /// <remarks>
 /// Nothing a program can see is ever changed. <see cref="TrySet"/> stores the new value as an
-/// immutable leaf and opens drafts only along its path; <see cref="TryGet"/>, which hands a value
+/// immutable leaf and opens drafts only along its path. A write that adds a key to an object, or
+/// the next element to an array, that holds no draft opens none: the value appends in place when
+/// it is the latest version of its storage, so <c>reduce ... ({}; .[$k] = $v)</c> copies nothing,
+/// where a draft would copy the whole object on each step. <see cref="TryGet"/>, which hands a value
 /// to the update closure, and <see cref="Freeze"/> turn the drafts below the path back into
 /// values, giving them their storage without copying, so a later write there copies that level
 /// again. Paths with keys the drafts do not handle (slices, keys that <c>setpath</c> rejects) fall
@@ -169,6 +172,19 @@ sealed class WorkingTree
             }
 
             var current = draft is null ? ValueAt(slot) : FreezeAt(slot);
+            if (draft is null && Appends(current, key))
+            {
+                // A new key or the next element: the rest of the path is set on the null it holds,
+                // then added to the value itself, in place when it is the latest version of its
+                // storage (§2.9 of the porting guide), as . + {($k): $v} does.
+                if (!PathNatives.TrySetPath(JqValue.Null, JqValue.FromArray(keys.Slice(i + 1, keys.Count)), value, out var inner, out error))
+                    return false;
+                Store(slot, current.Kind == JqKind.Object
+                    ? JqValue.FromObject(current.AsObject().Set(key.AsString(), inner))
+                    : JqValue.FromArray(current.AsArray().Append(inner)));
+                return true;
+            }
+
             if (TryOpen(current, key, slot, out draft) && TryWrite(draft, key, out next))
             {
                 slot = next;
@@ -253,6 +269,15 @@ sealed class WorkingTree
         index = (int)i;
         return true;
     }
+
+    // Whether setpath with this key adds a key the object lacks, or the element just past the end
+    // of the array.
+    static bool Appends(JqValue value, JqValue key) => value.Kind switch
+    {
+        JqKind.Object => key.Kind == JqKind.String && !value.AsObject().ContainsKey(key.AsString()),
+        JqKind.Array => TryArrayIndex(key, value.AsArray().Count, out var index) && index == value.AsArray().Count,
+        _ => false,
+    };
 
     // Copies one level of the value at a slot into a draft there, when setpath would write into it
     // with this key (null becomes the container the key asks for).

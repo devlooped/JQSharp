@@ -9,6 +9,7 @@ import com.devlooped.jqlite.binding.Resolver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * The native {@code _modify} and {@code _assign} against their prelude definitions (§8.3): each
@@ -76,6 +77,15 @@ class AssignTests {
             {"[path(.a = 1)]", "{\"a\":0}"},
             {".a |= (1, 2)", "{\"a\":0}"},
             {"(.a, .b) |= (.x |= 1)", "{\"a\":{},\"b\":null}"},
+            // new keys and elements added to the value itself, then replaced, nested or failing below
+            {"(.c, .a, .d, .c) |= length", "{\"a\":\"xy\",\"b\":1}"},
+            {".c.d[1] = 1, .[\"c\", \"d\"] = 2", "{\"a\":0}"},
+            {"(.[2], .[3], .[0], .[3][\"x\"]) |= 7", "[0,1]"},
+            {"(.c, .c[-1]) |= 1", "{\"a\":0}"},
+            {".c[-1] |= 1", "{\"a\":0}"},
+            {".[2].x = 1, .[-0.5] = 1, .[2.5] = 1", "[0,1]"},
+            {"reduce range(20) as $i ({}; .[\"k\\($i)\"] = $i) | ., .k3 = 0", "null"},
+            {"reduce range(20) as $i ([]; .[$i] |= $i) | ., .[1] = 0", "null"},
         };
     }
 
@@ -94,6 +104,23 @@ class AssignTests {
         BoundProgram program = compile("[range(40000)] | .[] |= . + 1 | length", true);
         long started = System.nanoTime();
         assertEquals("40000", line(program, "null"));
+        long elapsedMs = (System.nanoTime() - started) / 1_000_000;
+        assertTrue(elapsedMs < 3000, elapsedMs + " ms");
+    }
+
+    // The same measure for an object or an array grown by one key per step: a copy per step is
+    // 100,000 × up to 100,000 entries.
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "reduce range(100000) as $i ({}; .[\"k\\($i)\"] = $i) | length",
+        "reduce range(100000) as $i ({}; .[\"k\\($i)\"] |= $i) | length",
+        "[range(100000)] | INDEX(.) | length",
+        "reduce range(100000) as $i ([]; .[$i] = $i) | length",
+    })
+    void updatesThatAddKeysInALoopAreLinear(String source) {
+        BoundProgram program = compile(source, true);
+        long started = System.nanoTime();
+        assertEquals("100000", line(program, "null"));
         long elapsedMs = (System.nanoTime() - started) / 1_000_000;
         assertTrue(elapsedMs < 3000, elapsedMs + " ms");
     }

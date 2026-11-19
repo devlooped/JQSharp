@@ -106,7 +106,10 @@ final class AssignNatives {
      * in place, so a container is copied at most once however many paths go through it.
      *
      * <p>Nothing a program can see is ever changed. {@link #trySet} stores the new value as an
-     * immutable leaf and opens drafts only along its path; {@link #tryGet}, which hands a value to the
+     * immutable leaf and opens drafts only along its path. A write that adds a key to an object, or
+     * the next element to an array, that holds no draft opens none: the value appends in place when
+     * it is the latest version of its storage, so {@code reduce ... ({}; .[$k] = $v)} copies
+     * nothing. {@link #tryGet}, which hands a value to the
      * update closure, and {@link #freeze} turn the drafts below the path back into values, giving them
      * their storage without copying, so a later write there copies that level again. Paths with keys
      * the drafts do not handle (slices, keys that {@code setpath} rejects) fall back to
@@ -199,6 +202,20 @@ final class AssignNatives {
                 }
 
                 JqValue current = draft == null ? valueAt(slot) : freezeAt(slot);
+                if (draft == null && appends(current, key)) {
+                    // A new key or the next element: the rest of the path is set on the null it holds,
+                    // then added to the value itself, in place when it is the latest version of its
+                    // storage (§2.9 of the porting guide), as . + {($k): $v} does.
+                    Result inner = PathNatives.trySetPath(JqValue.NULL, keys.slice(i + 1, keys.count()), value);
+                    if (inner instanceof Result.Err err) {
+                        return err.error();
+                    }
+                    store(slot, current.kind() == JqKind.OBJECT
+                        ? current.asObject().set(key.asString(), (JqValue) inner)
+                        : current.asArray().append((JqValue) inner));
+                    return null;
+                }
+
                 draft = tryOpen(current, key, slot);
                 next = draft == null ? null : tryWrite(draft, key);
                 if (next != null) {
@@ -262,6 +279,16 @@ final class AssignNatives {
 
             int index = tryArrayIndex(key, draft.array.count());
             return index < 0 ? null : new Slot(draft, index, null);
+        }
+
+        // Whether setpath with this key adds a key the object lacks, or the element just past the end
+        // of the array.
+        private static boolean appends(JqValue value, JqValue key) {
+            return switch (value.kind()) {
+                case OBJECT -> key.kind() == JqKind.STRING && !value.asObject().containsKey(key.asString());
+                case ARRAY -> tryArrayIndex(key, value.asArray().count()) == value.asArray().count();
+                default -> false;
+            };
         }
 
         // setpath's index of an array of the given length: not NaN, negative counted from the end,
