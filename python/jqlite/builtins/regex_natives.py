@@ -1,7 +1,8 @@
 """§9.10 `test/2` and `match/2`: the flags, the search loop and the match objects (RegexNatives.cs).
 
-Offsets and lengths are in code points. Difference from the reference: Python strings and `re`
-count code points, so there is no code point map (CodePointMap) between the engine and the loop.
+Offsets and lengths are in code points. The pattern goes through regex_syntax.py to the engine
+(regex_engine.py). Difference from the reference: Python strings and the engine count code points,
+so there is no code point map (CodePointMap) between the engine and the loop.
 """
 
 from __future__ import annotations
@@ -28,14 +29,17 @@ def register() -> None:
     add_closure("match", 2, _match)
 
 
-class _Search:
-    # A search ready to run: the input, the compiled pattern and flags.
-    __slots__ = ("input", "pattern", "groups", "global_", "skip_empty")
+_NO_SPANS: list[int] = []
 
-    def __init__(self, input: str, pattern: regex_engine.HostPattern, groups: tuple[str | None, ...], global_: bool, skip_empty: bool) -> None:
+
+class _Search:
+    # A search ready to run: the input, the matcher of the pattern and the flags.
+    __slots__ = ("input", "matcher", "groups", "global_", "skip_empty")
+
+    def __init__(self, input: str, matcher: regex_engine.RegexMatcher, global_: bool, skip_empty: bool) -> None:
         self.input = input
-        self.pattern = pattern
-        self.groups = groups
+        self.matcher = matcher
+        self.groups = matcher.program.groups
         self.global_ = global_
         self.skip_empty = skip_empty
 
@@ -44,6 +48,9 @@ def _test(interpreter: Any, input: JqValue, arguments: Any) -> JqValue | Fail:
     search = _try_prepare(input, arguments[0], arguments[1])
     if type(search) is Fail:
         return search
+    # Whether there is a match, and nothing of it; with the n flag, a match that is not empty.
+    if not search.skip_empty:  # type: ignore[union-attr]
+        return search.matcher.try_match(search.input, 0, _NO_SPANS)  # type: ignore[union-attr]
     found = [False]
 
     def report(spans: list[int]) -> bool:
@@ -95,13 +102,10 @@ def _try_prepare(input: JqValue, re_: JqValue, flags: JqValue) -> _Search | Fail
             pass
         else:
             return Fail(errors.invalid_modifiers(letters))
-    translation = regex_syntax.try_translate(re_, regex_syntax.Options(extended, dot_all, ignore_case))  # type: ignore[arg-type]
-    if type(translation) is str:
-        return Fail(errors.regex_failure(translation))
-    pattern = regex_engine.try_compile(translation.pattern, translation.lookaround)  # type: ignore[union-attr]
-    if type(pattern) is str:
-        return Fail(errors.regex_failure(pattern))
-    return _Search(input, pattern, translation.groups, global_, skip_empty)  # type: ignore[arg-type,union-attr]
+    program = regex_engine.try_compile(re_, regex_syntax.Options(extended, dot_all, ignore_case))  # type: ignore[arg-type]
+    if type(program) is str:
+        return Fail(errors.regex_failure(program))
+    return _Search(input, regex_engine.RegexMatcher(program), global_, skip_empty)  # type: ignore[arg-type]
 
 
 def _run(search: _Search, report: Callable[[list[int]], bool]) -> None:
@@ -110,7 +114,7 @@ def _run(search: _Search, report: Callable[[list[int]], bool]) -> None:
     length = len(search.input)
     p = 0
     while p <= length:
-        if not regex_engine.try_match(search.pattern, search.input, p, spans):
+        if not search.matcher.try_match(search.input, p, spans):
             return
         start = spans[0]
         end = spans[1]

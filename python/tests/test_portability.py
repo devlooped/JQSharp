@@ -18,9 +18,7 @@ CORE = ("values", "syntax", "binding", "runtime", "builtins")
 CORE_RULES: list[tuple[str, str, dict[str, str]]] = [
     ("a host JSON library", r"\bimport\s+json\b|\bfrom\s+json\b|\bjson\s*\.", {}),
     ("generators", r"\byield\b", {}),
-    ("host regex", r"\bimport\s+re\b|\bfrom\s+re\b|\bre\s*\.", {
-        "builtins/regex_engine.py": "the regex engine: the one place the host regex runs",
-    }),
+    ("host regex", r"\bimport\s+re\b|\bfrom\s+re\b|\bre\s*\.", {}),
     ("reflection", r"\b(getattr|setattr|hasattr|importlib|inspect|__dict__)\b|(?<![\w.])(?<!def )(eval|exec)\s*\(", {
         "binding/prelude.py": "reads the prelude shipped with the package: importlib.resources",
         "builtins/math_natives.py": "math.fma exists from Python 3.13 only: getattr(math, \"fma\", None)",
@@ -38,7 +36,6 @@ CORE_RULES: list[tuple[str, str, dict[str, str]]] = [
         "values/jq_object_builder.py": "use after to_object(): a programming error",
     }),
     ("except", r"\bexcept\b", {
-        "builtins/regex_engine.py": "the host regex's exception becomes the dialect's error (one host boundary)",
         "builtins/math_natives.py": "Python's math raises where IEEE gives a value: the IEEE result (guide §3.5)",
     }),
 ]

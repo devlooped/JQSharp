@@ -71,7 +71,7 @@ streaming), and values are Python's JSON values instead of `JsonElement`.
 There is nothing to build. From this folder:
 
 ```
-python -m unittest                 # 2,509 tests: the corpus both ways, the unit tests of every layer
+python -m unittest                 # 2,557 tests: the corpus both ways, the unit tests of every layer
 python -m compileall -q jqlite tests crossbench.py
 python -m mypy                     # optional tools (pip install mypy ruff), configured in pyproject.toml
 python -m ruff check
@@ -79,12 +79,17 @@ python -m ruff check
 
 - `tests/test_conformance.py`: every case of `spec/tests/*.test` (read from the shared folder), one
   test each, through the public API (`CorpusPublicApi`) and through the core with every prelude
-  builtin bound to its definition (`CorpusWithoutNativeOverrides`): 1,108 + 1,108 tests.
+  builtin bound to its definition (`CorpusWithoutNativeOverrides`): 1,151 + 1,151 tests.
   `localtime.test` runs with a zone fixed at UTC+02:00, `modules.test` over `spec/tests/modules/`.
 - `tests/test_catalogue.py`: the N and P lists of §9, read from the spec, against the native
   catalogue and the prelude; the package's `jqlite/prelude.jq` against `spec/prelude.jq`.
-- `tests/test_values.py`, `test_syntax.py`, `test_binding.py`, `test_runtime.py`: the reference's
-  `dotnet/Tests/Core/<Layer>` tests, ported.
+- `tests/test_values.py`, `test_syntax.py`, `test_binding.py`, `test_runtime.py`, `test_builtins.py`:
+  the reference's `dotnet/Tests/Core/<Layer>` tests, ported. `test_builtins.py` checks the regex
+  engine against a backtracking matcher of the same programs on random patterns
+  (`backtracking_matcher.py`, `regex_fuzz.py`), its linear time and memory, and that it runs the
+  largest programs the limits of §11 allow. It runs 10,000 random patterns per seed (the reference
+  20,000), shorter linear-time inputs, under the reference's bound of 2 seconds a case, and a shorter
+  input for the program with the most states.
 - `tests/test_host.py`: the boundary, resolvers, threads, the depth limit through the API.
 - `tests/test_portability.py`: the portability rules of `AGENTS.md` on the core's code.
 
@@ -113,7 +118,7 @@ Host-specific files (**H** in the guide), each saying in its header what it uses
 (`repr` and `float` for number text), `values/utf8.py` (the UTF-8 codec), `binding/prelude.py`
 (`importlib.resources`), `syntax/recursion_limit.py` (`sys.setrecursionlimit`, see *The host
 stack* below) and `runtime/stack_guard.py` (the frames an evaluation may need),
-`builtins/math_natives.py` (`math`), `builtins/regex_engine.py` (`re`).
+`builtins/math_natives.py` (`math`).
 
 Other host uses in the core, each the counterpart of something every language has:
 
@@ -125,11 +130,8 @@ Other host uses in the core, each the counterpart of something every language ha
   `builtins/core_natives.py` (the list of `builtins`, computed once), `builtins/registration.py`
   (the native table, filled once) and `syntax/recursion_limit.py` (the count of the parses and
   evaluations that run).
-- Two caches of 256 entries, emptied when full: `builtins/regex_engine.py` (compiled patterns, as
-  the reference) and `builtins/regex_syntax.py` (translations, by pattern and flags). The
-  translation is a pure function of the pattern and the flags and a map is in every language, so
-  the cache stays beside the translator; the reference translates on every call, which costs
-  little in C# and most of a short match in Python.
+- The cache of compiled regex programs in `builtins/regex_engine.py`, 256 entries emptied when full,
+  as in the reference: a `dict`, whose reads and writes are atomic (the reference's concurrent map).
 
 ## Differences from the reference's structure
 
@@ -184,10 +186,12 @@ Each is deliberate; the behaviour is the spec's in every case (the corpus runs b
   A parse needs 8 frames per level of nesting (`PARSE_FRAMES`); an evaluation 16 frames per node of
   the bound program (its `size`, prelude included) per level of `max_depth` (`stack_guard.py`), a
   loose bound that costs nothing until the frames exist.
-- **Regex** (guide §3.3): `re` works on code points, so the translator writes code point classes
-  directly (no surrogate pairs) and the natives need no code point map; `\b` and `\B` are lookarounds
-  as in the reference (`re`'s own `\B` never matches in an empty string). Translations are cached
-  (see above).
+- **Regex** (guide §3.3): positions are code point indices, since a Python `str` is indexed by code
+  point. The engine reads one code point per index (the reference reads a surrogate pair as one), and
+  the natives need no code point map. A pattern that starts with a literal skips to the literal's
+  first occurrence with `str.find`, whatever the code point (the reference only for a code point of
+  one UTF-16 unit). The matcher's generation counter is never reset: a Python `int` does not
+  overflow.
 - **Math** (guide §3.5): `math` raises where IEEE gives a value; each library function checks its
   domain or catches the overflow and returns the IEEE result. `math.fma` (3.13+) raises on
   overflow; there, and before 3.13, `fma` is computed exactly with `fractions.Fraction`.
