@@ -76,7 +76,7 @@ try (test("a")) catch .
 123
 "number (123) cannot be matched, as it is not a string"
 
-# The dialect, flags, captures, empty matches, code point offsets and the prelude builtins on top of
+# The flavor, flags, captures, empty matches, code point offsets and the prelude builtins on top of
 # match (outputs of jq 1.8.2 unless a comment says otherwise).
 
 try test("(") catch .[:15]
@@ -251,7 +251,7 @@ match("(a)*")
 "aA\t/-]"
 [true,true,true,true,true,true]
 
-# Spec 13 (Regex row): everything outside the dialect of 9.10 is an error; jq 1.8.2 (Oniguruma) accepts most of these.
+# Spec 13 (Regex row): everything outside the flavor of 9.10 is an error; jq 1.8.2 (Oniguruma) accepts most of these.
 [.[] | try test(.) catch "ERR"]
 ["\\A", "\\z", "\\Z", "\\G", "\\K", "\\Qa\\E", "\\0", "\\1", "(a)\\1", "\\cA", "\\u0041", "\\x{41}", "\\p{L}", "[[:alpha:]]", "(?i)a", "(?>a)", "a++", "a*+", "(?<=a)b", "(?!a)", "a{", "a}", "]", "x{1001}", "x{2,1}", "\\e", "\\a", "\\h", "\\o", "(?P<n>a)", "(?<1n>a)", "(?<n>a)(?<n>b)", "[z-a]", "[a", "a)", "*a", "a**", "\\", "[\\d-z]", "x{1000}", "x{,3}", "x{3,}"]
 ["ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR","ERR",false,"ERR",false]
@@ -306,8 +306,8 @@ null
 "a1ba2"
 ["<a>1b<a>2","[a]1[null][a]2","a2ba3",">a1ba2","a1ba2<","b1bb2","c1bc2"]
 
-# The search moves by code points after an empty match (9.10): 6 empty matches in 5 code points.
-# Not in spec 13: jq 1.8.2 moves by bytes and gives 14 (reported).
+# Spec 13 (Regex empty matches): the search moves by code points after an empty match, 6 empty
+# matches in 5 code points; jq 1.8.2 moves by bytes and gives 14.
 [match("é😀"; "g") | [.offset, .length]], [match("b") | .offset], (sub("😀"; "x")), ([match(""; "g")] | length)
 "é😀é😀b"
 [[0,2],[2,2]]
@@ -329,7 +329,7 @@ null
 "axxb"
 [[0,0],[1,2],[3,0],[4,0]]
 
-# \v is U+000B (9.10). Not in spec 13: jq 1.8.2 gives false for test("\\v") (reported).
+# Spec 13 (Regex \v): \v is U+000B; jq 1.8.2 gives false for test("\\v").
 [test("\\Sx\\W"), test("[\\s\\d]"), test("[^\\w]"), test("\\v"), test("\\f"), test("\\r"), test("\\n")]
 "ax- \u000b\f\r\n"
 [true,true,true,true,true,true,true]
@@ -403,7 +403,7 @@ sub("(?<x>a)"; "\(.x)!"; "g")
 "AaA"
 [0,1,2]
 
-# Spec 13 (Regex row): a backslash before a space is not an escape of the dialect; jq 1.8.2 accepts it.
+# Spec 13 (Regex row): a backslash before a space is not an escape of the flavor; jq 1.8.2 accepts it.
 [test("a b"; "x"), (try test("a\\ b"; "x") catch .[:15])]
 "ab"
 [true,"Regex failure: "]
@@ -415,6 +415,12 @@ sub("(?<x>a)"; "\(.x)!"; "g")
 [match("a{0,1000}") | .length]
 "aaa"
 [3]
+
+# Spec 13 (Regex row): a repeated group whose alternative is only an anchor is in the flavor; jq 1.8.2
+# refuses all four ("Regex failure: target of repeat operator is invalid").
+[test("(?:^)*"), test("(?:\\b)?"), test("(?:^|a)*"), test("(?:$|.+?)*"), test("(^)+a")]
+"a"
+[true,true,true,true,true]
 
 # match/2 and test/2: re varies fastest, then flags (spec 6.3, 9.10).
 [match("a", "b"; "g", "") | [.string, .offset]]

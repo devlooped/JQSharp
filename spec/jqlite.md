@@ -973,7 +973,7 @@ Operations are evaluated left to right as written, each rounded to double (no fu
 
 ### 9.10 Regular expressions
 
-**Dialect.** Patterns are strings of code points. The dialect is the common subset of RE2/Go, Rust `regex`, ECMAScript (`u` mode), Java, Python `re` and .NET:
+**Flavor.** jq uses the Perl-NT flavor of Oniguruma. jqlite uses a flavor of its own, chosen the same way: the syntax that the regex engines of every port (RE2/Go, Rust `regex`, ECMAScript in `u` mode, Java, Python `re`, .NET) can all be made to read with one meaning. The table below and the flags are its whole definition; a pattern means what they say, also where Oniguruma reads it otherwise or refuses it (§13). Patterns are strings of code points.
 
 | Element | Syntax |
 | --- | --- |
@@ -987,18 +987,18 @@ Operations are evaluated left to right as written, each rounded to double (no fu
 | quantifiers | `* + ?`, `{n}`, `{n,}`, `{n,m}` (n ≤ m ≤ 1000), each optionally followed by `?` (lazy); a quantifier follows a literal, `.`, a class, a shorthand or a group, never an anchor, another quantifier (`a**` is an error), `\|`, `(` or the start |
 | alternation | `a\|b` (empty alternatives allowed) |
 
-Everything else is the error `Regex failure: <reason>` (as jq; the reason is implementation-defined), in particular: lookahead and lookbehind, backreferences, possessive quantifiers, atomic groups, inline flags `(?i)`, `\p{…}`, POSIX classes, `\A \z \Z \G \K \Q…\E`, `\0`, octal, `\cX`, `\u…`, `\x{…}`, a `{` or `}` that is not a quantifier, a lone `]`.
+Any other pattern is the error `Regex failure: <reason>` (as jq; the reason is implementation-defined): lookaround, backreferences, inline flags, `\p{…}`, POSIX classes and the other Oniguruma extensions are not in the flavor.
 
-Matching is leftmost, with Perl priority (greedy or lazy quantifiers, left alternative first). A group inside a repetition reports its last successful participation. Offsets and lengths are in code points.
+Matching is leftmost-first, as in Perl and in every engine above: greedy or lazy quantifiers, left alternative first. A group inside a repetition reports its last successful participation. Offsets and lengths are in code points (as jq).
 
-Note for ports: engines with a different native meaning (`.` excluding `\r` in JS and Java, Unicode `\d` in Python and .NET, UTF-16 units in .NET and JS without `u`, `$` before a final newline in Python, Java and .NET, capture reset in JS repetitions, `(?<name>…)` spelled `(?P<name>…)` in Python, no `_` in Java group names) translate the pattern; a pattern is never handed to an engine unchecked. `\b` and `\B` need an engine with an ASCII word boundary (Go, JavaScript, Rust `(?-u:\b)`) or lookaround to emulate one (`(?<=[0-9A-Za-z_])(?![0-9A-Za-z_])|…`); the reference runs the patterns that use them, and only those, on .NET's backtracking engine for that reason.
+How a port makes its engine read the flavor is not part of the language: `docs/porting.md` §3.3.
 
 **Flags** (a string, or `null` for none; each letter once or more, any order):
 
 | Flag | Meaning |
 | --- | --- |
 | `g` | all matches (not only the first) |
-| `i` | case-insensitive for the ASCII letters only: each ASCII letter of a literal, a range or a class also matches its other case (a class is closed under ASCII case before `^` negates it); every other code point matches only itself. `"ABC" \| test("abc"; "i")` → `true`; `"A" \| test("[^a]"; "i")` → `false`; `"É" \| test("é"; "i")` → `false` (§13). The translator does it; a port MUST NOT use its engine's ignore-case option unless it is exactly this |
+| `i` | case-insensitive for the ASCII letters only: each ASCII letter of a literal, a range or a class also matches its other case (a class is closed under ASCII case before `^` negates it); every other code point matches only itself (§13). `"ABC" \| test("abc"; "i")` → `true`; `"A" \| test("[^a]"; "i")` → `false` |
 | `x` | extended: before compiling, unescaped whitespace (U+0009–U+000D, U+0020) outside classes is removed and `#` outside classes starts a comment up to the next U+000A |
 | `n` | ignore empty matches |
 | `m`, `p` | `.` also matches U+000A (Oniguruma's "multi line") |
@@ -1241,7 +1241,7 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 | Numbers | IEEE doubles only; canonical text §5.2 (`1e-7`, `0.00001`, `100000000000000000000`, `1e+21`); `0 \| -.` prints `-0` | keeps the literal text of numbers that are not computed (decNumber: `1e20` prints `1E+20`, `-0` and `0 \| -.` print `0`); computed numbers in C `%.17g` layout (`1e+20`, `1e-05`, `1e-07`) | exact in every language without a decimal library |
 | Surrogates | a lone surrogate becomes U+FFFD everywhere text enters, including `"\ud800"` in a program and in `fromjson` | rejects a lone `\uXXXX` surrogate escape (`Invalid \uXXXX\uXXXX surrogate pair escape`) | one rule for UTF-16 and UTF-8 hosts |
 | `break` and `try` | `try` does not catch `break`: `label $out \| try (0, break $out, 1) catch 99` → `0` | `break` is an error that `try` catches: `0, 99` | `break` is a signal of its own (§6.2) |
-| Regex | the dialect of §9.10: no lookaround, backreferences, inline flags, `\A \z`, Unicode or POSIX classes; ASCII `\d \w \s \b`; `$` only at the end of the input | Oniguruma Perl-NT: all of these; Unicode `\d`; `$` also before a final newline | the only subset common to Go, Rust, JS, Java, Python, .NET; linear time |
+| Regex | the flavor of §9.10: no lookaround, backreferences, inline flags, `\A \z`, Unicode or POSIX classes; ASCII `\d \w \s \b`; `$` only at the end of the input; every pattern the table allows is accepted: `"a" \| test("(?:^)*")` → `true` | Oniguruma Perl-NT: all of these; Unicode `\d`; `$` also before a final newline; refuses a repeated group that can match only an anchor in one of its alternatives: `Regex failure: target of repeat operator is invalid` | the only flavor common to Go, Rust, JS, Java, Python, .NET; linear time |
 | Regex `i` flag | ASCII letters only: `"É" \| test("é"; "i")`, `"ß" \| test("SS"; "i")`, `"ſ" \| test("s"; "i")` → `false` | Unicode full case folding: all three `true` | engines disagree on Unicode folding (by engine and Unicode version; .NET's non-backtracking engine folds neither `ſ` with `s` nor any letter above U+FFFF); only ASCII is exact everywhere without a folding table |
 | Regex `\v` | U+000B | the letter `v` (`"v" \| test("\\v")` → `true`, `"\u000b" \| test("\\v")` → `false`) | the escape every other engine has |
 | Regex empty matches | the search moves one code point after an empty match: `"é😀é😀b" \| [match(""; "g")] \| length` → `6` | moves one UTF-8 byte, reporting repeated offsets: `14` (offsets `[0,1,1,2,2,2,2,…]`) | offsets are code points everywhere else |

@@ -72,7 +72,7 @@ Host-specific files are marked **H**; the modules group (§9.11, optional) is ma
 | `AssignNatives.cs` | native `_modify`/`_assign` overriding the prelude (§3 below) | Runtime |
 | `MathNatives.cs`, `MathExtra.cs` | §9.8; `MathExtra` holds every formula and exact operation. **H**: the library functions of §9.8 | Values |
 | `Calendar.cs`, `Strftime.cs`, `DateNatives.cs` | §9.7, §9.12: no host date type | Runtime |
-| `RegexSyntax.cs` | the dialect of §9.10: validator and translator to the host's pattern syntax | Values |
+| `RegexSyntax.cs` | the regex flavor of §9.10: validator and translator to the host's pattern syntax | Values |
 | `RegexEngine.cs` **H** | the host regex engine: compile, match from a position | — |
 | `RegexNatives.cs` | flags, search loop, match objects in code points | RegexSyntax, RegexEngine |
 | `ModuleNatives.cs` **M** | `modulemeta/0` | Modules |
@@ -321,7 +321,7 @@ Ill-formed UTF-8 (§4.1, `@base64d`, host bytes): JS `TextDecoder` (non-fatal), 
 
 ### 3.3 Regular expressions
 
-`RegexSyntax` validates the dialect (§9.10) and writes a pattern for the engine; `RegexEngine` is the only host-specific part; `RegexNatives` runs the search loop of §9.10 in code points. What the translator emits so that no engine default leaks in:
+The spec defines only the flavor (§9.10); this section says how an engine is made to read it. `RegexSyntax` validates the flavor and writes a pattern for the engine; `RegexEngine` is the only host-specific part; `RegexNatives` runs the search loop of §9.10 in code points. What the translator emits so that no engine default leaks in:
 
 | Rule | Emit |
 | --- | --- |
