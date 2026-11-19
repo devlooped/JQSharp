@@ -1,9 +1,11 @@
 """The jqlite value (spec §4.1) and the shape of fallible operations (guide §2.1, §2.2).
 
 A value is one of Python's own ``None``, ``bool``, ``float`` and ``str``, or a :class:`JqArray`
-or :class:`JqObject`. ``bool`` is a subclass of ``int`` in Python: the engine always tests
-``type(v)`` exactly (never ``isinstance``), so a boolean is never taken for a number, and no
-``int`` ever enters the engine (the reader, the natives and the host boundary give ``float``).
+or :class:`JqObject`; in the values layer and the interpreter, a string may also be a
+:class:`JqString`, a long result of ``+`` (jq_string.py says where). ``bool`` is a subclass of
+``int`` in Python: the engine always tests ``type(v)`` exactly (never ``isinstance``), so a
+boolean is never taken for a number, and no ``int`` ever enters the engine (the reader, the
+natives and the host boundary give ``float``).
 """
 
 from __future__ import annotations

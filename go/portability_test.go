@@ -44,6 +44,7 @@ var importExceptions = map[string]map[string]string{
 	"sync/atomic": {
 		"values/jq_array.go":       "the compare-and-swap that claims slots of a shared buffer (guide §2.9)",
 		"values/jq_object.go":      "the compare-and-swap that claims slots, and the cached sorted keys (guide §2.9)",
+		"values/jq_string.go":      "the compare-and-swap that claims bytes of a shared buffer, and the cached text (guide §2.9)",
 		"builtins/regex_engine.go": "the size of the pattern cache, and the pattern with context compiled once",
 	},
 }

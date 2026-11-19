@@ -2,6 +2,8 @@
   { "name": "whatsapp",       "program": "../dotnet/Benchmarks/WhatsApp/Message.jq", "input": "../dotnet/Benchmarks/WhatsApp/Text.json", "take": 0, "what": "a real filter on a small document" },
   { "name": "map-add",        "program": "cases/map-add.jq",        "input": "cases/null.json",    "take": 0, "what": "100,000 numbers through map and add" },
   { "name": "append-reduce",  "program": "cases/append-reduce.jq",  "input": "cases/null.json",    "take": 0, "what": "an array grown by 10,000 appends (must be linear)" },
+  { "name": "join-strings",   "program": "cases/join-strings.jq",   "input": "cases/null.json",    "take": 0, "what": "20,000 strings joined (must be linear)" },
+  { "name": "add-strings",    "program": "cases/add-strings.jq",    "input": "cases/null.json",    "take": 0, "what": "20,000 strings added (must be linear)" },
   { "name": "update-each",    "program": "cases/update-each.jq",    "input": "cases/null.json",    "take": 0, "what": "4,000 elements updated in place with |=" },
   { "name": "index-reduce",   "program": "cases/index-reduce.jq",   "input": "cases/null.json",    "take": 0, "what": "an object grown by 10,000 keys with INDEX (must be linear)" },
   { "name": "first-of-range", "program": "cases/first-of-range.jq", "input": "cases/null.json",    "take": 1, "what": "the first output of a long generator (must be lazy)" },

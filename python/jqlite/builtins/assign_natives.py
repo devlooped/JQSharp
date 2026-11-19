@@ -18,6 +18,7 @@ from ..values.jq_array import JqArray
 from ..values.jq_array_builder import JqArrayBuilder
 from ..values.jq_object import JqObject
 from ..values.jq_object_builder import JqObjectBuilder
+from ..values.jq_string import plain
 from ..values.jq_value import Fail
 from . import path_natives
 
@@ -62,7 +63,7 @@ def _modify(interpreter: Any, env: Any, arguments: Any, input: JqValue, path: Pa
         if not out:
             deletions.append(keys)
             return None
-        failed = tree.try_set(keys, out[0])
+        failed = tree.try_set(keys, plain(out[0]))
         return None if failed is None else Signal.error(failed.error)
     signal = interpreter.eval(arguments[0], env, input, Path.ROOT, each)
     if signal is not None:
@@ -77,6 +78,7 @@ def _assign(interpreter: Any, env: Any, arguments: Any, input: JqValue, path: Pa
     # def _assign(paths; $value): for each output of value (on the input), every path of paths set
     # to it. With no path the result is the input itself, with its path (the reduce's initial state).
     def each_value(value: JqValue, _: Path | None) -> Signal | None:
+        value = plain(value)
         tree = WorkingTree(input)
         any_path = [False]
 

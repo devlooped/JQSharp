@@ -136,12 +136,12 @@ func shallow(a, b Value, equality bool) (int, walkFrame) {
 		return 1, walkFrame{}
 	case KindString:
 		if equality {
-			if a.ref.(string) == b.ref.(string) {
+			if a.AsString() == b.AsString() {
 				return 0, walkFrame{}
 			}
 			return 1, walkFrame{}
 		}
-		return CodePoints.Compare(a.ref.(string), b.ref.(string)), walkFrame{}
+		return CodePoints.Compare(a.AsString(), b.AsString()), walkFrame{}
 	case KindArray:
 		p := a.AsArray().Count()
 		q := b.AsArray().Count()
@@ -222,7 +222,7 @@ func (valueOps) TryAdd(a, b Value) (result, err Value, ok bool) {
 		case KindNumber:
 			return FromNumber(a.num + b.num), Null, true
 		case KindString:
-			return Value{kind: KindString, ref: a.ref.(string) + b.ref.(string)}, Null, true
+			return Concat(a, b), Null, true
 		case KindArray:
 			return FromArray(a.AsArray().Concat(b.AsArray())), Null, true
 		case KindObject:

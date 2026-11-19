@@ -18,6 +18,7 @@ from . import errors
 from .code_points import sanitize
 from .jq_array import JqArray
 from .jq_object import JqObject
+from .jq_string import JqString
 from .jq_value import Fail
 
 if TYPE_CHECKING:
@@ -41,6 +42,9 @@ _INF = math.inf
 
 def to_json(value: JqValue) -> str:
     t = type(value)
+    if t is JqString:
+        value = value.text
+        t = str
     if t is str:
         return '"' + value.translate(_ESCAPES) + '"'  # type: ignore[union-attr]
     if t is float:
@@ -65,7 +69,7 @@ def write(parts: list[str], value: JqValue) -> None:
     escapes = _ESCAPES
     # A frame: [elements, index of the current one, keys or None for an array].
     stack: list[list] = []
-    current = value
+    current = value.text if type(value) is JqString else value
     while True:
         # len(stack) is the number of containers around current: its level minus one.
         if len(stack) >= MAX_WRITE_DEPTH:
@@ -138,7 +142,7 @@ def to_json_truncated(value: JqValue, max_bytes: int, keep_bytes: int) -> str:
     # Dropping the incomplete sequence at the end keeps the prefix on a code point boundary.
     prefix = data[:keep_bytes].decode("utf-8", "ignore")
     t = type(value)
-    return prefix + ('..."' if t is str else ("...]" if t is JqArray else "...}"))
+    return prefix + ('..."' if t is str or t is JqString else ("...]" if t is JqArray else "...}"))
 
 
 def format_number(number: float) -> str:

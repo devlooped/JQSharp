@@ -3,10 +3,10 @@ package com.devlooped.jqlite.values;
 /**
  * An immutable jqlite value: null, false, true, a number (IEEE-754 double, NaN and ±Infinity
  * included), a string, an array or an object. Java's sealed interface is the tagged union of the
- * porting guide (§2.1): {@link JNull} and the two {@link JBool} are singletons, {@link JqArray} and
- * {@link JqObject} are values themselves.
+ * porting guide (§2.1): {@link JNull} and the two {@link JBool} are singletons, {@link JqArray},
+ * {@link JqObject} and {@link JqString} (a string made by {@code +}) are values themselves.
  */
-public sealed interface JqValue extends Result permits JqValue.JNull, JqValue.JBool, JqValue.JNumber, JqValue.JString, JqArray, JqObject {
+public sealed interface JqValue extends Result permits JqValue.JNull, JqValue.JBool, JqValue.JNumber, JqValue.JString, JqString, JqArray, JqObject {
 
     JqValue NULL = JNull.INSTANCE;
     JqValue FALSE = JBool.FALSE_VALUE;
@@ -25,6 +25,28 @@ public sealed interface JqValue extends Result permits JqValue.JNull, JqValue.JB
     /** Creates a string value; a lone surrogate becomes U+FFFD. */
     static JqValue fromString(String value) {
         return new JString(value);
+    }
+
+    /**
+     * jq's {@code +} on two strings. A long result is a {@link JqString}, which the next
+     * concatenation extends in place; both sides are well-formed, so it is not sanitized again.
+     */
+    static JqValue concat(JqValue left, JqValue right) {
+        String tail = right.asString();
+        if (tail.isEmpty()) {
+            return left;
+        }
+        if (left instanceof JqString grown) {
+            return grown.append(tail);
+        }
+
+        String head = left.asString();
+        if (head.isEmpty()) {
+            return right;
+        }
+        return head.length() + tail.length() < JqString.MIN_LENGTH
+            ? new JString(head.concat(tail))
+            : JqString.concat(head, tail);
     }
 
     static JqValue fromArray(JqArray value) {

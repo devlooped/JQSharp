@@ -95,7 +95,7 @@ func writeOpening(builder *strings.Builder, value Value) bool {
 	case KindNumber:
 		builder.WriteString(ValueText.FormatNumber(value.num))
 	case KindString:
-		ValueText.WriteString(builder, value.ref.(string))
+		ValueText.WriteString(builder, value.AsString())
 	case KindArray:
 		builder.WriteByte('[')
 		if value.AsArray().Count() > 0 {

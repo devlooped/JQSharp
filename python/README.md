@@ -71,7 +71,7 @@ streaming), and values are Python's JSON values instead of `JsonElement`.
 There is nothing to build. From this folder:
 
 ```
-python -m unittest                 # 2,502 tests: the corpus both ways, the unit tests of every layer
+python -m unittest                 # 2,509 tests: the corpus both ways, the unit tests of every layer
 python -m compileall -q jqlite tests crossbench.py
 python -m mypy                     # optional tools (pip install mypy ruff), configured in pyproject.toml
 python -m ruff check
@@ -79,7 +79,7 @@ python -m ruff check
 
 - `tests/test_conformance.py`: every case of `spec/tests/*.test` (read from the shared folder), one
   test each, through the public API (`CorpusPublicApi`) and through the core with every prelude
-  builtin bound to its definition (`CorpusWithoutNativeOverrides`): 1,129 + 1,129 tests.
+  builtin bound to its definition (`CorpusWithoutNativeOverrides`): 1,108 + 1,108 tests.
   `localtime.test` runs with a zone fixed at UTC+02:00, `modules.test` over `spec/tests/modules/`.
 - `tests/test_catalogue.py`: the N and P lists of §9, read from the spec, against the native
   catalogue and the prelude; the package's `jqlite/prelude.jq` against `spec/prelude.jq`.
@@ -102,7 +102,7 @@ fails until then.
 
 | Reference (`dotnet/JQLite/Core`) | Python (`jqlite/`) |
 | --- | --- |
-| `Values/*.cs` | `values/jq_value.py`, `jq_array.py`, `jq_array_builder.py`, `jq_object.py`, `jq_object_builder.py`, `code_points.py`, `utf8.py`, `value_ops.py`, `value_text.py`, `errors.py` |
+| `Values/*.cs` | `values/jq_value.py`, `jq_array.py`, `jq_array_builder.py`, `jq_object.py`, `jq_object_builder.py`, `jq_string.py`, `code_points.py`, `utf8.py`, `value_ops.py`, `value_text.py`, `errors.py` |
 | `Syntax/*.cs` | `syntax/token.py`, `lexer.py`, `ast.py`, `parser.py`, `syntax_error.py` |
 | `Binding/*.cs` | `binding/bound.py`, `resolver.py`, `prelude.py`, `modules.py` |
 | `Runtime/*.cs` | `runtime/interpreter.py`, `env.py`, `path.py`, `signal.py`, `evaluation.py`, `stack_guard.py`, and `native_table.py` (`Builtins/NativeTable.cs`, see below) |
@@ -121,7 +121,7 @@ Other host uses in the core, each the counterpart of something every language ha
   (`BitConverter.DoubleToInt64Bits` in the reference) of `nextafter` and of exact powers of two.
 - `threading.Lock`, for what is done once per process or shared between threads, as the
   reference's locks and static constructors: `values/jq_array.py` (the claim of a shared buffer's
-  next slot, arrays and objects), `binding/prelude.py` (the prelude, bound once),
+  next slot, arrays, objects and strings), `binding/prelude.py` (the prelude, bound once),
   `builtins/core_natives.py` (the list of `builtins`, computed once), `builtins/registration.py`
   (the native table, filled once) and `syntax/recursion_limit.py` (the count of the parses and
   evaluations that run).
@@ -136,7 +136,8 @@ Other host uses in the core, each the counterpart of something every language ha
 Each is deliberate; the behaviour is the spec's in every case (the corpus runs both ways).
 
 - **Values.** A value is Python's own `None`, `bool`, `float`, `str` or a `JqArray`/`JqObject`
-  (guide §2.1); the engine tests `type(v)` exactly, so `bool` is never a number, and no `int` enters.
+  (guide §2.1), or a `JqString` where `values/jq_string.py` allows one (see *Strings*); the engine
+  tests `type(v)` exactly, so `bool` is never a number, and no `int` enters.
   For a type checker `JqValue` is `Any`: the engine dispatches on a saved `type(v)`, which checkers
   do not follow to narrow a union.
 - **Fallible operations** return the result or a `Fail(error)` (guide §2.2) instead of `bool` and two
@@ -154,6 +155,14 @@ Each is deliberate; the behaviour is the spec's in every case (the corpus runs b
   same lock): a dict lookup is faster in Python than the reference's scan of up to 8 keys.
 - **Strings** are Python `str`, already code points: no code point map, no UTF-16 ordering fix.
   `sanitize` also joins a high and a low surrogate that a host `str` holds as two code points.
+  A `+` on strings that gives 256 code points or more makes a `JqString` (guide §2.9: a buffer of
+  `str` parts, joined once when read), which the next `+` extends in place, so `add` and `join` are
+  linear. Unlike the reference's, it is not a value every part of the engine takes: only the values
+  layer and the interpreter see one, which turns it into a `str` where it enters a container, a
+  native, a template or a format, or reaches the host (the list is in `values/jq_string.py`), so the
+  natives and the boundary test `type(v) is str` as before. `LongStringTests` runs programs through
+  each of those places with every concatenation a `JqString`; running the whole suite with
+  `MIN_LENGTH = 1` checks the corpus the same way.
 - **UTF-8** uses Python's codec (`errors="replace"` gives one U+FFFD per maximal subpart, as §4.1
   says, guide §3.2) instead of the reference's loops.
 - **Sorting** uses Python's stable sort (the same order as the reference's stable merge sort, by the
@@ -187,9 +196,9 @@ Each is deliberate; the behaviour is the spec's in every case (the corpus runs b
 - **Tests left out**, because they are about .NET: the size of a value (16 bytes), the culture of
   number text (`repr` has none), and the tests of the two .NET APIs this port does not have
   (`JqObservableTests`, `JqResourceResolver`). The allocation measurements of `CollectionTests` and
-  `AssignTests` are replaced by structural checks (one buffer shared by 10,000 appends) and, for the
-  native `_modify`, by the growth of its time from 4,000 to 32,000 elements (linear, not quadratic as
-  the prelude's definition, which the test also measures).
+  `AssignTests` are replaced by structural checks (one buffer shared by 10,000 appends, or by
+  100,000 string appends) and, for the native `_modify`, by the growth of its time from 4,000 to
+  32,000 elements (linear, not quadratic as the prelude's definition, which the test also measures).
 - **`JqArray` and `JqObject`** have no `__len__`: a value is never tested for truth (an empty
   array would be false), the engine reads `count`.
 

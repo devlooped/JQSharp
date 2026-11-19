@@ -22,6 +22,10 @@ a comma), so tail positions and calls in them do not recurse; left-deep chains o
 indexes are walked with scratch stacks. The nodes that are not in tail position are dispatched by
 kind through tables of handlers (``_MANY``, ``_OTHER``). What still recurses is bounded by
 MaxDepth and the program's nesting: see stack_guard.py.
+
+A string may be a JqString while it is only held (an input, a variable, a state, an output on its
+way); the interpreter turns it into a str where it enters a container, a native, a template or a
+format, or reaches the host (values/jq_string.py lists the places).
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ from ..values import errors, value_ops, value_text
 from ..values.jq_array import JqArray
 from ..values.jq_object import JqObject
 from ..values.jq_object_builder import JqObjectBuilder
+from ..values.jq_string import JqString, plain
 from ..values.jq_value import Fail
 from . import native_table, stack_guard
 from .env import Closure, Env
@@ -188,7 +193,7 @@ def _slice_step(target: JqValue, at: Path | None, frm: JqValue, to: JqValue) -> 
     # One slice of a target with its path; in a path the slice is the key {"start": from, "end": to} (§8.1).
     nxt = at
     if at is not None:
-        key = JqObject.EMPTY.set("start", frm).set("end", to)
+        key = JqObject.EMPTY.set("start", plain(frm)).set("end", plain(to))
         if at.length < 0:
             return Signal.error(errors.invalid_path_access(key, target)), at
         nxt = at.append(key)
@@ -200,6 +205,8 @@ def _slice_step(target: JqValue, at: Path | None, frm: JqValue, to: JqValue) -> 
 
 def _convert(format: str | None, part: JqValue) -> str | Fail:
     # An interpolated value as text: tostring, or the template's format.
+    if type(part) is JqString:
+        part = part.text
     if format is None:
         return part if type(part) is str else value_text.to_json(part)  # type: ignore[return-value]
     formatted = native_table.FORMATS(format, part)
@@ -251,6 +258,8 @@ class Interpreter:
         stop = Signal.STOP
 
         def emit(value: JqValue, _: Path | None) -> Signal | None:
+            if type(value) is JqString:
+                value = value.text
             return None if output(value) else stop
 
         with stack_guard.evaluation(program, options.max_depth):
@@ -535,6 +544,8 @@ class Interpreter:
         return value
 
     def _leaf_format(self, node: B.Format, env: Env | None, input: JqValue, path: Path | None) -> Any:
+        if type(input) is JqString:
+            input = input.text
         value = native_table.FORMATS(node.name, input)
         if type(value) is Fail:
             return Signal.error(value.error)
@@ -775,13 +786,13 @@ class Interpreter:
                 self.at = path and _UNTRACKED
                 return JqArray.EMPTY
             self.at = path and _UNTRACKED
-            return JqArray([item], 0, 1)
+            return JqArray([item.text if type(item) is JqString else item], 0, 1)
         # [f] for an f with several outputs.
         items: list = []
         append = items.append
 
         def collect(item: JqValue, _: Path | None) -> None:
-            append(item)
+            append(item.text if type(item) is JqString else item)
             return None
         stop = self.eval(body, env, input, None, collect)
         if stop is not None:
@@ -797,7 +808,9 @@ class Interpreter:
             if type(name) is Signal:
                 return name
             if type(name) is not str:
-                return Signal.error(errors.cannot_use_as_key(name))
+                if type(name) is not JqString:
+                    return Signal.error(errors.cannot_use_as_key(name))
+                name = name.text
             value_node = entry.value
             if value_node is None:
                 member = _try_index(input, name)
@@ -807,6 +820,8 @@ class Interpreter:
                 member = eval_one(value_node, env, input, None)
                 if type(member) is Signal:
                     return member
+                if type(member) is JqString:
+                    member = member.text
             builder.set(name, member)
         self.at = path and _UNTRACKED
         return builder.to_object()
@@ -829,6 +844,8 @@ class Interpreter:
         # A value native whose arguments yield at most one output each, or a native that takes
         # closures and gives at most one output (Native.single_when), whose output is kept.
         native = node.native
+        if type(input) is JqString:
+            input = input.text
         if native.takes_closures:
             out: list = []
 
@@ -854,7 +871,7 @@ class Interpreter:
                 value = self.eval_one(arguments[i], env, input, None)
                 if type(value) is Signal:
                     return value
-                values[i] = value
+                values[i] = value.text if type(value) is JqString else value
             result = function(self, input, values)  # type: ignore[misc]
         if type(result) is Fail:
             return Signal.error(result.error)
@@ -1001,7 +1018,9 @@ class Interpreter:
             if type(name) is Signal:
                 return None if name is NOTHING else name
             if type(name) is not str:
-                return Signal.error(errors.cannot_use_as_key(name))
+                if type(name) is not JqString:
+                    return Signal.error(errors.cannot_use_as_key(name))
+                name = name.text
             if entry.value is None:
                 member = _try_index(input, name)
                 if type(member) is Fail:
@@ -1010,6 +1029,8 @@ class Interpreter:
                 member = self.eval_one(entry.value, env, input, None)
                 if type(member) is Signal:
                     return None if member is NOTHING else member
+                if type(member) is JqString:
+                    member = member.text
             obj = obj.set(name, member)
             i += 1
         if i == n:
@@ -1019,7 +1040,9 @@ class Interpreter:
 
         def each_key(key: JqValue, _: Path | None) -> Signal | None:
             if type(key) is not str:
-                return Signal.error(errors.cannot_use_as_key(key))
+                if type(key) is not JqString:
+                    return Signal.error(errors.cannot_use_as_key(key))
+                key = key.text
             if nxt.value is None:
                 indexed = _try_index(input, key)
                 if type(indexed) is Fail:
@@ -1027,6 +1050,8 @@ class Interpreter:
                 return self._eval_object(node, following, obj.set(key, indexed), env, input, at, emit)
 
             def each_value(value: JqValue, _: Path | None) -> Signal | None:
+                if type(value) is JqString:
+                    value = value.text
                 return self._eval_object(node, following, obj.set(key, value), env, input, at, emit)  # type: ignore[arg-type]
             return self.for_each(nxt.value, env, input, None, each_value)
         return self.for_each(nxt.key, env, input, None, each_key)
@@ -1294,6 +1319,8 @@ class Interpreter:
         # A native: a closure native decides everything; a value native is called once per combination
         # of its arguments' outputs, the last argument outermost (§6.3, §9.1).
         native = node.native
+        if type(input) is JqString:
+            input = input.text
         if native.takes_closures:
             return _CLOSURES[native.index](self, env, node.arguments, input, path, emit)  # type: ignore[misc,no-any-return]
         arguments: list = [None] * native.arity
@@ -1309,7 +1336,7 @@ class Interpreter:
             return emit(result, at)  # type: ignore[no-any-return]
 
         def each(argument: JqValue, _: Path | None) -> Signal | None:
-            arguments[i] = argument
+            arguments[i] = argument.text if type(argument) is JqString else argument
             return self._combine(function, nodes, i - 1, arguments, env, input, at, emit)
         return self.for_each(nodes[i], env, input, None, each)
 

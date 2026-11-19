@@ -37,6 +37,7 @@ class PortabilityTests {
     private static final Map<String, Map<String, String>> FILE_IMPORTS = Map.of(
         "values/JqArray.java", Map.of("java\\.util\\.concurrent\\.atomic\\.AtomicInteger", "the claim of a buffer's next slots (compare-and-swap)"),
         "values/JqObject.java", Map.of("java\\.util\\.concurrent\\.atomic\\.AtomicInteger", "the claim of a buffer's next slot (compare-and-swap)"),
+        "values/JqString.java", Map.of("java\\.util\\.concurrent\\.atomic\\.AtomicInteger", "the claim of a buffer's next units (compare-and-swap)"),
         "builtins/RegexEngine.java", Map.of("java\\.util\\.concurrent\\.ConcurrentHashMap", "the cache of compiled patterns, shared by threads"),
         "runtime/StackGuard.java", Map.of("java\\.util\\.concurrent\\.[\\w.]+", "the pool of large-stack threads"),
         "binding/Prelude.java", Map.of("java\\.io\\.\\w+|java\\.nio\\.charset\\.StandardCharsets", "reads the embedded prelude"));
@@ -58,6 +59,7 @@ class PortabilityTests {
         new Rule("synchronization", "\\bsynchronized\\b|\\bvolatile\\b|\\bAtomic\\w+|\\bConcurrent\\w+", Map.of(
             "values/JqArray.java", "the claim of a buffer's next slots (compare-and-swap)",
             "values/JqObject.java", "the claim of a slot, the shared key index (a lock) and the sorted keys (a benign race)",
+            "values/JqString.java", "the claim of a buffer's next units (compare-and-swap)",
             "binding/Bound.java", "the flag of a program whose evaluations start on a fresh stack (a hint)",
             "builtins/RegexEngine.java", "the cache of compiled patterns, shared by threads",
             "runtime/StackGuard.java", "the numbering of the pool's threads")),

@@ -14,6 +14,7 @@ from jqlite.values.code_points import sanitize
 from jqlite.values.jq_array import JqArray
 from jqlite.values.jq_object import JqObject
 from jqlite.values.jq_object_builder import JqObjectBuilder
+from jqlite.values.jq_string import MIN_LENGTH, JqString
 from jqlite.values.jq_value import ARRAY, FALSE, NULL, NUMBER, OBJECT, STRING, TRUE, Fail, is_truthy, kind, type_name
 
 
@@ -215,6 +216,107 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(10000, array.count)
         self.assertEqual(9999, array.get(9999))
         self.assertIs(first, array.buffer)
+
+    def test_adding_twice_to_the_same_long_string_gives_independent_strings(self) -> None:
+        head = "x" * MIN_LENGTH
+        root = value_ops.concat(head, "a")
+        a = value_ops.concat(root, "b")
+        b = value_ops.concat(root, "c")
+        c = value_ops.concat(a, "d")
+        self.assertIs(JqString, type(c))
+        self.assertEqual(head + "a", root.text)
+        self.assertEqual(head + "ab", a.text)
+        self.assertEqual(head + "ac", b.text)
+        self.assertEqual(head + "abd", c.text)
+        self.assertEqual(STRING, kind(c))
+        self.assertEqual("string", type_name(c))
+        self.assertTrue(value_ops.are_equal(c, head + "abd"))
+        self.assertTrue(value_ops.are_equal(head + "abd", c))
+        self.assertTrue(value_ops.are_equal(c, value_ops.concat(value_ops.concat(root, "b"), "d")))
+        self.assertFalse(value_ops.are_equal(c, b))
+        self.assertEqual(0, value_ops.compare(head + "ac", b))
+        self.assertEqual(-1, value_ops.compare(a, b))
+        self.assertEqual(1, value_ops.compare(c, head))
+
+    def test_adding_an_empty_string_returns_the_other(self) -> None:
+        self.assertEqual('"ab"', J(value_ops.concat("", "ab")))
+        self.assertEqual('"ab"', J(value_ops.concat("ab", "")))
+        self.assertEqual('"ab"', J(value_ops.concat("a", "b")))
+        long = value_ops.concat("x" * MIN_LENGTH, "a")
+        self.assertIs(long, value_ops.concat(long, ""))
+        self.assertIs(long, value_ops.concat("", long))
+        self.assertIs(long, value_ops.try_add(long, None))
+
+    def test_concurrent_additions_to_one_long_string_stay_independent(self) -> None:
+        head = "x" * MIN_LENGTH
+        root = value_ops.concat(head, "-")
+        results: list = [None] * 200
+
+        def work(i: int) -> None:
+            text = value_ops.concat(root, f"<{i}>")
+            for j in range(10):
+                text = value_ops.concat(text, f"{i * 100 + j},")
+            results[i] = text
+        threads = [threading.Thread(target=work, args=(i,)) for i in range(len(results))]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(head + "-", root.text)
+        for i, text in enumerate(results):
+            self.assertEqual(head + f"-<{i}>" + "".join(f"{i * 100 + j}," for j in range(10)), text.text)
+
+    def test_adding_strings_in_a_loop_does_not_copy_the_string(self) -> None:
+        # reduce range(100000) as $i (""; . + "ab"): every version past MIN_LENGTH appends a part to
+        # one buffer; copying on each addition would copy ~10 GB.
+        text: Any = ""
+        first = None
+        for _ in range(100000):
+            text = value_ops.try_add(text, "ab")
+            if first is None and type(text) is JqString:
+                first = text.parts
+        self.assertIs(first, text.parts)
+        self.assertEqual(200000, len(text.text))
+        self.assertEqual("ab" * 100000, text.text)
+
+    def test_comparing_a_long_string_with_another_kind_does_not_join_it(self) -> None:
+        # join tests `. == null` on its accumulator at every step: joining the parts there would
+        # make it quadratic again.
+        long = value_ops.concat("x" * MIN_LENGTH, "ab")
+        self.assertFalse(value_ops.are_equal(long, None))
+        self.assertFalse(value_ops.are_equal(N(1), long))
+        self.assertEqual(1, value_ops.compare(long, N(1)))
+        self.assertEqual(-1, value_ops.compare(long, JqArray.EMPTY))
+        self.assertIsNone(long._text)
+
+    def test_the_operations_of_the_interpreter_take_a_long_string(self) -> None:
+        # Each operation gives for a JqString what it gives for the equal str (jq_string.py).
+        text = "x" * MIN_LENGTH + "ab"
+        long = value_ops.concat("x" * MIN_LENGTH, "ab")
+        self.assertIs(JqString, type(long))
+        obj = JqObject.EMPTY.set(text, N(1))
+        slice_key = JqObject.EMPTY.set("start", N(-2)).set("end", None)
+        cases: list[tuple[str, Any]] = [
+            ("to_json", lambda s: J(s)),
+            ("describe", lambda s: errors.describe(s)),
+            ("compare with a number", lambda s: value_ops.compare(s, N(1))),
+            ("compare with an array", lambda s: value_ops.compare(JqArray.EMPTY, s)),
+            ("s * n", lambda s: text_of(value_ops.try_multiply(s, N(2)))),
+            ("n * s", lambda s: text_of(value_ops.try_multiply(N(2), s))),
+            ("s / t", lambda s: text_of(value_ops.try_divide(s, "a"))),
+            ("t / s", lambda s: text_of(value_ops.try_divide("y" + text + "z", s))),
+            ("s - n", lambda s: text_of(value_ops.try_subtract(s, N(1)))),
+            ("s + n", lambda s: text_of(value_ops.try_add(s, N(1)))),
+            ("-s", lambda s: text_of(value_ops.try_negate(s))),
+            ("object[s]", lambda s: text_of(value_ops.try_index(obj, s))),
+            ("s[n]", lambda s: text_of(value_ops.try_index(s, N(0)))),
+            ("s[-3:]", lambda s: text_of(value_ops.try_slice(s, N(-3), None))),
+            ("s[slice object]", lambda s: text_of(value_ops.try_index(s, slice_key))),
+            ("object[s:]", lambda s: text_of(value_ops.try_slice(JqObject.EMPTY, s, None))),
+        ]
+        for name, operation in cases:
+            with self.subTest(operation=name):
+                self.assertEqual(operation(text), operation(long))
 
     def test_adding_keys_in_a_loop_does_not_copy_the_object(self) -> None:
         obj = JqObject.EMPTY.merge(JqObject.EMPTY.set("k0", N(0)))

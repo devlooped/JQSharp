@@ -98,6 +98,7 @@ fn accumulators_grow_in_place() {
         ("reduce range(10000) as $i ({a: {b: []}}; .a.b += [$i]) | .a.b | length", "10000", 16),
         ("reduce range(10000) as $i (\"\"; . + \"x\") | length", "10000", 4),
         ("[range(10000) | tostring] | join(\",\") | length", "48889", 8),
+        ("[range(10000) | \"ab\"] | add | length", "20000", 4),
         ("[range(10000)] | INDEX(.) | length", "10000", 16),
         ("[range(4000)] | .[] |= . + 1 | length", "4000", 8),
         ("[range(4000)] | map_values(. + 1) | add", "8002000", 8),

@@ -13,7 +13,9 @@ import com.devlooped.jqlite.values.JqArray;
 import com.devlooped.jqlite.values.JqKind;
 import com.devlooped.jqlite.values.JqObject;
 import com.devlooped.jqlite.values.JqObjectBuilder;
+import com.devlooped.jqlite.values.JqString;
 import com.devlooped.jqlite.values.JqValue;
+import com.devlooped.jqlite.values.ValueOps;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
@@ -116,6 +118,73 @@ class CollectionTests {
 
         assertEquals(100000, array.count());
         assertEquals(99999, array.get(99999).asNumber());
+        assertTrue(elapsedMs < 2000, elapsedMs + " ms");
+    }
+
+    private static JqValue s(String text) {
+        return JqValue.fromString(text);
+    }
+
+    @Test
+    void addingTwiceToTheSameLongStringGivesIndependentStrings() {
+        String head = "x".repeat(JqString.MIN_LENGTH);
+        JqValue root = JqValue.concat(s(head), s("a"));
+        JqValue a = JqValue.concat(root, s("b"));
+        JqValue b = JqValue.concat(root, s("c"));
+        JqValue c = JqValue.concat(a, s("d"));
+
+        assertEquals(head + "a", root.asString());
+        assertEquals(head + "ab", a.asString());
+        assertEquals(head + "ac", b.asString());
+        assertEquals(head + "abd", c.asString());
+        assertEquals(JqKind.STRING, c.kind());
+        assertTrue(ValueOps.areEqual(c, s(head + "abd")));
+        assertEquals(0, ValueOps.compare(s(head + "ac"), b));
+    }
+
+    @Test
+    void addingAnEmptyStringReturnsTheOther() {
+        assertEquals("ab", JqValue.concat(s(""), s("ab")).asString());
+        assertEquals("ab", JqValue.concat(s("ab"), s("")).asString());
+        assertEquals("ab", JqValue.concat(s("a"), s("b")).asString());
+    }
+
+    @Test
+    void concurrentAdditionsToOneLongStringStayIndependent() {
+        String head = "x".repeat(JqString.MIN_LENGTH);
+        JqValue root = JqValue.concat(s(head), s("-"));
+        JqValue[] results = new JqValue[1000];
+        IntStream.range(0, results.length).parallel().forEach(i -> {
+            JqValue text = JqValue.concat(root, s("<" + i + ">"));
+            for (int k = 0; k < 10; k++) {
+                text = JqValue.concat(text, s((i * 100 + k) + ","));
+            }
+            results[i] = text;
+        });
+
+        assertEquals(head + "-", root.asString());
+        for (int i = 0; i < results.length; i++) {
+            StringBuilder expected = new StringBuilder(head).append("-<").append(i).append('>');
+            for (int k = 0; k < 10; k++) {
+                expected.append(i * 100 + k).append(',');
+            }
+            assertEquals(expected.toString(), results[i].asString());
+        }
+    }
+
+    // As for arrays, linear time stands for the reference's bound on the bytes allocated.
+    @Test
+    void addingStringsInALoopDoesNotCopyTheString() {
+        long started = System.nanoTime();
+        JqValue text = s("");
+        JqValue ab = s("ab");
+        for (int i = 0; i < 100000; i++) {
+            text = JqValue.concat(text, ab);
+        }
+        int length = text.asString().length();
+        long elapsedMs = (System.nanoTime() - started) / 1_000_000;
+
+        assertEquals(200000, length);
         assertTrue(elapsedMs < 2000, elapsedMs + " ms");
     }
 

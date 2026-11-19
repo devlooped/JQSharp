@@ -133,7 +133,7 @@ names. Where Go asks for something else:
 | `values/` | Strings are UTF-8: `CodePoints.Compare` is a byte comparison, `Advance` maps code points to bytes, `Utf8Length` is gone; `FromString` replaces each maximal ill-formed subpart with U+FFFD (`Utf8.DecodeReplacing`) | Go strings are bytes; Go's own decoders replace per byte or per run (guide §3.2) |
 | `values/value_text.go` | The reader combines `\u` surrogate pairs itself and sanitizes ill-formed UTF-8; reader error columns count code points | the reference reads UTF-16 text and lets `FromString` fix lone surrogates; the two counts differ only for characters above U+FFFF |
 | `values/jq_value.go` | `Value` is a struct of a kind, a `float64` and an `any` (32 bytes, not 16) | guide §2.1 |
-| `values/jq_object.go` | `SortedKeys` is cached in an `atomic.Pointer` | the reference's benign race is a data race in Go's memory model |
+| `values/jq_object.go`, `values/jq_string.go` | `SortedKeys` and the text of a grown string are cached in an `atomic.Pointer` | the reference's benign race is a data race in Go's memory model |
 | `syntax/parser.go` | Partial nodes of `parsePipe`, `if` and `reduce`/`foreach` get their hole filled in place | Go has no `with` copies; a node is not changed after parsing |
 | `syntax/lexer.go` | The source is sanitized first (ill-formed UTF-8 to U+FFFD) | as the reference's lone surrogates |
 | `binding/prelude.go` | `//go:embed prelude.jq`, a copy made by `go generate` (`copy_prelude.go`) | embed sees only files of the package's directory |
