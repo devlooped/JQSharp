@@ -1,0 +1,36 @@
+{
+  "name": "jqlite",
+  "version": "1.0.0",
+  "description": "jqlite, a portable profile of the jq language: the TypeScript port of the JQLite reference engine",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./node": {
+      "types": "./dist/src/node.d.ts",
+      "default": "./dist/src/node.js"
+    }
+  },
+  "files": [
+    "dist/src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prelude": "node scripts/generate-prelude.mjs",
+    "build": "node scripts/generate-prelude.mjs && tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.core.json --noEmit",
+    "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
+    "bench": "node dist/bench/crossBench.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

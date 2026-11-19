@@ -1,0 +1,11 @@
+{
+  // The engine and the browser-safe host boundary, checked without Node's types: a Node API
+  // (fs, path, process, Buffer) used there is a compile error.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/node.ts", "src/jqFileResolver.ts"]
+}
