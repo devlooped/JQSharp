@@ -284,6 +284,24 @@ capture("(?<a>x)(?<n>q)?")
 null
 ["AB","aB"]
 
+# When str has fewer outputs at some matches, the i-th result skips the matches without an i-th
+# output, and their gaps too.
+[gsub("(?<x>.)"; if .x == "b" then empty elif .x == "a" then "1", "2" else "3" end)], [gsub("(?<x>.)"; if .x == "a" then "1" else "2", "3" end)]
+"abc"
+["13","2"]
+["122","33"]
+
+[gsub("b"; null)], [gsub("b"; empty)], (try gsub("b"; 1) catch .), (try (1 | split("a"; null)) catch .)
+"abc"
+["ac"]
+["abc"]
+"string (\"a\") and number (1) cannot be added"
+"number (1) cannot be matched, as it is not a string"
+
+[gsub("😀"; "é"), sub("b"; "😀😀"), split("b"; null), split("😀"; null), gsub("(?<x>b)"; "<\(.x)>")]
+"a😀b😀c"
+["aébéc","a😀😀😀😀c",["a😀","😀c"],["a","b","c"],"a😀<b>😀c"]
+
 [sub("(?<x>a)"; "<\(.x)>"; "g"), gsub("(?<x>a)|b"; "[\(.x)]"), gsub("(?<d>\\d)"; "\(.d|tonumber+1)"), gsub("^"; ">"), gsub("$"; "<"), sub("a"; "b", "c"; "g")]
 "a1ba2"
 ["<a>1b<a>2","[a]1[null][a]2","a2ba3",">a1ba2","a1ba2<","b1bb2","c1bc2"]

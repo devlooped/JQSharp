@@ -740,7 +740,7 @@ So:
 | `capture/1` | P | `def capture($val): ($val \| type) as $vt \| if $vt == "string" then capture($val; null) elif $vt == "array" and ($val \| length) > 1 then capture($val[0]; $val[1]) elif $vt == "array" and ($val \| length) > 0 then capture($val[0]; null) else error($vt + " not a string or array") end;` | |
 | `scan/2` | P | `def scan($re; $flags): match($re; "g" + $flags) \| if (.captures \| length) > 0 then [.captures[].string] else .string end;` | |
 | `scan/1` | P | `def scan($re): scan($re; null);` | |
-| `split/2` | P | `def split($re; flags): . as $s \| [match($re; "g" + flags) \| (.offset, .offset + .length)] as $ms \| [0] + $ms + [$s \| length] \| [range(0; length; 2) as $i \| $s[.[$i]:.[$i + 1]]];` | |
+| `split/2` | P | `def split($re; flags): [match($re; "g" + flags) \| (.offset, .offset + .length)] as $ms \| explode as $cps \| [0] + $ms + [$cps \| length] \| [range(0; length; 2) as $i \| $cps[.[$i]:.[$i + 1]] \| implode];` | |
 | `splits/2` | P | `def splits($re; flags): split($re; flags) \| .[];` | |
 | `splits/1` | P | `def splits($re): splits($re; null);` | |
 | `sub/3` | P | below | |
@@ -750,16 +750,22 @@ So:
 
 ```jq
 def sub($re; str; $flags): . as $in
-  | (reduce match($re; $flags) as $edit ({result: [], previous: 0};
-        $in[.previous:($edit | .offset)] as $gap
-        | [$edit | [.captures[] | select(.name != null) | {key: .name, value: .string}] | from_entries | str] as $inserts
-        | reduce range(0; $inserts | length) as $ix (.; .result[$ix] += $gap + $inserts[$ix])
-        | .previous = ($edit | .offset + .length))
-     | .result[] + $in[.previous:])
-    // $in;
+  | [match($re; $flags)] as $edits
+  | if $edits == [] then $in
+    else (explode as $cps
+      | reduce $edits[] as $edit ({result: [], previous: 0};
+            ($cps[.previous:($edit | .offset)] | implode) as $gap
+            | [$edit | [.captures[] | select(.name != null) | {key: .name, value: .string}] | from_entries | str] as $inserts
+            | reduce range(0; $inserts | length) as $ix (.; .result[$ix] += ($gap + $inserts[$ix] | explode))
+            | .previous = ($edit | .offset + .length))
+      | .result[] + $cps[.previous:] | implode)
+      // $in
+    end;
 ```
 
 `str` is applied to an object of the named captures (unmatched groups: `null`); several outputs of `str` give several results, the *i*-th result using the *i*-th output at every match: `"aB" | [sub("(?<a>.)"; "\(.a | ascii_upcase)", "\(.a | ascii_downcase)")]` → `["AB","aB"]`.
+
+`sub/3` and `split/2` slice and build arrays of code points, never strings, so that their cost is linear in the input whatever the number of matches: in a host whose strings are UTF-8 or UTF-16, a string slice counts code points from the start of the string, and `+` on strings copies both operands. They give the results and errors of jq's definitions, which slice `$in` and append to a string at each match.
 
 ### 9.7 Dates
 
