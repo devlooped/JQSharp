@@ -186,7 +186,13 @@ fn match_object(search: &Search, input: &str, map: &CodePointMap, found: (usize,
         for (g, name) in search.groups.iter().enumerate() {
             let mut capture = JqObject::with_capacity(4);
             match spans.group(g + 1) {
-                Some((start, end)) => add_span(&mut capture, keys, input, map, start, end),
+                Some((start, end)) if start < end => add_span(&mut capture, keys, input, map, start, end),
+                Some((start, _)) => {
+                    // An empty group has the key order of an absent one, as jq.
+                    capture.insert(Arc::clone(&keys.offset), JqValue::Number(map.code_point(start) as f64));
+                    capture.insert(Arc::clone(&keys.string), JqValue::from_text(""));
+                    capture.insert(Arc::clone(&keys.length), JqValue::Number(0.0));
+                }
                 None => {
                     capture.insert(Arc::clone(&keys.offset), JqValue::Number(-1.0));
                     capture.insert(Arc::clone(&keys.string), JqValue::Null);

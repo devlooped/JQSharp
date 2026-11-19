@@ -114,15 +114,17 @@ static class RegexNatives
         {
             var name = search.Groups[g] is { } text ? JqValue.FromString(text) : JqValue.Null;
             var capture = new JqObjectBuilder(4);
-            if (spans[2 * g + 2] < 0)
+            int start = spans[2 * g + 2], end = spans[2 * g + 3];
+            if (start == end || start < 0)
             {
-                capture.Set("offset", JqValue.FromNumber(-1));
-                capture.Set("string", JqValue.Null);
+                // An empty or absent group has jq's other key order.
+                capture.Set("offset", JqValue.FromNumber(start < 0 ? -1 : map.CodePoint(start)));
+                capture.Set("string", start < 0 ? JqValue.Null : JqValue.FromString(""));
                 capture.Set("length", JqValue.FromNumber(0));
             }
             else
             {
-                AddSpan(capture, search.Input, map, spans[2 * g + 2], spans[2 * g + 3]);
+                AddSpan(capture, search.Input, map, start, end);
             }
 
             capture.Set("name", name);

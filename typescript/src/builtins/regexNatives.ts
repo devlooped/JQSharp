@@ -132,12 +132,15 @@ function matchObject(search: Search, spans: Int32Array, map: CodePointMap): JqVa
   const captures: JqValue[] = [];
   for (let g = 0; g < groups.length; g++) {
     const capture = new JqObjectBuilder();
-    if (spans[2 * g + 2]! < 0) {
-      capture.set("offset", -1);
-      capture.set("string", null);
+    const start = spans[2 * g + 2]!;
+    const end = spans[2 * g + 3]!;
+    if (start === end || start < 0) {
+      // An empty or absent group has jq's other key order.
+      capture.set("offset", start < 0 ? -1 : map.codePoint(start));
+      capture.set("string", start < 0 ? null : "");
       capture.set("length", 0);
     } else {
-      addSpan(capture, search.input, map, spans[2 * g + 2]!, spans[2 * g + 3]!);
+      addSpan(capture, search.input, map, start, end);
     }
 
     capture.set("name", groups[g]!);

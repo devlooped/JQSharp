@@ -137,12 +137,15 @@ final class RegexNatives {
         for (int g = 0; g < captures.length; g++) {
             JqValue name = search.groups[g] != null ? JqValue.fromString(search.groups[g]) : JqValue.NULL;
             JqObjectBuilder capture = new JqObjectBuilder(4);
-            if (spans[2 * g + 2] < 0) {
-                capture.set("offset", JqValue.fromNumber(-1));
-                capture.set("string", JqValue.NULL);
+            int start = spans[2 * g + 2];
+            int end = spans[2 * g + 3];
+            if (start == end || start < 0) {
+                // An empty or absent group has jq's other key order.
+                capture.set("offset", JqValue.fromNumber(start < 0 ? -1 : map.codePoint(start)));
+                capture.set("string", start < 0 ? JqValue.NULL : JqValue.fromString(""));
                 capture.set("length", JqValue.fromNumber(0));
             } else {
-                addSpan(capture, search.input, map, spans[2 * g + 2], spans[2 * g + 3]);
+                addSpan(capture, search.input, map, start, end);
             }
 
             capture.set("name", name);

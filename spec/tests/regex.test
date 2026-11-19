@@ -156,6 +156,15 @@ match("(a)*")
 "aaa"
 {"offset":0,"length":3,"string":"aaa","captures":[{"offset":2,"length":1,"string":"a","name":null}]}
 
+# Spec 9.10: a group that matched the empty string has the key order of one that did not participate.
+match("(a*)b")
+"b"
+{"offset":0,"length":1,"string":"b","captures":[{"offset":0,"string":"","length":0,"name":null}]}
+
+[match("(?<n>a*)b"), match("(x)?b") | .captures[0]]
+"b"
+[{"offset":0,"string":"","length":0,"name":"n"},{"offset":-1,"string":null,"length":0,"name":null}]
+
 [match("a*?"; "g") | [.offset, .length]]
 "aa"
 [[0,0],[1,0],[2,0]]
