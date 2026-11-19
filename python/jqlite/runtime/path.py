@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..values.jq_array import JqArray
+from ..values.jq_string import JqString
 
 if TYPE_CHECKING:
     from ..values.jq_value import JqValue
@@ -37,7 +38,9 @@ class Path:
         return None if mode is None else Path.UNTRACKED
 
     def append(self, nxt: JqValue) -> Path:
-        """This path followed by `nxt`; this path must be tracked."""
+        """This path followed by `nxt`; this path must be tracked. A key is kept as a str (values/jq_string.py)."""
+        if type(nxt) is JqString:
+            nxt = nxt.text
         return Path(self, nxt, self.length + 1)
 
     def append_all(self, keys: JqArray) -> Path:

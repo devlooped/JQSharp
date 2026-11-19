@@ -27,7 +27,8 @@ func (k Kind) String() string { return kindNames[k] }
 // Value is an immutable jqlite value: null, false, true, a number (IEEE-754 double, NaN and
 // ±Infinity included), a string, an array or an object. The zero Value is null.
 //
-// ref holds the string, the *Array or the *Object; num holds the number.
+// ref holds the string (a Go string or a *jqString), the *Array or the *Object; num holds the
+// number.
 type Value struct {
 	kind Kind
 	num  float64
@@ -55,6 +56,27 @@ func FromNumber(value float64) Value { return Value{kind: KindNumber, num: value
 // FromString creates a string value; each ill-formed UTF-8 sequence becomes U+FFFD.
 func FromString(value string) Value {
 	return Value{kind: KindString, ref: CodePoints.Sanitize(value)}
+}
+
+// Concat is jq's + on two strings. Both are well-formed, so their concatenation is too and is not
+// sanitized again. A long result is a *jqString, which the next concatenation extends in place.
+func Concat(left, right Value) Value {
+	tail := right.AsString()
+	if len(tail) == 0 {
+		return left
+	}
+	if grown, ok := left.ref.(*jqString); ok {
+		return Value{kind: KindString, ref: grown.Append(tail)}
+	}
+
+	head := left.AsString()
+	if len(head) == 0 {
+		return right
+	}
+	if len(head)+len(tail) < stringMinLength {
+		return Value{kind: KindString, ref: head + tail}
+	}
+	return Value{kind: KindString, ref: newJqString(head, tail)}
 }
 
 // FromArray gives an array value.
@@ -103,7 +125,10 @@ func (v Value) AsString() string {
 	if v.kind != KindString {
 		panic(v.wrongKind(KindString))
 	}
-	return v.ref.(string)
+	if text, ok := v.ref.(string); ok {
+		return text
+	}
+	return v.ref.(*jqString).Text()
 }
 
 // AsArray gives the array of an array value.

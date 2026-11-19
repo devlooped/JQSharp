@@ -11,8 +11,9 @@ import java.util.ArrayList;
  * of jqlite semantics.
  */
 public final class ValueOps {
-    // The longest string a repeat may build (the reference's limit, below Java's array limit).
-    private static final int MAX_STRING_LENGTH = 0x3FFFFFDF;
+    // The longest string a repeat or a concatenation may build (the reference's limit, below Java's
+    // array limit).
+    static final int MAX_STRING_LENGTH = 0x3FFFFFDF;
 
     private ValueOps() {
     }
@@ -247,7 +248,7 @@ public final class ValueOps {
                 case NUMBER:
                     return JqValue.fromNumber(a.asNumber() + b.asNumber());
                 case STRING:
-                    return JqValue.fromString(a.asString().concat(b.asString()));
+                    return JqValue.concat(a, b);
                 case ARRAY:
                     return a.asArray().concat(b.asArray());
                 case OBJECT:

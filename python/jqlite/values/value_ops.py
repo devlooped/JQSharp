@@ -2,6 +2,8 @@
 
 An operation that can fail in jq returns a :class:`Fail` holding the jqlite error value (the
 message string); on success it returns the result. Nothing here raises as part of jqlite semantics.
+The operations the interpreter applies take a :class:`JqString` wherever they take a ``str``
+(jq_string.py says where one may be).
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from . import errors
 from .jq_array import JqArray
 from .jq_object import JqObject
 from .jq_object_builder import JqObjectBuilder
+from .jq_string import MIN_LENGTH, JqString, plain
 from .jq_value import Fail, kind
 
 if TYPE_CHECKING:
@@ -28,10 +31,17 @@ def are_equal(a: JqValue, b: JqValue) -> bool:
     """jq's ``==``: same kind and same content. Numbers compare as doubles, so ``nan == nan`` is
     false and so is ``[nan] == [nan]``; objects are equal whatever their key order."""
     t = type(a)
-    if t is not type(b):
+    o = type(b)
+    if t is not o:
+        # A JqString and a str: their texts (any other pair of types differs in kind, and the
+        # JqString's text is not built).
+        if (t is JqString and o is str) or (t is str and o is JqString):
+            return plain(a) == plain(b)
         return False
     if t is float or t is str or t is bool or a is None:
         return a == b
+    if t is JqString:
+        return a.text == b.text  # type: ignore[no-any-return]
     return _walk(a, b, True) == 0
 
 
@@ -47,6 +57,8 @@ def compare(a: JqValue, b: JqValue) -> int:
             return -1 if a < b else (0 if a == b else 1)  # type: ignore[operator]
         if t is str:
             return -1 if a < b else (0 if a == b else 1)  # type: ignore[operator]
+    if (t is JqString or type(b) is JqString) and kind(a) == kind(b):
+        return compare(plain(a), plain(b))
     return _walk(a, b, False)
 
 
@@ -169,14 +181,37 @@ def try_add(a: JqValue, b: JqValue) -> JqValue | Fail:
     if b is None:
         return a
     t = type(a)
-    if t is type(b):
-        if t is float or t is str:
+    o = type(b)
+    if t is o:
+        if t is float:
             return a + b  # type: ignore[operator]
+        if t is str:
+            if len(a) + len(b) < MIN_LENGTH:  # type: ignore[arg-type]
+                return a + b  # type: ignore[operator]
+            return concat(a, b)
         if t is JqArray:
             return a.concat(b)  # type: ignore[union-attr,arg-type]
         if t is JqObject:
             return a.merge(b)  # type: ignore[union-attr,arg-type]
+    if (t is str or t is JqString) and (o is str or o is JqString):
+        return concat(a, b)
     return Fail(errors.cannot_be(a, b, errors.ADDED))
+
+
+def concat(left: JqValue, right: JqValue) -> JqValue:
+    """jq's ``+`` on two strings (JqValue.Concat). Both are well-formed, so their concatenation is
+    too and is not sanitized again. A long result is a JqString, which the next concatenation
+    extends in place."""
+    tail = right.text if type(right) is JqString else right
+    if not tail:
+        return left
+    if type(left) is JqString:
+        return left.append(tail)
+    if not left:
+        return right
+    if len(left) + len(tail) < MIN_LENGTH:
+        return left + tail  # type: ignore[no-any-return]
+    return JqString.concat(left, tail)
 
 
 def try_subtract(a: JqValue, b: JqValue) -> JqValue | Fail:
@@ -210,6 +245,8 @@ def try_multiply(a: JqValue, b: JqValue) -> JqValue | Fail:
         return _try_repeat(b, a)  # type: ignore[arg-type]
     if t is JqObject and o is JqObject:
         return _deep_merge(a, b)  # type: ignore[arg-type]
+    if t is JqString or o is JqString:
+        return try_multiply(plain(a), plain(b))
     return Fail(errors.cannot_be(a, b, errors.MULTIPLIED))
 
 
@@ -272,6 +309,8 @@ def try_divide(a: JqValue, b: JqValue) -> JqValue | Fail:
         return a / b  # type: ignore[operator]
     if t is str and type(b) is str:
         return split(a, b)  # type: ignore[arg-type]
+    if t is JqString or type(b) is JqString:
+        return try_divide(plain(a), plain(b))
     return Fail(errors.cannot_be(a, b, errors.DIVIDED))
 
 
@@ -334,8 +373,10 @@ def try_index(target: JqValue, key: JqValue) -> JqValue | Fail:
         if t is JqArray:
             return _indices(target, key)  # type: ignore[arg-type]
     elif kt is JqObject:
-        if t is JqArray or t is str or target is None:
+        if t is JqArray or t is str or t is JqString or target is None:
             return try_index_slice(target, key)
+    elif kt is JqString:
+        return try_index(target, key.text)  # type: ignore[union-attr]
     return Fail(errors.cannot_index(target, key))
 
 
@@ -373,9 +414,12 @@ def _indices(items: JqArray, needle: JqArray) -> JqArray:
 def try_slice(input: JqValue, start: JqValue, end: JqValue) -> JqValue | Fail:
     """``.[start:end]`` (§7.6) on an array, a string (by code point) or null (gives null)."""
     t = type(input)
+    if t is JqString:
+        input = input.text  # type: ignore[union-attr]
+        t = str
     if t is not JqArray and t is not str and input is not None:
         # The key in the message is the slice object that `.[s:e]` stands for.
-        key = JqObject.EMPTY.set("start", start).set("end", end)
+        key = JqObject.EMPTY.set("start", plain(start)).set("end", plain(end))
         return Fail(errors.cannot_index(input, key))
     return _try_slice_bounds(input, start, end)
 
@@ -387,6 +431,9 @@ def try_index_slice(input: JqValue, key: JqValue) -> JqValue | Fail:
     t = type(input)
     if input is None:
         return None
+    if t is JqString:
+        input = input.text  # type: ignore[union-attr]
+        t = str
     if t is not JqArray and t is not str:
         return Fail(errors.cannot_index(input, key))
     obj: JqObject = key  # type: ignore[assignment]

@@ -181,6 +181,82 @@ class InterpreterTests(unittest.TestCase):
         self.assertEqual('"now/0 requires a host clock"', line("try now catch ."))
 
 
+class LongStringTests(unittest.TestCase):
+    """A JqString is turned into a str wherever it is kept (values/jq_string.py): each program runs
+    with every non-empty concatenation a JqString (MIN_LENGTH 1) and with none (MIN_LENGTH out of
+    reach); both give the same outputs, and no JqString reaches the host, a container or a handler."""
+
+    PROGRAMS = [
+        # The host, arrays (one output and several), objects (keys and values, one output and several).
+        '"a" + "b"', '["a" + "b", ("c" + "d" | .)]', '[("a", "b") + "c"]',
+        '{("k" + "a"): ("v" + "b")}', '{(("k", "j") + "a"): ("v" + "b")}', '{("k" + "a"): (("v", "w") + "b")}',
+        '("k" + "a") as $k | {$k}', '{"ka": 1} | {"\\("k" + "a")"}',
+        # Paths and the natives that keep values at paths.
+        '{} | path(.["k" + "a"])', '{} | [paths(.["k" + "a"] = 1)]', '{} | .["k" + "a"] = ("v" + "b")',
+        '{"a": "x"} | .a |= . + "y"', '{"a": "x"} | .a += "y"', '{"a": 1} | with_entries(.key += "x")',
+        '{"ab": {"c": 1}} | getpath(["a" + "b", "c"])', '{"ab": 1} | to_entries',
+        # Templates and formats.
+        '"\\("a" + "b")"', '@json "v: \\("a" + "b")"', '("a" + "b") | @base64', '[("a" + "b")] | @csv',
+        '("YW" + "I=") | @base64d', '("a" + "b") | format("te" + "xt")',
+        # Natives: input, arguments, closure outputs.
+        '("a" + "b") | ascii_upcase', '"abc" | ltrimstr("a" + "b")', '("a" + "b") | length', '("a" + "b") | type',
+        '("a" + "b") | utf8bytelength', '("1" + "2") | tonumber', '("a" + "b") | tojson', '("\\"a" + "b\\"") | fromjson',
+        '("a" + "b") | test("A"; "i" + "x")', '("x" + "a") | [match("x" + "a"; null).string]',
+        '("ab" + "c") | sub("b"; "x" + "y")', '("a" + "b") | gsub("(?<x>b)"; "\\(.x)" + "!")',
+        '("a" + "b") | indices("b")', '{"ab": 1} | has("a" + "b")', '("a" + "b") | contains("b")',
+        '("a" + "b") | explode | implode', '["b", "a"] | sort_by(. + "x")', '["b", "a", "b"] | group_by(. + "")',
+        '[limit(2; ("a", "b", "c") + "x")]', '("a" + "b") | debug', '("a" + "b") | halt_error(1)',
+        '("2015-03-05T23:51:47" + "Z") | fromdate', '0 | strftime("%Y" + "-%m")',
+        # Operators, indexing and slicing on a JqString.
+        '("ab" + "cd")[1:3]', '("ab" + "cd") | .[-1:]', '{"ab": 1} | .["a" + "b"]', '("ab" + "cd") == "abcd"',
+        '("ab" + "cd") < ("ab" + "ce")', '("a,b" + ",c") / ","', '("a" + "b") * 2', '("a" + "b") | .[0]?',
+        '[("a" + "b") | ., .] | .[0] == .[1]', '{} | .[("a" + "b"):]', '("a" + "b") | -.',
+        # Errors, bindings, reduce: join and add.
+        'try error("a" + "b") catch .', 'error("a" + "b")', '("a" + "b") as [$x] ?// $x | $x',
+        'reduce ("a", "b", "c") as $x (""; . + $x)', '["a", "b", 1, null, true] | join("-")', '["a", "b"] | add',
+        '[foreach ("a", "b") as $x (""; . + $x)]', '[.[]?] + [("a" + "b")] | first',
+    ]
+
+    def outcome(self, program: str, threshold: int) -> list[str]:
+        from unittest import mock
+
+        from jqlite.runtime.interpreter import Interpreter
+        from jqlite.values import value_ops, value_text
+        from jqlite.values.jq_array import JqArray
+        from jqlite.values.jq_string import JqString
+
+        def check(value: object) -> None:
+            stack = [value]
+            while stack:
+                v = stack.pop()
+                self.assertIsNot(JqString, type(v), program)
+                if type(v) is JqArray:
+                    stack.extend(v.to_list())  # type: ignore[attr-defined]
+                elif type(v) is JqObject:
+                    stack.extend(v.keys[:v.count])  # type: ignore[attr-defined]
+                    stack.extend(v.values[:v.count])  # type: ignore[attr-defined]
+        texts: list[str] = []
+
+        def output(value: object) -> bool:
+            check(value)
+            texts.append(value_text.to_json(value))
+            return True
+
+        def handler(value: object) -> None:
+            check(value)
+            texts.append("debug " + value_text.to_json(value))
+        with mock.patch.object(value_ops, "MIN_LENGTH", threshold):
+            result = Interpreter.run(compile(program), None, EvaluationOptions(debug=handler), output)
+        check(result.value)
+        texts.append(f"{result.kind} {value_text.to_json(result.value)}")
+        return texts
+
+    def test_long_strings_become_str_where_they_are_kept(self) -> None:
+        for program in self.PROGRAMS:
+            with self.subTest(program=program):
+                self.assertEqual(self.outcome(program, 1 << 62), self.outcome(program, 1))
+
+
 class AssignTests(unittest.TestCase):
     """The native _modify and _assign against their prelude definitions (§8.3): each program is
     compiled twice, with the native overrides and without them, and both must give the same

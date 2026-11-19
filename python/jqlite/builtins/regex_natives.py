@@ -15,6 +15,7 @@ from ..runtime.signal import Signal
 from ..values import errors
 from ..values.jq_array import JqArray
 from ..values.jq_object_builder import JqObjectBuilder
+from ..values.jq_string import plain
 from ..values.jq_value import Fail
 from . import regex_engine, regex_syntax
 
@@ -56,7 +57,7 @@ def _match(interpreter: Any, env: Any, arguments: Any, input: JqValue, path: Pat
     # match(re; flags): flags outermost, re innermost (re fastest); one output per reported match.
     def each_flags(flags: JqValue, _: Path | None) -> Signal | None:
         def each_re(re_: JqValue, _: Path | None) -> Signal | None:
-            search = _try_prepare(input, re_, flags)
+            search = _try_prepare(input, plain(re_), plain(flags))
             if type(search) is Fail:
                 return Signal.error(search.error)
             signal: list = [None]

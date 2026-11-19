@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"unsafe"
@@ -125,6 +126,76 @@ func TestAppendingInALoopDoesNotCopyTheArray(t *testing.T) {
 	equal(t, 10000, array.Count())
 	equal(t, 9999.0, array.At(9999).AsNumber())
 	if bytes > 8_000_000 {
+		t.Errorf("%d bytes", bytes)
+	}
+}
+
+func S(text string) Value { return FromString(text) }
+
+func TestAddingTwiceToTheSameLongStringGivesIndependentStrings(t *testing.T) {
+	head := strings.Repeat("x", stringMinLength)
+	root := Concat(S(head), S("a"))
+	a := Concat(root, S("b"))
+	b := Concat(root, S("c"))
+	c := Concat(a, S("d"))
+
+	equal(t, head+"a", root.AsString())
+	equal(t, head+"ab", a.AsString())
+	equal(t, head+"ac", b.AsString())
+	equal(t, head+"abd", c.AsString())
+	equal(t, KindString, c.Kind())
+	equal(t, true, ValueOps.AreEqual(c, S(head+"abd")))
+	equal(t, 0, ValueOps.Compare(S(head+"ac"), b))
+}
+
+func TestAddingAnEmptyStringReturnsTheOther(t *testing.T) {
+	equal(t, "ab", Concat(S(""), S("ab")).AsString())
+	equal(t, "ab", Concat(S("ab"), S("")).AsString())
+	equal(t, "ab", Concat(S("a"), S("b")).AsString())
+}
+
+func TestConcurrentAdditionsToOneLongStringStayIndependent(t *testing.T) {
+	head := strings.Repeat("x", stringMinLength)
+	root := Concat(S(head), S("-"))
+	results := make([]Value, 1000)
+	var group sync.WaitGroup
+	for i := range results {
+		group.Go(func() {
+			text := Concat(root, S(fmt.Sprintf("<%d>", i)))
+			for j := 0; j < 10; j++ {
+				text = Concat(text, S(fmt.Sprintf("%d,", i*100+j)))
+			}
+			results[i] = text
+		})
+	}
+	group.Wait()
+
+	equal(t, head+"-", root.AsString())
+	for i, text := range results {
+		var expected strings.Builder
+		expected.WriteString(head)
+		fmt.Fprintf(&expected, "-<%d>", i)
+		for j := 0; j < 10; j++ {
+			fmt.Fprintf(&expected, "%d,", i*100+j)
+		}
+		equal(t, expected.String(), text.AsString())
+	}
+}
+
+func TestAddingStringsInALoopDoesNotCopyTheString(t *testing.T) {
+	// reduce range(100000) as $i (""; . + "ab"); copying on each addition would allocate ~20 GB.
+	text := S("")
+	ab := S("ab")
+	length := 0
+	bytes := allocated(func() {
+		for i := 0; i < 100000; i++ {
+			text = Concat(text, ab)
+		}
+		length = len(text.AsString())
+	})
+
+	equal(t, 200000, length)
+	if bytes > 16_000_000 {
 		t.Errorf("%d bytes", bytes)
 	}
 }
