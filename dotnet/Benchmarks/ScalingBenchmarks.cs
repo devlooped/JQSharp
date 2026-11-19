@@ -14,6 +14,8 @@ public class ScalingBenchmarks
     JqExpression appendInReduce = default!;
     JqExpression updateEachElement = default!;
     JqExpression longRange = default!;
+    JqExpression gsubManyMatches = default!;
+    JqExpression splitManyMatches = default!;
 
     [GlobalSetup]
     public void Setup()
@@ -23,11 +25,15 @@ public class ScalingBenchmarks
         appendInReduce = Jq.Parse("reduce range(10000) as $i ([]; . + [$i]) | length");
         updateEachElement = Jq.Parse("[range(4000)] | .[] |= . + 1 | length");
         longRange = Jq.Parse("range(2000000)");
+        gsubManyMatches = Jq.Parse("\"ab\" * 20000 | gsub(\"a\"; \"\") | length");
+        splitManyMatches = Jq.Parse("\"ab\" * 20000 | split(\"a\"; null) | length");
 
         Check("5000050000", MapAndAdd());
         Check("10000", AppendInReduce());
         Check("4000", UpdateEachElement());
         Check("0", FirstOfLongRange());
+        Check("20000", GsubManyMatches());
+        Check("20001", SplitManyMatches());
     }
 
     [GlobalCleanup]
@@ -54,6 +60,13 @@ public class ScalingBenchmarks
         });
         return first;
     }
+
+    // One match every two code points: each match must cost the same however long the input.
+    [Benchmark]
+    public JsonElement GsubManyMatches() => gsubManyMatches.Evaluate(document.RootElement)[0];
+
+    [Benchmark]
+    public JsonElement SplitManyMatches() => splitManyMatches.Evaluate(document.RootElement)[0];
 
     static void Check(string expected, JsonElement actual)
     {

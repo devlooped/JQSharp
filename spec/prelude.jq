@@ -109,17 +109,21 @@ def capture(re; mods): match(re; mods) | [.captures[] | select(.name != null) | 
 def capture($val): ($val | type) as $vt | if $vt == "string" then capture($val; null) elif $vt == "array" and ($val | length) > 1 then capture($val[0]; $val[1]) elif $vt == "array" and ($val | length) > 0 then capture($val[0]; null) else error($vt + " not a string or array") end;
 def scan($re; $flags): match($re; "g" + $flags) | if (.captures | length) > 0 then [.captures[].string] else .string end;
 def scan($re): scan($re; null);
-def split($re; flags): . as $s | [match($re; "g" + flags) | (.offset, .offset + .length)] as $ms | [0] + $ms + [$s | length] | [range(0; length; 2) as $i | $s[.[$i]:.[$i + 1]]];
+def split($re; flags): [match($re; "g" + flags) | (.offset, .offset + .length)] as $ms | explode as $cps | [0] + $ms + [$cps | length] | [range(0; length; 2) as $i | $cps[.[$i]:.[$i + 1]] | implode];
 def splits($re; flags): split($re; flags) | .[];
 def splits($re): splits($re; null);
 def sub($re; str; $flags): . as $in
-  | (reduce match($re; $flags) as $edit ({result: [], previous: 0};
-        $in[.previous:($edit | .offset)] as $gap
-        | [$edit | [.captures[] | select(.name != null) | {key: .name, value: .string}] | from_entries | str] as $inserts
-        | reduce range(0; $inserts | length) as $ix (.; .result[$ix] += $gap + $inserts[$ix])
-        | .previous = ($edit | .offset + .length))
-     | .result[] + $in[.previous:])
-    // $in;
+  | [match($re; $flags)] as $edits
+  | if $edits == [] then $in
+    else (explode as $cps
+      | reduce $edits[] as $edit ({result: [], previous: 0};
+            ($cps[.previous:($edit | .offset)] | implode) as $gap
+            | [$edit | [.captures[] | select(.name != null) | {key: .name, value: .string}] | from_entries | str] as $inserts
+            | reduce range(0; $inserts | length) as $ix (.; .result[$ix] += ($gap + $inserts[$ix] | explode))
+            | .previous = ($edit | .offset + .length))
+      | .result[] + $cps[.previous:] | implode)
+      // $in
+    end;
 def sub($re; str): sub($re; str; "");
 def gsub($re; str; $flags): sub($re; str; $flags + "g");
 def gsub($re; str): sub($re; str; "g");
