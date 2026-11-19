@@ -117,6 +117,73 @@ public class CollectionTests
         Assert.True(allocated < 4_000_000, $"{allocated:N0} bytes");
     }
 
+    static JqValue S(string text) => JqValue.FromString(text);
+
+    [Fact]
+    public void Adding_twice_to_the_same_long_string_gives_independent_strings()
+    {
+        var head = new string('x', JqString.MinLength);
+        var root = JqValue.Concat(S(head), S("a"));
+        var a = JqValue.Concat(root, S("b"));
+        var b = JqValue.Concat(root, S("c"));
+        var c = JqValue.Concat(a, S("d"));
+
+        Assert.Equal(head + "a", root.AsString());
+        Assert.Equal(head + "ab", a.AsString());
+        Assert.Equal(head + "ac", b.AsString());
+        Assert.Equal(head + "abd", c.AsString());
+        Assert.Equal(JqKind.String, c.Kind);
+        Assert.True(ValueOps.AreEqual(c, S(head + "abd")));
+        Assert.Equal(0, ValueOps.Compare(S(head + "ac"), b));
+    }
+
+    [Fact]
+    public void Adding_an_empty_string_returns_the_other()
+    {
+        Assert.Equal("ab", JqValue.Concat(S(""), S("ab")).AsString());
+        Assert.Equal("ab", JqValue.Concat(S("ab"), S("")).AsString());
+        Assert.Equal("ab", JqValue.Concat(S("a"), S("b")).AsString());
+    }
+
+    [Fact]
+    public void Concurrent_additions_to_one_long_string_stay_independent()
+    {
+        var root = JqValue.Concat(S(new string('x', JqString.MinLength)), S("-"));
+        var results = new JqValue[1000];
+        Parallel.For(0, results.Length, i =>
+        {
+            var text = JqValue.Concat(root, S($"<{i}>"));
+            for (var j = 0; j < 10; j++)
+                text = JqValue.Concat(text, S($"{i * 100 + j},"));
+            results[i] = text;
+        });
+
+        Assert.Equal(new string('x', JqString.MinLength) + "-", root.AsString());
+        for (var i = 0; i < results.Length; i++)
+        {
+            var expected = new System.Text.StringBuilder(new string('x', JqString.MinLength)).Append($"-<{i}>");
+            for (var j = 0; j < 10; j++)
+                expected.Append($"{i * 100 + j},");
+            Assert.Equal(expected.ToString(), results[i].AsString());
+        }
+    }
+
+    [Fact]
+    public void Adding_strings_in_a_loop_does_not_copy_the_string()
+    {
+        // reduce range(100000) as $i (""; . + "ab"); copying on each addition would allocate ~40 GB.
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var text = S("");
+        var ab = S("ab");
+        for (var i = 0; i < 100000; i++)
+            text = JqValue.Concat(text, ab);
+        var length = text.AsString().Length;
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(200000, length);
+        Assert.True(allocated < 8_000_000, $"{allocated:N0} bytes");
+    }
+
     [Fact]
     public void Adding_keys_in_a_loop_does_not_copy_the_object()
     {

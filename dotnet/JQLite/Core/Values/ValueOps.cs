@@ -223,7 +223,7 @@ static class ValueOps
                     result = JqValue.FromNumber(a.AsNumber() + b.AsNumber());
                     return true;
                 case JqKind.String:
-                    result = JqValue.FromString(string.Concat(a.AsString(), b.AsString()));
+                    result = JqValue.Concat(a, b);
                     return true;
                 case JqKind.Array:
                     result = JqValue.FromArray(a.AsArray().Concat(b.AsArray()));

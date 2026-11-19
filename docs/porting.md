@@ -261,18 +261,20 @@ Keep the check the reference has: the corpus runs twice, with and without the ov
 
 ### 2.9 Arrays and objects that share storage
 
-`reduce range(n) as $i ([]; . + [$i])` must be O(n). The reference uses the Go-slice idea, made safe for immutability:
+`reduce range(n) as $i ([]; . + [$i])` must be O(n), and so must `reduce range(n) as $i (""; . + "ab")`, which `add` and `join` are. The reference uses the Go-slice idea, made safe for immutability:
 
 - `JqArray` is a shared buffer plus a window (`start`, `count`). The buffer has a `Used` count. Appending to the array whose window ends at `Used` claims the next slots with one compare-and-swap on `Used` and writes there; any other append copies to a new buffer with twice the room. A slot is written once, before any array covering it exists, so every array stays immutable.
+- `JqString` is the same for strings, without a start: a buffer of UTF-16 units plus a length. `JqValue.Concat` makes one when `+` on strings gives 256 units or more (shorter results stay host strings) and extends it when its left side is one. `AsString()` builds the host string of a version once, when something reads it.
 - `JqObject` is a buffer of keys and values plus a count, claimed the same way for new keys, with a key-to-slot index built lazily above a few entries (shared by every version of the buffer, extended under a lock).
 - `JqArrayBuilder`/`JqObjectBuilder` are private mutable builders whose storage is handed over without copying.
 
 | Language | What to do |
 | --- | --- |
-| Go | do **not** rely on `append`: two versions appending from the same base would overwrite each other's slot. Keep the `used` counter (`sync/atomic` CAS if values cross goroutines) |
-| JS, Python | the same structure; no CAS or lock needed in a single-threaded runtime (check free-threaded Python builds) |
-| Java | the same, with `AtomicInteger.compareAndSet` and a lock for the index |
-| Rust | use `Rc<Vec<Value>>` / `Rc<Object>` and `Rc::make_mut`: an accumulator owned once is mutated in place, a shared one is cloned. No `Used` counter. Objects: an ordered map (check the `indexmap` crate) or `Vec` of entries plus an index |
+| Go | do **not** rely on `append`: two versions appending from the same base would overwrite each other's slot. Keep the `used` counter (`sync/atomic` CAS if values cross goroutines). Strings: a `[]byte` buffer with its own counter, converted to a `string` once when read |
+| JS | arrays and objects: the same structure, no CAS or lock in a single-threaded runtime. Strings: none, engines concatenate strings as ropes |
+| Python | the same structure, no CAS or lock (check free-threaded Python builds). Strings: a buffer of `str` parts joined once when read |
+| Java | the same, with `AtomicInteger.compareAndSet` and a lock for the index; strings in a `char[]` |
+| Rust | use `Rc<Vec<Value>>` / `Rc<Object>` / `Rc<String>` and `Rc::make_mut`: an accumulator owned once is mutated in place, a shared one is cloned. No `Used` counter. Objects: an ordered map (check the `indexmap` crate) or `Vec` of entries plus an index |
 
 ### 2.10 Explicit stacks instead of recursion
 

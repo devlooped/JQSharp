@@ -16,6 +16,8 @@ public class ScalingBenchmarks
     JqExpression longRange = default!;
     JqExpression gsubManyMatches = default!;
     JqExpression splitManyMatches = default!;
+    JqExpression joinManyStrings = default!;
+    JqExpression addManyStrings = default!;
 
     [GlobalSetup]
     public void Setup()
@@ -27,6 +29,8 @@ public class ScalingBenchmarks
         longRange = Jq.Parse("range(2000000)");
         gsubManyMatches = Jq.Parse("\"ab\" * 20000 | gsub(\"a\"; \"\") | length");
         splitManyMatches = Jq.Parse("\"ab\" * 20000 | split(\"a\"; null) | length");
+        joinManyStrings = Jq.Parse("[range(20000) | \"ab\"] | join(\",\") | length");
+        addManyStrings = Jq.Parse("[range(20000) | \"ab\"] | add | length");
 
         Check("5000050000", MapAndAdd());
         Check("10000", AppendInReduce());
@@ -34,6 +38,8 @@ public class ScalingBenchmarks
         Check("0", FirstOfLongRange());
         Check("20000", GsubManyMatches());
         Check("20001", SplitManyMatches());
+        Check("59999", JoinManyStrings());
+        Check("40000", AddManyStrings());
     }
 
     [GlobalCleanup]
@@ -67,6 +73,13 @@ public class ScalingBenchmarks
 
     [Benchmark]
     public JsonElement SplitManyMatches() => splitManyMatches.Evaluate(document.RootElement)[0];
+
+    // Each string added to the accumulator must cost its own length, not the accumulator's.
+    [Benchmark]
+    public JsonElement JoinManyStrings() => joinManyStrings.Evaluate(document.RootElement)[0];
+
+    [Benchmark]
+    public JsonElement AddManyStrings() => addManyStrings.Evaluate(document.RootElement)[0];
 
     static void Check(string expected, JsonElement actual)
     {

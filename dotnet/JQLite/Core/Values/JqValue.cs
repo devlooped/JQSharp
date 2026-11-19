@@ -19,8 +19,9 @@ enum JqKind : byte
 /// <remarks>
 /// Layout, a local .NET trick to keep the value at 16 bytes: <c>payload</c> is <see langword="null"/>
 /// for null, one of three <see cref="Tag"/> singletons for false, true and numbers, or else the
-/// <see cref="string"/>, <see cref="JqArray"/> or <see cref="JqObject"/> itself. A port uses its
-/// natural tagged union (a Rust enum, a Go struct with a kind, a TypeScript union) instead.
+/// <see cref="string"/>, <see cref="JqString"/>, <see cref="JqArray"/> or <see cref="JqObject"/>
+/// itself. A port uses its natural tagged union (a Rust enum, a Go struct with a kind, a TypeScript
+/// union) instead.
 /// </remarks>
 readonly struct JqValue
 {
@@ -53,6 +54,27 @@ readonly struct JqValue
     /// <summary>Creates a string value; a lone surrogate becomes U+FFFD.</summary>
     public static JqValue FromString(string value) => new(CodePoints.Sanitize(value), 0);
 
+    /// <summary>
+    /// jq's <c>+</c> on two strings. Both are well-formed, so their concatenation is too and is not
+    /// sanitized again. A long result is a <see cref="JqString"/>, which the next concatenation
+    /// extends in place.
+    /// </summary>
+    public static JqValue Concat(JqValue left, JqValue right)
+    {
+        var tail = right.AsString();
+        if (tail.Length == 0)
+            return left;
+        if (left.payload is JqString grown)
+            return new(grown.Append(tail), 0);
+
+        var head = left.AsString();
+        if (head.Length == 0)
+            return right;
+        return head.Length + tail.Length < JqString.MinLength
+            ? new(string.Concat(head, tail), 0)
+            : new(JqString.Concat(head, tail), 0);
+    }
+
     public static JqValue FromArray(JqArray value) => new(value, 0);
 
     public static JqValue FromObject(JqObject value) => new(value, 0);
@@ -63,6 +85,7 @@ readonly struct JqValue
         string => JqKind.String,
         JqArray => JqKind.Array,
         JqObject => JqKind.Object,
+        JqString => JqKind.String,
         _ => ((Tag)payload).Kind,
     };
 
@@ -84,7 +107,7 @@ readonly struct JqValue
     // never as part of jqlite semantics: callers check Kind first.
     public double AsNumber() => ReferenceEquals(payload, NumberTag) ? number : throw WrongKind(JqKind.Number);
 
-    public string AsString() => payload as string ?? throw WrongKind(JqKind.String);
+    public string AsString() => payload as string ?? (payload as JqString)?.Text ?? throw WrongKind(JqKind.String);
 
     public JqArray AsArray() => payload as JqArray ?? throw WrongKind(JqKind.Array);
 
