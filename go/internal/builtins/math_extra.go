@@ -272,27 +272,110 @@ func (mathExtra) Expm1(x float64) float64 {
 	return um1 * x / math.Log(u)
 }
 
-// Erf is Abramowitz & Stegun 7.1.26.
+// The constants of fdlibm's s_erf.c: 0.84506291151 rounded to single precision, 2/√π − 1, and 8 times it.
+const (
+	erx  = 8.45062911510467529297e-01
+	efx  = 1.28379167095512586316e-01
+	efx8 = 1.02703333676410069053e+00
+)
+
+// Erf is the error function, fdlibm's s_erf.c: rational approximations on [0, 0.84375),
+// [0.84375, 1.25) and [1.25, 6).
 func (mathExtra) Erf(x float64) float64 {
 	if math.IsNaN(x) {
 		return x
 	}
-	s := 0.0
-	if x > 0 {
-		s = 1
-	} else if x < 0 {
-		s = -1
-	}
 	a := math.Abs(x)
-	t := 1.0 / (1.0 + float64(0.3275911*a))
-	poly := float64(float64(float64(float64(float64(1.061405429*t)+-1.453152027)*t)+1.421413741)*t) + -0.284496736
-	poly = float64(poly*t) + 0.254829592
-	y := 1.0 - float64(float64(poly*t)*math.Exp(-a*a))
-	return s * y
+	if a < 0.84375 {
+		if a < 2.848094538889218e-306 {
+			return 0.125 * (float64(8*x) + float64(efx8*x))
+		}
+		if a < 3.725290298461914e-09 {
+			return x + float64(efx*x)
+		}
+		return x + float64(x*erfSmall(x*x))
+	}
+	var r float64
+	if a < 1.25 {
+		r = erx + erfNearOne(a-1)
+	} else if a >= 6 {
+		r = 1
+	} else {
+		r = 1 - erfcTail(a)
+	}
+	if x < 0 {
+		return -r
+	}
+	return r
 }
 
-// Erfc is 1 − erf(x).
-func (mathExtra) Erfc(x float64) float64 { return 1.0 - MathExtra.Erf(x) }
+// Erfc is the complementary error function, fdlibm's s_erf.c: computed directly, so that it keeps
+// its relative accuracy where it is tiny.
+func (mathExtra) Erfc(x float64) float64 {
+	if math.IsNaN(x) {
+		return x
+	}
+	a := math.Abs(x)
+	if a < 0.84375 {
+		if a < 1.3877787807814457e-17 {
+			return 1 - x
+		}
+		y := erfSmall(x * x)
+		if x < 0.25 {
+			return 1 - (x + float64(x*y))
+		}
+		return 0.5 - (float64(x*y) + (x - 0.5))
+	}
+	if a < 1.25 {
+		if x >= 0 {
+			return (1 - erx) - erfNearOne(a-1)
+		}
+		return 1 + (erx + erfNearOne(a-1))
+	}
+	if x <= -6 {
+		return 2
+	}
+	if a >= 28 {
+		if x > 0 {
+			return 0
+		}
+		return 2
+	}
+	if x > 0 {
+		return erfcTail(a)
+	}
+	return 2 - erfcTail(a)
+}
+
+// erfSmall is (erf(x) − x) / x as a function of z = x², for |x| < 0.84375.
+func erfSmall(z float64) float64 {
+	p := horner(z, 1.28379167095512558561e-01, -3.25042107247001499370e-01, -2.84817495755985104766e-02, -5.77027029648944159157e-03, -2.37630166566501626084e-05)
+	q := horner(z, 1, 3.97917223959155352819e-01, 6.50222499887672944485e-02, 5.08130628187576562776e-03, 1.32494738004321644526e-04, -3.96022827877536812320e-06)
+	return p / q
+}
+
+// erfNearOne is erf(1 + s) − erx, for 0.84375 <= 1 + s < 1.25.
+func erfNearOne(s float64) float64 {
+	p := horner(s, -2.36211856075265944077e-03, 4.14856118683748331666e-01, -3.72207876035701323847e-01, 3.18346619901161753674e-01, -1.10894694282396677476e-01, 3.54783043256182359371e-02, -2.16637559486879084300e-03)
+	q := horner(s, 1, 1.06420880400844228286e-01, 5.40397917702171048937e-01, 7.18286544141962662868e-02, 1.26171219808761642112e-01, 1.36370839120290507362e-02, 1.19844998467991074170e-02)
+	return p / q
+}
+
+// erfcTail is erfc(a) for 1.25 <= a < 28: exp(−a² − 0.5625 + R/S) / a, with exp(−a²) as
+// exp(−z²) · exp((z − a)(z + a)) for z = a with the low 32 bits cleared, so that z² is exact.
+func erfcTail(a float64) float64 {
+	s := 1 / (a * a)
+	var r, t float64
+	if a < 1/0.35 {
+		r = horner(s, -9.86494403484714822705e-03, -6.93858572707181764372e-01, -1.05586262253232909814e+01, -6.23753324503260060396e+01, -1.62396669462573470355e+02, -1.84605092906711035994e+02, -8.12874355063065934246e+01, -9.81432934416914548592e+00)
+		t = horner(s, 1, 1.96512716674392571292e+01, 1.37657754143519042600e+02, 4.34565877475229228821e+02, 6.45387271733267880336e+02, 4.29008140027567833386e+02, 1.08635005541779435134e+02, 6.57024977031928170135e+00, -6.04244152148580987438e-02)
+	} else {
+		r = horner(s, -9.86494292470009928597e-03, -7.99283237680523006574e-01, -1.77579549177547519889e+01, -1.60636384855821916062e+02, -6.37566443368389627722e+02, -1.02509513161107724954e+03, -4.83519191608651397019e+02)
+		t = horner(s, 1, 3.03380607434824582924e+01, 3.25792512996573918826e+02, 1.53672958608443695994e+03, 3.19985821950859553908e+03, 2.55305040643316442583e+03, 4.74528541206955367215e+02, -2.24409524465858183362e+01)
+	}
+	z := math.Float64frombits(math.Float64bits(a) &^ 0xFFFFFFFF)
+	return math.Exp(float64(-z*z)-0.5625) * math.Exp(float64((z-a)*(z+a))+r/t) / a
+}
 
 // TGamma is Γ(x): the Stirling series once x is shifted up to 10 or more, the power split so that
 // it overflows only past 171.62; the reflection formula below 0.
