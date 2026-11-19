@@ -13,6 +13,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Tests" />
+    <!-- For the cross-language runner (bench/README.md), which measures the core. -->
+    <InternalsVisibleTo Include="Benchmarks" />
   </ItemGroup>
 
   <ItemGroup>

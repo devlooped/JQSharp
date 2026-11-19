@@ -1,0 +1,14 @@
+[
+  { "name": "whatsapp",       "program": "../dotnet/Benchmarks/WhatsApp/Message.jq", "input": "../dotnet/Benchmarks/WhatsApp/Text.json", "take": 0, "what": "a real filter on a small document" },
+  { "name": "map-add",        "program": "cases/map-add.jq",        "input": "cases/null.json",    "take": 0, "what": "100,000 numbers through map and add" },
+  { "name": "append-reduce",  "program": "cases/append-reduce.jq",  "input": "cases/null.json",    "take": 0, "what": "an array grown by 10,000 appends (must be linear)" },
+  { "name": "update-each",    "program": "cases/update-each.jq",    "input": "cases/null.json",    "take": 0, "what": "4,000 elements updated in place with |=" },
+  { "name": "first-of-range", "program": "cases/first-of-range.jq", "input": "cases/null.json",    "take": 1, "what": "the first output of a long generator (must be lazy)" },
+  { "name": "recursion",      "program": "cases/recursion.jq",      "input": "cases/null.json",    "take": 0, "what": "45,000 calls of a recursive function, up to 300 deep" },
+  { "name": "group-by",       "program": "cases/group-by.jq",       "input": "cases/records.json", "take": 0, "what": "group, aggregate and sort 2,000 records" },
+  { "name": "filter-project", "program": "cases/filter-project.jq", "input": "cases/records.json", "take": 0, "what": "select and reshape 2,000 records" },
+  { "name": "strings-regex",  "program": "cases/strings-regex.jq",  "input": "cases/records.json", "take": 0, "what": "test and sub with a regex, strings, unique" },
+  { "name": "paths-walk",     "program": "cases/paths-walk.jq",     "input": "cases/records.json", "take": 0, "what": "walk, with_entries, recursive descent and paths on 300 records" },
+  { "name": "json-roundtrip", "program": "cases/json-roundtrip.jq", "input": "cases/records.json", "take": 0, "what": "tojson and fromjson of 2,000 records" },
+  { "name": "assign-paths",   "program": "cases/assign-paths.jq",   "input": "cases/records.json", "take": 0, "what": "nested |=, += and del on 2,000 records" }
+]

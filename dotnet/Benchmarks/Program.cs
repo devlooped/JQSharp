@@ -1,13 +1,18 @@
 using System.Diagnostics;
 using BenchmarkDotNet.Running;
 
+// The runner of the cross-language benchmark (bench/README.md).
+if (args is ["cross", ..])
+    return CrossBench.Run(args[1..]);
+
 if (Debugger.IsAttached)
 {
     await RunBenchmarksUnderDebuggerAsync();
-    return;
+    return 0;
 }
 
 BenchmarkSwitcher.FromAssembly(typeof(WhatsAppMessageBenchmarks).Assembly).Run(args);
+return 0;
 
 static async Task RunBenchmarksUnderDebuggerAsync()
 {
