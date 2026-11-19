@@ -42,7 +42,8 @@ func test(_ *interpreter, input value, arguments []value) (value, value, bool) {
 }
 
 // match: match(re; flags): flags outermost, re innermost (re fastest); one output per reported match.
-func match(in *interpreter, e *env, arguments []node, input value, _ *path, out emit) *signal {
+func match(in *interpreter, e *env, arguments []node, input value, p *path, out emit) *signal {
+	at := runtime.PathOf(p)
 	return in.ForEach(arguments[1], e, input, nil, func(flags value, _ *path) *signal {
 		return in.ForEach(arguments[0], e, input, nil, func(re value, _ *path) *signal {
 			s, err, prepared := tryPrepare(input, re, flags)
@@ -51,7 +52,7 @@ func match(in *interpreter, e *env, arguments []node, input value, _ *path, out 
 			}
 			var stop *signal
 			run(s, func(spans []int, m *codePointMap) bool {
-				stop = runtime.Output(out, matchObject(s, spans, m), nil)
+				stop = runtime.Output(out, matchObject(s, spans, m), at)
 				return stop == nil
 			})
 			return stop

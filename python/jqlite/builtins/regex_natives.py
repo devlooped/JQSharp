@@ -62,7 +62,7 @@ def _match(interpreter: Any, env: Any, arguments: Any, input: JqValue, path: Pat
             signal: list = [None]
 
             def report(spans: list[int]) -> bool:
-                signal[0] = emit(_match_object(search, spans), None)  # type: ignore[arg-type]
+                signal[0] = emit(_match_object(search, spans), Path.of(path))  # type: ignore[arg-type]
                 return signal[0] is None
             _run(search, report)  # type: ignore[arg-type]
             return signal[0]  # type: ignore[no-any-return]
