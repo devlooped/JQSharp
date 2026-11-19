@@ -1,0 +1,5 @@
+{
+  "name": "python",
+  "build": [],
+  "run": ["python", "crossbench.py"]
+}
