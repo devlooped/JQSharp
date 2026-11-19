@@ -10,8 +10,8 @@ import (
 type regexNatives struct{}
 
 // RegexNatives are §9.10 test/2 and match/2: the flags, the search loop and the match objects, with
-// offsets and lengths in code points. The pattern goes through RegexSyntax to the host engine
-// (RegexEngine), which gives byte offsets.
+// offsets and lengths in code points. The pattern goes through RegexSyntax to the engine
+// (RegexEngine), which works on UTF-8 bytes.
 var RegexNatives regexNatives
 
 func (regexNatives) Register() {
@@ -19,19 +19,24 @@ func (regexNatives) Register() {
 	addC("match", 2, match)
 }
 
-// search is a search ready to run: the input, the compiled pattern and flags.
+// search is a search ready to run: the input, the matcher of the pattern and the flags.
 type search struct {
 	input     string
-	pattern   *HostPattern
-	groups    []string
+	matcher   *RegexMatcher
 	global    bool
 	skipEmpty bool
 }
+
+func (s *search) groups() []string { return s.matcher.Program().Groups }
 
 func test(_ *interpreter, input value, arguments []value) (value, value, bool) {
 	s, err, prepared := tryPrepare(input, arguments[0], arguments[1])
 	if !prepared {
 		return fail(err)
+	}
+	// Whether there is a match, and nothing of it; with the n flag, a match that is not empty.
+	if !s.skipEmpty {
+		return ok(values.FromBool(s.matcher.TryMatch(s.input, 0, nil)))
 	}
 	found := false
 	run(s, func([]int, *codePointMap) bool {
@@ -94,23 +99,19 @@ func tryPrepare(input, re, flags value) (*search, value, bool) {
 		}
 	}
 
-	translation, reason, translated := RegexSyntax.TryTranslate(re.AsString(), RegexOptions{extended, dotAll, ignoreCase})
-	if !translated {
-		return nil, values.Errors.RegexFailure(reason), false
-	}
-	pattern, reason, compiled := RegexEngine.TryCompile(translation.Pattern)
+	program, reason, compiled := RegexEngine.TryCompile(re.AsString(), RegexOptions{extended, dotAll, ignoreCase})
 	if !compiled {
 		return nil, values.Errors.RegexFailure(reason), false
 	}
-	return &search{input.AsString(), pattern, translation.Groups, global, skipEmpty}, values.Null, true
+	return &search{input.AsString(), NewRegexMatcher(program), global, skipEmpty}, values.Null, true
 }
 
 // run is the search loop of §9.10, in code points; report gives false to stop.
 func run(s *search, report func([]int, *codePointMap) bool) {
 	m := newCodePointMap(s.input)
-	spans := make([]int, 2*(len(s.groups)+1))
+	spans := make([]int, 2*(len(s.groups())+1))
 	for p := 0; p <= m.length; {
-		if !RegexEngine.TryMatch(s.pattern, s.input, m.unit(p), spans) {
+		if !s.matcher.TryMatch(s.input, m.unit(p), spans) {
 			return
 		}
 		start := m.codePoint(spans[0])
@@ -127,22 +128,23 @@ func run(s *search, report func([]int, *codePointMap) bool) {
 }
 
 func matchObject(s *search, spans []int, m *codePointMap) value {
-	captures := make([]value, len(s.groups))
-	for g, group := range s.groups {
+	groups := s.groups()
+	captures := make([]value, len(groups))
+	for g, group := range groups {
 		name := values.Null
 		if group != "" {
 			name = values.FromString(group)
 		}
 		capture := values.NewObjectBuilder(4)
 		start, end := spans[2*g+2], spans[2*g+3]
-		if start < 0 {
-			capture.Set("offset", values.FromNumber(-1))
-			capture.Set("string", values.Null)
-			capture.Set("length", values.FromNumber(0))
-		} else if start == end {
-			// An empty group has the key order of an absent one, as jq.
-			capture.Set("offset", values.FromNumber(float64(m.codePoint(start))))
-			capture.Set("string", values.FromString(""))
+		if start == end || start < 0 {
+			// An empty or absent group has jq's other key order.
+			offset, text := -1, values.Null
+			if start >= 0 {
+				offset, text = m.codePoint(start), values.FromString("")
+			}
+			capture.Set("offset", values.FromNumber(float64(offset)))
+			capture.Set("string", text)
 			capture.Set("length", values.FromNumber(0))
 		} else {
 			addSpan(capture, s.input, m, start, end)

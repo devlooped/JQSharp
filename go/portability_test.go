@@ -29,15 +29,12 @@ var importExceptions = map[string]map[string]string{
 	"strconv": {
 		"values/value_text.go": "number text: shortest round-trip digits and decimal parsing (AGENTS.md)",
 	},
-	"regexp": {
-		"builtins/regex_engine.go": "the regex engine: the one place the host regex runs (AGENTS.md)",
-	},
 	"embed": {
 		"binding/prelude.go": "reads the embedded prelude (AGENTS.md)",
 	},
 	"sync": {
 		"values/jq_object.go":      "the key index shared by the versions of a buffer, extended under a lock (guide §2.9)",
-		"builtins/regex_engine.go": "the cache of compiled patterns, a concurrent map (guide §3.8)",
+		"builtins/regex_engine.go": "the cache of compiled programs, a concurrent map (guide §3.8)",
 		"binding/prelude.go":       "the prelude bound once, by whoever needs it first (the reference's static Instance and Lazy)",
 		"builtins/core_natives.go": "the list of builtins/0 computed once (the reference's Lazy)",
 	},
@@ -45,7 +42,7 @@ var importExceptions = map[string]map[string]string{
 		"values/jq_array.go":       "the compare-and-swap that claims slots of a shared buffer (guide §2.9)",
 		"values/jq_object.go":      "the compare-and-swap that claims slots, and the cached sorted keys (guide §2.9)",
 		"values/jq_string.go":      "the compare-and-swap that claims bytes of a shared buffer, and the cached text (guide §2.9)",
-		"builtins/regex_engine.go": "the size of the pattern cache, and the pattern with context compiled once",
+		"builtins/regex_engine.go": "the size of the cache of compiled programs (sync.Map has no count)",
 	},
 }
 
@@ -65,7 +62,6 @@ var callExceptions = map[string]map[string]string{
 		"runtime/native_table.go":     "start-up checks of the registrations against the catalogue",
 		"runtime/interpreter.go":      "Run without the natives registered: a build defect",
 		"runtime/stack_guard.go":      "raises again, on the caller's goroutine, a panic of the step",
-		"builtins/regex_engine.go":    "MustCompile of a pattern that compiled already: unreachable",
 	},
 }
 
