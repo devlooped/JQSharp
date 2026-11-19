@@ -20,10 +20,25 @@ type regexSyntax struct{}
 // classes; $ as \z; \b \B as Go's own ASCII word boundaries; named groups as plain groups. The i flag
 // is done here, never by the engine: it folds ASCII letters only (rangeSet.addAsciiCases, the one
 // place of the rule).
+//
+// The limits of §11 are checked here, while the pattern is read (regexMeasure), so that the engine
+// meets no pattern beyond them. Two of them are RE2's own: it refuses nested counts that multiply
+// above 1000, and a syntax tree of more than 1000 levels (a group that is an alternative, a
+// sequence, a repetition and a capture takes four, so 100 groups open at once stay under it).
 var RegexSyntax regexSyntax
 
-// maxRepeat is the largest repetition count of the dialect.
-const maxRepeat = 1000
+const (
+	// maxRepeat is the largest count of a quantifier, and of the counts of nested quantifiers multiplied.
+	maxRepeat = 1000
+	// maxSize is the largest size of a pattern (§9.10): its items, counted repetitions written out.
+	maxSize = 10000
+	// maxNesting is the most groups open at once.
+	maxNesting = 100
+	// maxGroups is the most capturing groups.
+	maxGroups = 1000
+	// tooLarge is the reason of a pattern beyond maxSize, maxNesting or maxGroups: a fixed text (§10.3).
+	tooLarge = "the pattern is too large"
+)
 
 // RegexOptions are the flags of §9.10 that change the pattern itself.
 type RegexOptions struct {
@@ -59,7 +74,7 @@ func (regexSyntax) TryTranslate(pattern string, options RegexOptions) (Translati
 	points := []rune(pattern)
 	var output strings.Builder
 	var groups []string
-	open := 0
+	measure := newRegexMeasure()
 	prev := previousNone
 	for i := 0; i < len(points); {
 		c := points[i]
@@ -69,11 +84,16 @@ func (regexSyntax) TryTranslate(pattern string, options RegexOptions) (Translati
 		}
 
 		var err error
+		// Whether the pattern read so far is within maxSize.
+		fits := true
 		switch c {
 		case '\\':
 			i, prev, err = tryEscape(points, i, &output, options, prev)
+			fits = err != nil || measure.add(1)
 		case '[':
-			i, err = tryClass(points, i, &output, options)
+			var items int
+			i, items, err = tryClass(points, i, &output, options)
+			fits = err != nil || measure.add(items)
 			prev = previousAtom
 		case '.':
 			if options.DotAll {
@@ -81,29 +101,36 @@ func (regexSyntax) TryTranslate(pattern string, options RegexOptions) (Translati
 			} else {
 				output.WriteString(`[^\n]`)
 			}
+			fits = measure.add(1)
 			prev = previousAtom
 			i++
 		case '^':
 			output.WriteByte('^')
+			fits = measure.add(1)
 			prev = previousAnchor
 			i++
 		case '$':
 			output.WriteString(`\z`)
+			fits = measure.add(1)
 			prev = previousAnchor
 			i++
 		case '|':
 			output.WriteByte('|')
+			fits = measure.add(1)
 			prev = previousNone
 			i++
 		case '(':
+			if measure.depth() == maxNesting {
+				return Translation{}, tooLarge, false
+			}
 			i, groups, err = tryGroup(points, i, &output, groups)
-			open++
+			fits = err != nil || measure.open()
 			prev = previousNone
 		case ')':
-			if open == 0 {
+			if measure.depth() == 0 {
 				return Translation{}, "unmatched close parenthesis", false
 			}
-			open--
+			measure.close()
 			output.WriteByte(')')
 			prev = previousAtom
 			i++
@@ -114,21 +141,25 @@ func (regexSyntax) TryTranslate(pattern string, options RegexOptions) (Translati
 				}
 				return Translation{}, "quantifier without an operand", false
 			}
-			i, err = tryQuantifier(points, i, &output, options)
+			i, err = tryQuantifier(points, i, &output, options, measure)
 			prev = previousQuantifier
 		case ']', '}':
 			return Translation{}, "unescaped '" + string(c) + "'", false
 		default:
 			literal(&output, c, options)
+			fits = measure.add(1)
 			prev = previousAtom
 			i++
 		}
 		if err != nil {
 			return Translation{}, err.Error(), false
 		}
+		if !fits {
+			return Translation{}, tooLarge, false
+		}
 	}
 
-	if open > 0 {
+	if measure.depth() > 0 {
 		return Translation{}, "missing close parenthesis", false
 	}
 	return Translation{output.String(), groups, false}, "", true
@@ -219,6 +250,9 @@ func tryGroup(points []rune, i int, output *strings.Builder, groups []string) (i
 			if slices.Contains(groups, name) {
 				return i, groups, regexError("duplicate group name " + name)
 			}
+			if len(groups) == maxGroups {
+				return i, groups, regexError(tooLarge)
+			}
 			output.WriteByte('(')
 			return end + 1, append(groups, name), nil
 		}
@@ -226,13 +260,18 @@ func tryGroup(points []rune, i int, output *strings.Builder, groups []string) (i
 		return i, groups, regexError("unsupported group syntax (?")
 	}
 
+	if len(groups) == maxGroups {
+		return i, groups, regexError(tooLarge)
+	}
 	output.WriteByte('(')
 	return i + 1, append(groups, ""), nil
 }
 
 // tryQuantifier reads * + ? {n} {n,} {n,m}, each optionally followed by ? (lazy).
-func tryQuantifier(points []rune, i int, output *strings.Builder, options RegexOptions) (int, error) {
+func tryQuantifier(points []rune, i int, output *strings.Builder, options RegexOptions, measure *regexMeasure) (int, error) {
 	c := points[i]
+	// The count of §9.10: how many times the operand is written out.
+	count := 1
 	if c == '{' {
 		at := i + 1
 		var low, high int
@@ -257,6 +296,14 @@ func tryQuantifier(points []rune, i int, output *strings.Builder, options RegexO
 		if low > maxRepeat || (!unbounded && (high > maxRepeat || high < low)) {
 			return i, regexError("invalid repetition count")
 		}
+		count = high
+		if unbounded {
+			count = low
+		}
+		count = max(count, 1)
+		if !measure.multiply(count) {
+			return i, regexError("invalid repetition count")
+		}
 		output.WriteString("{" + values.CodePoints.Decimal(low))
 		if unbounded {
 			output.WriteByte(',')
@@ -270,6 +317,9 @@ func tryQuantifier(points []rune, i int, output *strings.Builder, options RegexO
 		i++
 	}
 
+	if !measure.repeat(count) {
+		return i, regexError(tooLarge)
+	}
 	if options.Extended {
 		for i < len(points) && (isExtendedSpace(points[i]) || points[i] == '#') {
 			i = skipExtended(points, i)
@@ -293,8 +343,10 @@ func tryRepeatNumber(points []rune, at int) (int, int, bool) {
 	return at, v, at > start
 }
 
-// tryClass reads [...] or [^...]: literals, escapes, ranges of literals and shorthands.
-func tryClass(points []rune, i int, output *strings.Builder, options RegexOptions) (int, error) {
+// tryClass reads [...] or [^...]: literals, escapes, ranges of literals and shorthands; the second
+// result is the number of its items.
+func tryClass(points []rune, i int, output *strings.Builder, options RegexOptions) (int, int, error) {
+	items := 0
 	at := i + 1
 	negated := at < len(points) && points[at] == '^'
 	if negated {
@@ -305,29 +357,29 @@ func tryClass(points []rune, i int, output *strings.Builder, options RegexOption
 	previousLiteral := rune(-1)
 	for {
 		if at == len(points) {
-			return i, regexError("missing ']'")
+			return i, 0, regexError("missing ']'")
 		}
 		c := points[at]
 		if c == ']' {
 			break
 		}
 		if c == '[' {
-			return i, regexError("unescaped '[' in a class")
+			return i, 0, regexError("unescaped '[' in a class")
 		}
 
 		if c == '-' && at != first && at+1 < len(points) && points[at+1] != ']' {
 			// A range: the item before must be a single literal, the one after a literal too.
 			if previousLiteral < 0 {
-				return i, regexError("'-' must be first, last, escaped or between two literals")
+				return i, 0, regexError("'-' must be first, last, escaped or between two literals")
 			}
 			at++
 			high, next, err := tryClassLiteral(points, at)
 			if err != nil {
-				return i, err
+				return i, 0, err
 			}
 			at = next
 			if high < previousLiteral {
-				return i, regexError("range out of order")
+				return i, 0, regexError("range out of order")
 			}
 			set.add(previousLiteral, high)
 			previousLiteral = -1
@@ -337,28 +389,92 @@ func tryClass(points []rune, i int, output *strings.Builder, options RegexOption
 		if c == '\\' && at+1 < len(points) && strings.ContainsRune("dwsDWS", points[at+1]) {
 			set.addShorthand(points[at+1])
 			previousLiteral = -1
+			items++
 			at += 2
 			continue
 		}
 
 		value, next, err := tryClassLiteral(points, at)
 		if err != nil {
-			return i, err
+			return i, 0, err
 		}
 		at = next
 		set.add(value, value)
 		previousLiteral = value
+		items++
 	}
 
 	if at == first {
-		return i, regexError("empty class")
+		return i, 0, regexError("empty class")
 	}
 	// The i flag folds before a negation applies: [^a] matches neither a nor A.
 	if options.IgnoreCase {
 		set.addAsciiCases()
 	}
 	writeClass(output, set, negated)
-	return at + 1, nil
+	return at + 1, items, nil
+}
+
+// regexMeasure holds the limits of §11 on the part of a pattern read so far: its size, the groups
+// open, and the counts of the counted quantifiers nested in one another.
+type regexMeasure struct {
+	// Per open group: the size when it opened.
+	starts []int
+	// For the pattern and per open group: the largest product of the counts nested in it so far.
+	products []int
+	size     int
+	// The last item, the operand of a quantifier: its size and the largest product of the counts nested in it.
+	atom        int
+	atomProduct int
+}
+
+func newRegexMeasure() *regexMeasure {
+	return &regexMeasure{products: []int{1}}
+}
+
+// depth is the number of groups open.
+func (m *regexMeasure) depth() int { return len(m.starts) }
+
+// add counts an item of this size (a literal, a class, an anchor, a '|'); false when the pattern is
+// too large.
+func (m *regexMeasure) add(itemSize int) bool {
+	m.atom = itemSize
+	m.atomProduct = 1
+	m.size += itemSize
+	return m.size <= maxSize
+}
+
+// open: a group opens, it counts 1; false when the pattern is too large.
+func (m *regexMeasure) open() bool {
+	m.starts = append(m.starts, m.size)
+	m.products = append(m.products, 1)
+	return m.add(1)
+}
+
+// close: a group closes, it is the last item, with all it holds.
+func (m *regexMeasure) close() {
+	m.atom = m.size - m.starts[len(m.starts)-1]
+	m.atomProduct = m.products[len(m.products)-1]
+	m.starts = m.starts[:len(m.starts)-1]
+	m.products = m.products[:len(m.products)-1]
+	last := len(m.products) - 1
+	m.products[last] = max(m.products[last], m.atomProduct)
+}
+
+// multiply: a counted quantifier on the last item; false when the nested counts multiply above
+// maxRepeat.
+func (m *regexMeasure) multiply(count int) bool {
+	product := count * m.atomProduct
+	last := len(m.products) - 1
+	m.products[last] = max(m.products[last], product)
+	return product <= maxRepeat
+}
+
+// repeat: a quantifier on the last item, which counts 1, and the item once more for each count
+// above 1; false when the pattern is too large.
+func (m *regexMeasure) repeat(count int) bool {
+	m.size += m.atom*(count-1) + 1
+	return m.size <= maxSize
 }
 
 func tryClassLiteral(points []rune, at int) (rune, int, error) {

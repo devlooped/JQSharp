@@ -11,13 +11,25 @@ Difference from the reference: Python's `re` works on code points, so classes ar
 directly (the reference, for UTF-16 engines, splits them into a BMP part and surrogate pairs).
 `\\b \\B` are ASCII lookarounds, as in the reference (Python's own `\\B` never matches in an
 empty string).
+
+The limits of §11 are checked here, while the pattern is read (_Measure), so that no engine meets a
+pattern beyond them and every engine must take the ones within.
 """
 
 from __future__ import annotations
 
 from typing import NamedTuple
 
+# The largest count of a quantifier, and of the counts of nested quantifiers multiplied.
 MAX_REPEAT = 1000
+# The largest size of a pattern (§9.10): its items, counted repetitions written out.
+MAX_SIZE = 10000
+# The most groups open at once.
+MAX_NESTING = 100
+# The most capturing groups.
+MAX_GROUPS = 1000
+# The reason of a pattern beyond MAX_SIZE, MAX_NESTING or MAX_GROUPS: a fixed text (§10.3).
+TOO_LARGE = "the pattern is too large"
 MAX_CODE_POINT = 0x10FFFF
 
 
@@ -85,7 +97,7 @@ def _translate(pattern: str, options: Options) -> Translation | str:
     points = pattern
     output: list[str] = []
     groups: list[str | None] = []
-    open_groups = 0
+    measure = _Measure()
     previous = _NONE
     lookaround = False
     n = len(points)
@@ -101,46 +113,61 @@ def _translate(pattern: str, options: Options) -> Translation | str:
                 return result.reason
             i, previous = result
             lookaround = lookaround or previous == _ANCHOR
+            if not measure.add(1):
+                return TOO_LARGE
             continue
         if c == "[":
             result2 = _try_class(points, i, output, options)
             if isinstance(result2, _Failure):
                 return result2.reason
-            i = result2
+            i, items = result2
+            if not measure.add(items):
+                return TOO_LARGE
             previous = _ATOM
             continue
         if c == ".":
             output.append("[\\x00-\\U0010FFFF]" if options.dot_all else "[^\\n]")
+            if not measure.add(1):
+                return TOO_LARGE
             previous = _ATOM
             i += 1
             continue
         if c == "^":
             output.append("^")
+            if not measure.add(1):
+                return TOO_LARGE
             previous = _ANCHOR
             i += 1
             continue
         if c == "$":
             output.append("\\Z")
+            if not measure.add(1):
+                return TOO_LARGE
             previous = _ANCHOR
             i += 1
             continue
         if c == "|":
             output.append("|")
+            if not measure.add(1):
+                return TOO_LARGE
             previous = _NONE
             i += 1
             continue
         if c == "(":
+            if measure.depth == MAX_NESTING:
+                return TOO_LARGE
             result3 = _try_group(points, i, output, groups)
             if isinstance(result3, _Failure):
                 return result3.reason
             i = result3
-            open_groups += 1
+            if not measure.open():
+                return TOO_LARGE
             previous = _NONE
             continue
         if c == ")":
-            if open_groups == 0:
+            if measure.depth == 0:
                 return "unmatched close parenthesis"
-            open_groups -= 1
+            measure.close()
             output.append(")")
             previous = _ATOM
             i += 1
@@ -148,7 +175,7 @@ def _translate(pattern: str, options: Options) -> Translation | str:
         if c in "*+?{":
             if previous != _ATOM:
                 return "nested quantifier" if previous == _QUANTIFIER else "quantifier without an operand"
-            result4 = _try_quantifier(points, i, output, options)
+            result4 = _try_quantifier(points, i, output, options, measure)
             if isinstance(result4, _Failure):
                 return result4.reason
             i = result4
@@ -157,9 +184,11 @@ def _translate(pattern: str, options: Options) -> Translation | str:
         if c == "]" or c == "}":
             return f"unescaped '{c}'"
         _literal(output, ord(c), options)
+        if not measure.add(1):
+            return TOO_LARGE
         previous = _ATOM
         i += 1
-    if open_groups > 0:
+    if measure.depth > 0:
         return "missing close parenthesis"
     return Translation("".join(output), tuple(groups), lookaround)
 
@@ -221,19 +250,25 @@ def _try_group(points: str, i: int, output: list[str], groups: list[str | None])
             name = points[start:end]
             if name in groups:
                 return _Failure(f"duplicate group name {name}")
+            if len(groups) == MAX_GROUPS:
+                return _Failure(TOO_LARGE)
             groups.append(name)
             output.append("(")
             return end + 1
         return _Failure("unsupported group syntax (?")
+    if len(groups) == MAX_GROUPS:
+        return _Failure(TOO_LARGE)
     groups.append(None)
     output.append("(")
     return i + 1
 
 
-def _try_quantifier(points: str, i: int, output: list[str], options: Options) -> int | _Failure:
+def _try_quantifier(points: str, i: int, output: list[str], options: Options, measure: _Measure) -> int | _Failure:
     # * + ? {n} {n,} {n,m}, each optionally followed by ? (lazy).
     n = len(points)
     c = points[i]
+    # The count of §9.10: how many times the operand is written out.
+    count = 1
     if c == "{":
         at = i + 1
         number = _try_number(points, at)
@@ -255,6 +290,9 @@ def _try_quantifier(points: str, i: int, output: list[str], options: Options) ->
             return _Failure("'{' is not a quantifier")
         if low > MAX_REPEAT or (not unbounded and (high > MAX_REPEAT or high < low)):
             return _Failure("invalid repetition count")
+        count = max(low if unbounded else high, 1)
+        if not measure.multiply(count):
+            return _Failure("invalid repetition count")
         output.append("{" + str(low))
         if unbounded:
             output.append(",")
@@ -265,6 +303,8 @@ def _try_quantifier(points: str, i: int, output: list[str], options: Options) ->
     else:
         output.append(c)
         i += 1
+    if not measure.repeat(count):
+        return _Failure(TOO_LARGE)
     if options.extended:
         while i < n and (_is_extended_space(points[i]) or points[i] == "#"):
             i = _skip_extended(points, i)
@@ -283,9 +323,10 @@ def _try_number(points: str, at: int) -> tuple[int, int] | None:
     return (at, value) if at > start else None
 
 
-def _try_class(points: str, i: int, output: list[str], options: Options) -> int | _Failure:
-    # [...] or [^...]: literals, escapes, ranges of literals and shorthands.
+def _try_class(points: str, i: int, output: list[str], options: Options) -> tuple[int, int] | _Failure:
+    # [...] or [^...]: literals, escapes, ranges of literals and shorthands; with the number of its items.
     n = len(points)
+    items = 0
     at = i + 1
     negated = at < n and points[at] == "^"
     if negated:
@@ -318,6 +359,7 @@ def _try_class(points: str, i: int, output: list[str], options: Options) -> int 
         if c == "\\" and at + 1 < n and points[at + 1] in _SHORTHANDS:
             ranges.add_shorthand(points[at + 1])
             previous_literal = -1
+            items += 1
             at += 2
             continue
         result = _try_class_literal(points, at)
@@ -326,13 +368,67 @@ def _try_class(points: str, i: int, output: list[str], options: Options) -> int 
         at, literal = result
         ranges.add(literal, literal)
         previous_literal = literal
+        items += 1
     if at == first:
         return _Failure("empty class")
     # The i flag folds before a negation applies: [^a] matches neither a nor A.
     if options.ignore_case:
         ranges.add_ascii_cases()
     _class(output, ranges, negated)
-    return at + 1
+    return at + 1, items
+
+
+class _Measure:
+    """The limits of §11 on the part of a pattern read so far: its size, the groups open, and the
+    counts of the counted quantifiers nested in one another."""
+
+    __slots__ = ("_starts", "_products", "_size", "_atom", "_atom_product")
+
+    def __init__(self) -> None:
+        # Per open group: the size when it opened.
+        self._starts: list[int] = []
+        # For the pattern and per open group: the largest product of the counts nested in it so far.
+        self._products = [1]
+        self._size = 0
+        # The last item, the operand of a quantifier: its size and the largest product of the counts nested in it.
+        self._atom = 0
+        self._atom_product = 1
+
+    @property
+    def depth(self) -> int:
+        """The groups open."""
+        return len(self._starts)
+
+    def add(self, item_size: int) -> bool:
+        """An item of this size (a literal, a class, an anchor, a '|'); False when the pattern is too large."""
+        self._atom = item_size
+        self._atom_product = 1
+        self._size += item_size
+        return self._size <= MAX_SIZE
+
+    def open(self) -> bool:
+        """A group opens: it counts 1; False when the pattern is too large."""
+        self._starts.append(self._size)
+        self._products.append(1)
+        return self.add(1)
+
+    def close(self) -> None:
+        """A group closes: it is the last item, with all it holds."""
+        self._atom = self._size - self._starts.pop()
+        self._atom_product = self._products.pop()
+        self._products[-1] = max(self._products[-1], self._atom_product)
+
+    def multiply(self, count: int) -> bool:
+        """A counted quantifier on the last item; False when the nested counts multiply above MAX_REPEAT."""
+        product = count * self._atom_product
+        self._products[-1] = max(self._products[-1], product)
+        return product <= MAX_REPEAT
+
+    def repeat(self, count: int) -> bool:
+        """A quantifier on the last item: it counts 1, and the item once more for each count above 1;
+        False when the pattern is too large."""
+        self._size += self._atom * (count - 1) + 1
+        return self._size <= MAX_SIZE
 
 
 def _try_class_literal(points: str, at: int) -> tuple[int, int] | _Failure:

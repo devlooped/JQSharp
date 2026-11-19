@@ -569,9 +569,10 @@ fn iterating_what_cannot_be_iterated_under_a_try_yields_nothing() {
     assert_eq!(support::outputs("[path(.[] | .[]?)]", "[1,[2]]"), ["[[1,0]]"]);
 }
 
-// The limits of a pattern (regex_syntax.rs, regex_engine.rs): 1,000 groups open at once and a
-// compiled size of 10 MiB; beyond either, one reason. The engine compiles by recursion, so the
-// cases run on small stacks, the deep ones under a recursion of the program too.
+// The limits of a pattern are the translation's (spec §11, regex_syntax.rs), and the corpus has
+// their boundaries. What is this port's: the engine compiles by recursion, so the deepest patterns
+// run on small stacks, under a recursion of the program too; and the engine's size limit
+// (regex_engine.rs) is above what the largest patterns compile to.
 
 const TOO_LARGE: &str = "\"Regex failure: the pattern is too large\"";
 
@@ -584,20 +585,19 @@ fn tested(pattern: String, program: &'static str, stack: usize) -> String {
 }
 
 #[test]
-fn a_pattern_nests_a_thousand_groups_and_no_more() {
+fn a_pattern_nests_a_hundred_groups_on_a_small_stack() {
     const TEST: &str = ". as $re | \"a\" | try test($re) catch .";
     let nested = |levels: usize, open: &str, close: &str| format!("{}a{}", open.repeat(levels), close.repeat(levels));
     for (open, close) in [("(", ")"), ("(?:", ")")] {
         for stack in [MEGABYTE, SMALL] {
-            assert_eq!(tested(nested(1000, open, close), TEST, stack), "true", "{open} 1000");
-            assert_eq!(tested(nested(1001, open, close), TEST, stack), TOO_LARGE, "{open} 1001");
+            assert_eq!(tested(nested(100, open, close), TEST, stack), "true", "{open} 100");
+            assert_eq!(tested(nested(101, open, close), TEST, stack), TOO_LARGE, "{open} 101");
         }
     }
     // Levels that are an alternative, a sequence, a repetition and a group at once: what takes the
-    // most stack in the engine (and seconds to compile in a build without optimizations).
-    assert_eq!(tested(nested(1000, "(b|c", ")*?d|e"), TEST, SMALL), "false");
-    assert_eq!(tested(nested(1001, "(b|c", ")*?d|e"), TEST, SMALL), TOO_LARGE);
-    assert_eq!(tested(nested(300, "(?:b|c", ")*d"), TEST, MEGABYTE), "false");
+    // most stack in the engine.
+    assert_eq!(tested(nested(100, "(b|c", ")*?d|e"), TEST, SMALL), "false");
+    assert_eq!(tested(nested(101, "(b|c", ")*?d|e"), TEST, SMALL), TOO_LARGE);
     assert_eq!(tested(format!("{}a{}", "(".repeat(100_000), ")".repeat(100_000)), TEST, SMALL), TOO_LARGE);
     // The limit is on the groups open at once, not on their number.
     assert_eq!(tested("(?:a)".repeat(5000), ". as $re | \"a\" * 5000 | test($re)", MEGABYTE), "true");
@@ -606,7 +606,7 @@ fn a_pattern_nests_a_thousand_groups_and_no_more() {
     // Under 900 calls of the program: the pattern is compiled where the stack has room for it, and
     // on a fresh stack otherwise.
     const DEEP: &str = ". as $re | def f: if . == 0 then (\"a\" | try test($re) catch .) else (. - 1 | f) | not | not end; 900 | f";
-    for levels in [1, 32, 33, 1000] {
+    for levels in [1, 32, 33, 100] {
         let pattern = format!("{}a{}", "(".repeat(levels), ")".repeat(levels));
         for stack in [MEGABYTE, SMALL] {
             assert_eq!(tested(pattern.clone(), DEEP, stack), "true", "{levels} levels");
@@ -615,22 +615,21 @@ fn a_pattern_nests_a_thousand_groups_and_no_more() {
 }
 
 #[test]
-fn a_pattern_is_refused_beyond_the_size_limit() {
+fn the_largest_patterns_fit_the_engine() {
     const TEST: &str = ". as $re | \"a\" | try test($re) catch .";
-    // The largest count of §11, alone and repeated: within the limit.
-    for pattern in ["a{1000}", "[^b]{1000}", ".{2,1000}", "(?:a{1000}){100}", "(?:.{1000}){5}", "(?:(a)|b){1000}"] {
-        assert_eq!(tested(pattern.to_owned(), TEST, MEGABYTE), "false", "{pattern}");
+    // 10,000 times the items the engine builds the most for (a UTF-8 automaton each): the size
+    // limit of the engine is not met within the size of §11.
+    for item in ["[^\u{10005}]", "[\u{81}-\u{10FFFE}]", ".", "\\W", "\\D", "[^a]", "\u{10FFFF}"] {
+        let largest = format!("{}{item}{{990}}", format!("{item}{{1000}}").repeat(9));
+        assert_eq!(tested(largest.clone(), TEST, MEGABYTE), "false", "{item}");
+        assert_eq!(tested(format!("{largest}a"), TEST, MEGABYTE), TOO_LARGE, "{item}");
     }
-    assert_eq!(tested("a".repeat(100_000), TEST, MEGABYTE), "false");
-    // A nest of counts is a product: a million states and more.
-    for pattern in ["(?:a{1000}){1000}", "(?:.{1000}){100}", "((a{1000}){1000}){1000}", "(((((a{1000}){1000}){1000}){1000}){1000}){1000}"] {
-        assert_eq!(tested(pattern.to_owned(), TEST, MEGABYTE), TOO_LARGE, "{pattern}");
-    }
-    // The reason is the same for every builtin that takes a pattern, and is caught like any error.
-    assert_eq!(
-        tested("(?:a{1000}){1000}".to_owned(), ". as $re | \"a\" | [try match($re) catch ., try sub($re; \"\") catch .] | unique | .[]", MEGABYTE),
-        TOO_LARGE
-    );
+    // The same under the flags that widen an item.
+    const FLAGS: &str = ". as $re | \"a\" | try test($re; \"im\") catch .";
+    assert_eq!(tested(format!("{}.{{990}}", ".{1000}".repeat(9)), FLAGS, MEGABYTE), "false");
+    // Long without repetition, and a thousand capturing groups.
+    assert_eq!(tested("a".repeat(10_000), TEST, MEGABYTE), "false");
+    assert_eq!(tested("(a)|".repeat(1000), TEST, MEGABYTE), "true");
 }
 
 #[test]

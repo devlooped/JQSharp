@@ -91,8 +91,8 @@ variable names (`$x`, `ENV`, `a-b`) are an `IllegalArgumentException` before eva
   it), so the port does not use it: `builtins/RegexEngine.java` is a small Pike VM (a Thompson
   automaton run over the code points, threads in priority order, so the matches and groups are those
   of a backtracking engine). Time is O(input × pattern), memory O(pattern); 2,000,000 characters
-  match on a 256 KB thread. A pattern may compile to at most 1,000,000 states (`(x{1000}){1000}` is
-  beyond): past that, `Regex failure: the pattern is too large`, an error `try` catches.
+  match on a 256 KB thread. The limits of a pattern are the translator's (spec §11), so the engine
+  refuses nothing: within them an automaton has a few states per unit of the pattern's size.
 - **`MaxDepth`** is between 1 and `JqOptions.MAX_DEPTH_LIMIT` (100,000); `withMaxDepth` rejects
   other values. A level of recursion takes about 2 KB of thread stack, up to 4 KB, committed as it is
   used: 100,000 levels may take up to 400 MB.

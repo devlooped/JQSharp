@@ -8,13 +8,13 @@
 //! are cached per process in a map behind a mutex that is emptied when it reaches `CACHE_LIMIT`
 //! entries.
 //!
-//! Limits: the engine's defaults would refuse patterns of the dialect with its own messages, so
-//! both are set here. Its nesting limit is lifted: the translation allows `MAX_NESTING` groups
-//! open at once. The engine compiles by recursion, so a pattern is compiled where the stack has
-//! [`STACK_PER_GROUP`] bytes for each of its levels, and on a fresh stack of that size otherwise.
-//! Its size limit is [`SIZE_LIMIT`]: the engine unrolls a
-//! counted repetition, so `(?:a{1000}){1000}` is a million states, and nothing in the dialect
-//! bounds a nest of them. Beyond it the reason is `regex_syntax::TOO_LARGE`.
+//! Limits: the limits of a pattern are the translation's (§11), and the engine must take every
+//! pattern within them; its defaults would refuse some, so both are set here. Its nesting limit
+//! (250 levels of its syntax tree) is lifted: the translation allows `MAX_NESTING` groups open at
+//! once, and each is several levels. The engine compiles by recursion, so a pattern is compiled
+//! where the stack has [`STACK_PER_GROUP`] bytes for each of its levels, and on a fresh stack of
+//! that size otherwise. Its size limit (10 MiB by default) is [`SIZE_LIMIT`], above what the
+//! largest pattern of the dialect compiles to.
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -27,10 +27,13 @@ use super::regex_syntax::TOO_LARGE;
 
 const CACHE_LIMIT: usize = 256;
 
-/// The most bytes a compiled pattern may take (the engine's own default, stated): about 200,000
-/// repeated literals, or 10,000 repeated classes as wide as `.`; compiling to the limit takes
-/// tens of milliseconds.
-pub const SIZE_LIMIT: usize = 10 * 1024 * 1024;
+/// The most bytes a compiled pattern may take: more than any pattern within the limits of §11
+/// needs. The engine unrolls counted repetitions and builds a UTF-8 automaton for each class, up
+/// to 1.2 KB for an item of the size of §9.10 (measured: `[^\x{10005}]` and `[\x{81}-\x{10FFFE}]`,
+/// 11.5 MiB for the 10,000 of `regex_syntax::MAX_SIZE`, compiled in 60 ms; a literal takes 52
+/// bytes). The limit is five times that, so it is not met; if it were, the reason would be
+/// `regex_syntax::TOO_LARGE`.
+pub const SIZE_LIMIT: usize = 64 * 1024 * 1024;
 
 // The stack the engine may use to compile one level of groups: a level that is an alternative,
 // a sequence, a repetition and a group takes 27 KB in a build without optimizations (measured:

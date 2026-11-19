@@ -10,6 +10,8 @@
 // little, the left alternative first), and a state reached a second time at the same position is
 // dropped: the first way to it has priority and the same future. So the time is the length of the
 // input times the size of the program, and the memory depends on the program alone (see Matcher).
+// The translation bounds the program (§11), so nothing is refused here: within those limits a
+// program has at most 50,000 instructions, a hundred levels and 2,002 capture slots per thread.
 // A search for the leftmost match does not start again at each position: a new thread starts at
 // each position, behind the ones already running, until a match is found. Nothing recurses.
 //
@@ -24,12 +26,9 @@
 //
 // Translated patterns are cached, in a map that is emptied when it reaches CacheLimit entries.
 
-import { MaxProgram, Op, type Options, RegexError, type Translation, tryTranslate } from "./regexSyntax.js";
+import { Op, type Options, RegexError, type Translation, tryTranslate } from "./regexSyntax.js";
 
 const CacheLimit = 256;
-
-/** The most capture slots the threads of a program may hold together (instructions that read a code point × slots). */
-export const MaxCaptures = 1 << 24;
 
 const cache = new Map<string, Matcher>();
 
@@ -40,18 +39,9 @@ export function tryCompile(pattern: string, options: Options): Matcher | RegexEr
   if (cached !== undefined) return cached;
   const translation = tryTranslate(pattern, options);
   if (translation instanceof RegexError) return translation;
-  const matcher = tryCreate(translation);
-  if (matcher instanceof RegexError) return matcher;
+  const matcher = new Matcher(translation);
   if (cache.size >= CacheLimit) cache.clear();
   cache.set(key, matcher);
-  return matcher;
-}
-
-/** The matcher of a translated pattern, or the failure when its states or its captures are too many. */
-export function tryCreate(translation: Translation): Matcher | RegexError {
-  const matcher = new Matcher(translation);
-  // A state is an instruction at a level: nested loops that can match nothing multiply them.
-  if (matcher.states - translation.ops.length > MaxProgram || matcher.readers * matcher.slots > MaxCaptures) return new RegexError("pattern too large");
   return matcher;
 }
 

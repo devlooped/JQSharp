@@ -15,13 +15,26 @@
 // The pattern is read in one pass, without recursion, and each instruction that jumps says how
 // far (not where to), so a piece of the program can be copied or moved as it is: a quantifier
 // wraps or repeats the instructions of the atom before it.
+//
+// The limits of §11 are checked here, while the pattern is read (Measure): they bound the program
+// (at most five instructions per unit of the pattern's size), so the engine refuses nothing.
 
 import * as CodePoints from "../values/codePoints.js";
 
+/** The largest count of a quantifier, and of the counts of nested quantifiers multiplied. */
 export const MaxRepeat = 1000;
 
-/** The most instructions a program may have: counted repetitions are written out. */
-export const MaxProgram = 200000;
+/** The largest size of a pattern (§9.10): its items, counted repetitions written out. */
+export const MaxSize = 10000;
+
+/** The most groups open at once. */
+export const MaxNesting = 100;
+
+/** The most capturing groups. */
+export const MaxGroups = 1000;
+
+/** The reason of a pattern beyond MaxSize, MaxNesting or MaxGroups: a fixed text (§10.3). */
+export const TooLarge = "the pattern is too large";
 
 /** The flags of §9.10 that change the pattern itself. */
 export interface Options {
@@ -132,15 +145,18 @@ class Translator {
   private readonly sets: Int32Array[] = [];
   private readonly groups: (string | null)[] = [];
   private readonly frames: Frame[] = [];
+  private readonly measure = new Measure();
   private marks = 0;
   private i = 0;
   private previous = Previous.None;
   // Where the instructions of the last atom start.
   private atom = 0;
   private reason = "";
-  // The code point tryEscapedLiteral and tryClassLiteral read; the number tryNumber read.
+  // The code point tryEscapedLiteral and tryClassLiteral read; the number tryNumber read; the
+  // number of items of the class tryClass read.
   private literalRead = 0;
   private numberRead = 0;
+  private itemsRead = 0;
 
   constructor(
     private readonly points: readonly number[],
@@ -150,6 +166,7 @@ class Translator {
   translate(): Translation | RegexError {
     const points = this.points;
     const options = this.options;
+    const measure = this.measure;
     this.emit(Op.Save, 0);
     let frame = new Frame(this.ops.length, 0);
     this.frames.push(frame);
@@ -163,22 +180,27 @@ class Translator {
       switch (c) {
         case Backslash:
           if (!this.tryEscape()) return new RegexError(this.reason);
+          if (!measure.add(1)) return new RegexError(TooLarge);
           continue;
         case 0x5b /* [ */:
           if (!this.tryClass()) return new RegexError(this.reason);
+          if (!measure.add(this.itemsRead)) return new RegexError(TooLarge);
           this.previous = Previous.Atom;
           continue;
         case 0x2e /* . */:
           this.startAtom();
           this.emit(options.dotAll ? Op.Any : Op.AnyButLineFeed);
+          if (!measure.add(1)) return new RegexError(TooLarge);
           this.i++;
           continue;
         case 0x5e /* ^ */:
           this.anchor(Op.Begin);
+          if (!measure.add(1)) return new RegexError(TooLarge);
           this.i++;
           continue;
         case 0x24 /* $ */:
           this.anchor(Op.End);
+          if (!measure.add(1)) return new RegexError(TooLarge);
           this.i++;
           continue;
         case 0x7c /* | */: {
@@ -189,21 +211,25 @@ class Translator {
           this.emit(Op.Jump);
           frame.alternative = this.ops.length;
           frame.close();
+          if (!measure.add(1)) return new RegexError(TooLarge);
           this.previous = Previous.None;
           this.i++;
           continue;
         }
         case 0x28 /* ( */: {
+          if (measure.depth === MaxNesting) return new RegexError(TooLarge);
           const start = this.ops.length;
           if (!this.tryGroup()) return new RegexError(this.reason);
           frame = new Frame(start, this.ops.length > start ? this.groups.length : 0);
           frame.alternative = this.ops.length;
           this.frames.push(frame);
+          if (!measure.open()) return new RegexError(TooLarge);
           this.previous = Previous.None;
           continue;
         }
         case 0x29 /* ) */: {
           if (this.frames.length === 1) return new RegexError("unmatched close parenthesis");
+          measure.close();
           this.end(frame);
           if (frame.group > 0) this.emit(Op.Save, 2 * frame.group + 1);
           this.frames.pop();
@@ -228,6 +254,7 @@ class Translator {
           return new RegexError(`unescaped '${String.fromCharCode(c)}'`);
         default:
           this.literal(c);
+          if (!measure.add(1)) return new RegexError(TooLarge);
           this.i++;
           continue;
       }
@@ -376,6 +403,7 @@ class Translator {
         if (end === points.length || !isGroupName(points, start, end)) return this.fail("invalid group name");
         const name = text(points, start, end);
         if (this.groups.includes(name)) return this.fail(`duplicate group name ${name}`);
+        if (this.groups.length === MaxGroups) return this.fail(TooLarge);
         this.groups.push(name);
         this.emit(Op.Save, 2 * this.groups.length);
         this.i = end + 1;
@@ -385,6 +413,7 @@ class Translator {
       return this.fail("unsupported group syntax (?");
     }
 
+    if (this.groups.length === MaxGroups) return this.fail(TooLarge);
     this.groups.push(null);
     this.emit(Op.Save, 2 * this.groups.length);
     this.i++;
@@ -398,6 +427,8 @@ class Translator {
     let min: number;
     // -1: no maximum.
     let max: number;
+    // The count of §9.10: how many times the operand is written out.
+    let count = 1;
     if (c === 0x7b /* { */) {
       let at = this.i + 1;
       at = this.tryNumber(at);
@@ -418,6 +449,8 @@ class Translator {
 
       if (at === points.length || points[at] !== 0x7d /* } */) return this.fail("'{' is not a quantifier");
       if (min > MaxRepeat || (!unbounded && (max > MaxRepeat || max < min))) return this.fail("invalid repetition count");
+      count = Math.max(unbounded ? min : max, 1);
+      if (!this.measure.multiply(count)) return this.fail("invalid repetition count");
       if (unbounded) max = -1;
       this.i = at + 1;
     } else {
@@ -426,6 +459,7 @@ class Translator {
       this.i++;
     }
 
+    if (!this.measure.repeat(count)) return this.fail(TooLarge);
     if (this.options.extended) {
       while (this.i < points.length && (isExtendedSpace(points[this.i]!) || points[this.i] === 0x23) /* # */) this.i = skipExtended(points, this.i);
     }
@@ -450,7 +484,6 @@ class Translator {
     const marked = nullable && (max < 0 || max > 1);
     const iteration = length + (marked ? 2 : 0);
     const size = min * iteration + (max < 0 ? iteration + 2 : (max - min) * (iteration + 1));
-    if (start + size > MaxProgram) return this.fail("pattern too large");
 
     const ops = this.ops.splice(start, length);
     const as = this.as.splice(start, length);
@@ -497,9 +530,10 @@ class Translator {
     return at > start ? at : -1;
   }
 
-  // [...] or [^...]: literals, escapes, ranges of literals and shorthands.
+  // [...] or [^...]: literals, escapes, ranges of literals and shorthands; itemsRead is their number.
   private tryClass(): boolean {
     const points = this.points;
+    let items = 0;
     let at = this.i + 1;
     const negated = at < points.length && points[at] === 0x5e; /* ^ */
     if (negated) at++;
@@ -527,6 +561,7 @@ class Translator {
       if (c === Backslash && at + 1 < points.length && isShorthand(points[at + 1]!)) {
         set.addShorthand(points[at + 1]!);
         previousLiteral = -1;
+        items++;
         at += 2;
         continue;
       }
@@ -535,6 +570,7 @@ class Translator {
       if (at < 0) return false;
       set.add(this.literalRead, this.literalRead);
       previousLiteral = this.literalRead;
+      items++;
     }
 
     if (at === first) return this.fail("empty class");
@@ -542,6 +578,7 @@ class Translator {
     if (this.options.ignoreCase) set.addAsciiCases();
     this.startAtom();
     this.class(set, negated);
+    this.itemsRead = items;
     this.i = at + 1;
     return true;
   }
@@ -591,6 +628,61 @@ class Translator {
   private fail(reason: string): boolean {
     this.reason = reason;
     return false;
+  }
+}
+
+// The limits of §11 on the part of a pattern read so far: its size, the groups open, and the
+// counts of the counted quantifiers nested in one another.
+class Measure {
+  // Per open group: the size when it opened.
+  private readonly starts: number[] = [];
+  // For the pattern and per open group: the largest product of the counts nested in it so far.
+  private readonly products: number[] = [1];
+  private size = 0;
+  // The last item, the operand of a quantifier: its size and the largest product of the counts nested in it.
+  private atom = 0;
+  private atomProduct = 1;
+
+  /** The groups open. */
+  get depth(): number {
+    return this.starts.length;
+  }
+
+  /** An item of this size (a literal, a class, an anchor, a '|'); false when the pattern is too large. */
+  add(itemSize: number): boolean {
+    this.atom = itemSize;
+    this.atomProduct = 1;
+    this.size += itemSize;
+    return this.size <= MaxSize;
+  }
+
+  /** A group opens: it counts 1; false when the pattern is too large. */
+  open(): boolean {
+    this.starts.push(this.size);
+    this.products.push(1);
+    return this.add(1);
+  }
+
+  /** A group closes: it is the last item, with all it holds. */
+  close(): void {
+    this.atom = this.size - this.starts.pop()!;
+    this.atomProduct = this.products.pop()!;
+    const outer = this.products.length - 1;
+    this.products[outer] = Math.max(this.products[outer]!, this.atomProduct);
+  }
+
+  /** A counted quantifier on the last item; false when the nested counts multiply above MaxRepeat. */
+  multiply(count: number): boolean {
+    const product = count * this.atomProduct;
+    const outer = this.products.length - 1;
+    this.products[outer] = Math.max(this.products[outer]!, product);
+    return product <= MaxRepeat;
+  }
+
+  /** A quantifier on the last item: it counts 1, and the item once more for each count above 1; false when the pattern is too large. */
+  repeat(count: number): boolean {
+    this.size += this.atom * (count - 1) + 1;
+    return this.size <= MaxSize;
   }
 }
 

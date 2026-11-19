@@ -25,14 +25,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>The syntax read is the one RegexSyntax writes, nothing more: {@code \x{H}}, classes
  * {@code [..]} and {@code [^..]} of {@code \x{H}} and ranges, {@code (}, {@code (?:}, {@code )},
  * {@code |}, the quantifiers {@code * + ? {n} {n,} {n,m}} and their lazy forms, {@code ^},
- * {@code \z}, {@code \b}, {@code \B}. Compiled patterns are cached per process in a thread-safe map
- * that is emptied when it reaches {@link #CACHE_LIMIT} entries.
+ * {@code \z}, {@code \b}, {@code \B}. The limits of a pattern are RegexSyntax's too (§11): within
+ * them the automaton has at most a few states per unit of the pattern's size, so nothing is
+ * refused here. Compiled patterns are cached per process in a thread-safe map that is emptied
+ * when it reaches {@link #CACHE_LIMIT} entries.
  */
 final class RegexEngine {
     private static final int CACHE_LIMIT = 256;
-
-    /** The largest automaton (in states) a pattern may compile to; {@code (x{1000}){1000}} is beyond. */
-    static final int MAX_STATES = 1_000_000;
 
     private static final ConcurrentHashMap<String, HostPattern> CACHE = new ConcurrentHashMap<>();
 
@@ -382,9 +381,6 @@ final class RegexEngine {
                     }
                     default -> failure = "unexpected '" + c + "' in the translated pattern";
                 }
-                if (frame.current.size > 3 * MAX_STATES) {
-                    failure = "the pattern is too large";
-                }
             }
 
             if (failure == null && frames.size() != 1) {
@@ -399,10 +395,6 @@ final class RegexEngine {
             Fragment program = new Fragment();
             program.append(body);
             program.add(MATCH, 0, 0);
-            if (program.states() > MAX_STATES) {
-                reason[0] = "the pattern is too large";
-                return null;
-            }
 
             // Relative jumps to absolute states.
             int[] code = Arrays.copyOf(program.code, program.size);
@@ -537,11 +529,6 @@ final class RegexEngine {
                 pos++;
             }
             Fragment atom = frame.last == null ? new Fragment() : frame.last;
-            long size = (long) atom.states() * (max < 0 ? min + 1 : Math.max(max, 1)) + 2L * (max < 0 ? 1 : max);
-            if (size > MAX_STATES) {
-                failure = "the pattern is too large";
-                return;
-            }
             Fragment result = new Fragment();
             for (int i = 0; i < min; i++) {
                 result.append(atom);

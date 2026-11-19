@@ -16,9 +16,25 @@ import java.util.List;
  * {@code m}/{@code p}), {@code \d \w \s} are ASCII classes, {@code $} is {@code \z}, {@code \b \B}
  * stay as they are (the engine's are ASCII word boundaries), named groups are plain groups. The {@code i} flag is done here, never by the engine: it folds ASCII
  * letters only ({@link RangeSet#addAsciiCases}, the one place of the rule).
+ *
+ * <p>The limits of §11 are checked here, while the pattern is read ({@link Measure}), so that the
+ * engine meets no pattern beyond them and must take the ones within.
  */
 final class RegexSyntax {
+    /** The largest count of a quantifier, and of the counts of nested quantifiers multiplied. */
     static final int MAX_REPEAT = 1000;
+
+    /** The largest size of a pattern (§9.10): its items, counted repetitions written out. */
+    static final int MAX_SIZE = 10000;
+
+    /** The most groups open at once. */
+    static final int MAX_NESTING = 100;
+
+    /** The most capturing groups. */
+    static final int MAX_GROUPS = 1000;
+
+    /** The reason of a pattern beyond MAX_SIZE, MAX_NESTING or MAX_GROUPS: a fixed text (§10.3). */
+    static final String TOO_LARGE = "the pattern is too large";
 
     private RegexSyntax() {
     }
@@ -44,7 +60,10 @@ final class RegexSyntax {
         final int[] points;
         final StringBuilder output;
         final Options options;
+        final Measure measure = new Measure();
         int i;
+        // The number of items of the class tryClass read.
+        int items;
         Previous previous = Previous.NONE;
         String reason = "";
 
@@ -69,7 +88,7 @@ final class RegexSyntax {
         }
         State state = new State(points, new StringBuilder(pattern.length() * 6), options);
         List<String> groups = new ArrayList<>();
-        int open = 0;
+        Measure measure = state.measure;
         StringBuilder output = state.output;
         while (state.i < points.length) {
             int c = points[state.i];
@@ -79,42 +98,56 @@ final class RegexSyntax {
             }
 
             boolean ok = true;
+            // Whether the pattern read so far is within MAX_SIZE.
+            boolean fits = true;
             switch (c) {
-                case '\\' -> ok = tryEscape(state);
+                case '\\' -> {
+                    ok = tryEscape(state);
+                    fits = !ok || measure.add(1);
+                }
                 case '[' -> {
                     ok = tryClass(state);
+                    fits = !ok || measure.add(state.items);
                     state.previous = Previous.ATOM;
                 }
                 case '.' -> {
                     output.append(options.dotAll ? "[\\x{0}-\\x{10FFFF}]" : "[^\\x{A}]");
+                    fits = measure.add(1);
                     state.previous = Previous.ATOM;
                     state.i++;
                 }
                 case '^' -> {
                     output.append('^');
+                    fits = measure.add(1);
                     state.previous = Previous.ANCHOR;
                     state.i++;
                 }
                 case '$' -> {
                     output.append("\\z");
+                    fits = measure.add(1);
                     state.previous = Previous.ANCHOR;
                     state.i++;
                 }
                 case '|' -> {
                     output.append('|');
+                    fits = measure.add(1);
                     state.previous = Previous.NONE;
                     state.i++;
                 }
                 case '(' -> {
-                    ok = tryGroup(state, groups);
-                    open++;
-                    state.previous = Previous.NONE;
+                    if (measure.depth() == MAX_NESTING) {
+                        ok = state.fail(TOO_LARGE);
+                    } else {
+                        ok = tryGroup(state, groups);
+                        fits = !ok || measure.open();
+                        state.previous = Previous.NONE;
+                    }
                 }
                 case ')' -> {
-                    if (open == 0) {
+                    if (measure.depth() == 0) {
                         ok = state.fail("unmatched close parenthesis");
                     } else {
-                        open--;
+                        measure.close();
                         output.append(')');
                         state.previous = Previous.ATOM;
                         state.i++;
@@ -131,6 +164,7 @@ final class RegexSyntax {
                 case ']', '}' -> ok = state.fail("unescaped '" + (char) c + "'");
                 default -> {
                     literal(output, c, options);
+                    fits = measure.add(1);
                     state.previous = Previous.ATOM;
                     state.i++;
                 }
@@ -140,9 +174,13 @@ final class RegexSyntax {
                 reason[0] = state.reason;
                 return null;
             }
+            if (!fits) {
+                reason[0] = TOO_LARGE;
+                return null;
+            }
         }
 
-        if (open > 0) {
+        if (measure.depth() > 0) {
             reason[0] = "missing close parenthesis";
             return null;
         }
@@ -246,6 +284,9 @@ final class RegexSyntax {
                 if (groups.contains(name)) {
                     return state.fail("duplicate group name " + name);
                 }
+                if (groups.size() == MAX_GROUPS) {
+                    return state.fail(TOO_LARGE);
+                }
                 groups.add(name);
                 state.output.append('(');
                 state.i = end + 1;
@@ -255,6 +296,9 @@ final class RegexSyntax {
             return state.fail("unsupported group syntax (?");
         }
 
+        if (groups.size() == MAX_GROUPS) {
+            return state.fail(TOO_LARGE);
+        }
         groups.add(null);
         state.output.append('(');
         state.i++;
@@ -265,6 +309,8 @@ final class RegexSyntax {
     private static boolean tryQuantifier(State state) {
         int[] points = state.points;
         int c = points[state.i];
+        // The count of §9.10: how many times the operand is written out.
+        int count = 1;
         if (c == '{') {
             int[] at = {state.i + 1};
             int min = tryNumber(points, at);
@@ -291,6 +337,10 @@ final class RegexSyntax {
             if (min > MAX_REPEAT || (!unbounded && (max > MAX_REPEAT || max < min))) {
                 return state.fail("invalid repetition count");
             }
+            count = Math.max(unbounded ? min : max, 1);
+            if (!state.measure.multiply(count)) {
+                return state.fail("invalid repetition count");
+            }
             state.output.append('{').append(min);
             if (unbounded) {
                 state.output.append(',');
@@ -304,6 +354,9 @@ final class RegexSyntax {
             state.i++;
         }
 
+        if (!state.measure.repeat(count)) {
+            return state.fail(TOO_LARGE);
+        }
         if (state.options.extended) {
             while (state.i < points.length && (isExtendedSpace(points[state.i]) || points[state.i] == '#')) {
                 state.i = skipExtended(points, state.i);
@@ -330,9 +383,10 @@ final class RegexSyntax {
         return at[0] > start ? value : -1;
     }
 
-    // [...] or [^...]: literals, escapes, ranges of literals and shorthands.
+    // [...] or [^...]: literals, escapes, ranges of literals and shorthands; state.items is their number.
     private static boolean tryClass(State state) {
         int[] points = state.points;
+        int items = 0;
         int at = state.i + 1;
         boolean negated = at < points.length && points[at] == '^';
         if (negated) {
@@ -376,6 +430,7 @@ final class RegexSyntax {
             if (c == '\\' && at + 1 < points.length && "dwsDWS".indexOf(points[at + 1]) >= 0) {
                 set.addShorthand(points[at + 1]);
                 previousLiteral = -1;
+                items++;
                 at += 2;
                 continue;
             }
@@ -388,6 +443,7 @@ final class RegexSyntax {
             at = state.i;
             set.add(literal, literal);
             previousLiteral = literal;
+            items++;
         }
 
         if (at == first) {
@@ -398,8 +454,73 @@ final class RegexSyntax {
             set.addAsciiCases();
         }
         writeClass(state.output, set, negated);
+        state.items = items;
         state.i = at + 1;
         return true;
+    }
+
+    /**
+     * The limits of §11 on the part of a pattern read so far: its size, the groups open, and the
+     * counts of the counted quantifiers nested in one another.
+     */
+    private static final class Measure {
+        // Per open group: the size when it opened; and, with one more for the pattern itself, the
+        // largest product of the counts nested in it so far.
+        private final int[] starts = new int[MAX_NESTING];
+        private final int[] products = new int[MAX_NESTING + 1];
+        private int depth;
+        private int size;
+        // The last item, the operand of a quantifier: its size and the largest product of the counts nested in it.
+        private int atom;
+        private int atomProduct;
+
+        Measure() {
+            products[0] = 1;
+        }
+
+        /** The groups open. */
+        int depth() {
+            return depth;
+        }
+
+        /** An item of this size (a literal, a class, an anchor, a '|'); false when the pattern is too large. */
+        boolean add(int itemSize) {
+            // A class may have more items than an int holds once added to the size.
+            itemSize = Math.min(itemSize, MAX_SIZE + 1);
+            atom = itemSize;
+            atomProduct = 1;
+            size += itemSize;
+            return size <= MAX_SIZE;
+        }
+
+        /** A group opens: it counts 1; false when the pattern is too large. */
+        boolean open() {
+            starts[depth] = size;
+            depth++;
+            products[depth] = 1;
+            return add(1);
+        }
+
+        /** A group closes: it is the last item, with all it holds. */
+        void close() {
+            atom = size - starts[depth - 1];
+            atomProduct = products[depth];
+            depth--;
+            products[depth] = Math.max(products[depth], atomProduct);
+        }
+
+        /** A counted quantifier on the last item; false when the nested counts multiply above MAX_REPEAT. */
+        boolean multiply(int count) {
+            int product = count * atomProduct;
+            products[depth] = Math.max(products[depth], product);
+            return product <= MAX_REPEAT;
+        }
+
+        /** A quantifier on the last item: it counts 1, and the item once more for each count above 1; false when the pattern is too large. */
+        boolean repeat(int count) {
+            size += atom * (count - 1) + 1;
+            return size <= MAX_SIZE;
+        }
     }
 
     // A literal of a class at state.i; -1 on error.

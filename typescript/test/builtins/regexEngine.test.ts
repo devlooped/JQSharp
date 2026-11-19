@@ -4,8 +4,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MaxCaptures, Matcher, tryCompile, tryCreate, tryMatch } from "../../src/builtins/regexEngine.js";
-import { MaxProgram, RegexError, tryTranslate } from "../../src/builtins/regexSyntax.js";
+import { Matcher, tryCompile, tryMatch } from "../../src/builtins/regexEngine.js";
+import { MaxGroups, MaxNesting, MaxSize, RegexError, tryTranslate } from "../../src/builtins/regexSyntax.js";
 import * as Backtracking from "../support/backtrackingMatcher.js";
 import { line } from "../support/evaluate.js";
 import { input, pattern, random } from "../support/regexFuzz.js";
@@ -20,8 +20,7 @@ for (const seed of [1, 7, 12345]) {
       const source = pattern(next, 3);
       const translation = tryTranslate(source, { extended: false, dotAll: next(2) === 0, ignoreCase: false });
       assert.ok(!(translation instanceof RegexError), source);
-      const matcher = tryCreate(translation);
-      assert.ok(matcher instanceof Matcher, source);
+      const matcher = new Matcher(translation);
       const width = 2 * (translation.groups.length + 1);
       for (let k = 0; k < 4; k++) {
         const text = input(next, 7);
@@ -109,27 +108,36 @@ test("the memory of a search is the size of the pattern", () => {
   assert.equal(seen.stack.length, 2 * matcher.states);
 });
 
-test("a pattern too large is an error", () => {
-  const failure = (source: string): string => {
-    const compiled = tryCompile(source, Plain);
-    return compiled instanceof RegexError ? compiled.reason : "compiled";
+test("the largest patterns of spec §11 are programs the matcher runs", () => {
+  // The limits are the translation's, and the corpus has their boundaries. What is the engine's:
+  // within them a program has at most five instructions per unit of the pattern's size, and a
+  // state is an instruction at a level (nested loops that can match nothing have levels).
+  const compiled = (source: string): Matcher => {
+    const matcher = tryCompile(source, Plain);
+    assert.ok(matcher instanceof Matcher, source.slice(0, 40));
+    return matcher;
   };
 
-  // Counted repetitions are written out: at most MaxProgram instructions.
-  assert.equal(MaxProgram, 200000);
-  assert.equal(failure("(?:a{1000}){200}"), "pattern too large");
-  assert.equal(failure("(?:a{1000}){199}"), "compiled");
-  // A state is an instruction at a level, and nested loops that can match nothing have levels:
-  // at most MaxProgram states more than instructions.
-  const nested = (levels: number): string => "(?:".repeat(levels) + "a*" + ")*".repeat(levels);
-  assert.equal(failure(nested(100)), "compiled");
-  assert.equal(failure(nested(400)), "pattern too large");
-  // The captures of the threads: at most MaxCaptures slots.
-  assert.equal(MaxCaptures, 1 << 24);
-  assert.equal(failure("(a)".repeat(2000)), "compiled");
-  assert.equal(failure("(a)".repeat(3000)), "pattern too large");
-  assert.equal(line('try test("(?:a{1000}){200}") catch .', '"a"'), '"Regex failure: pattern too large"');
-  // Long without repetition is not large: the states are the instructions.
-  assert.equal(line('"x" + "ab" * 150000 | . as $s | test($s)'), "true");
-  assert.equal(line(`"a" * 300 | [match("${nested(100)}"; "g") | .length]`), "[300,0]");
+  assert.deepEqual([MaxSize, MaxNesting, MaxGroups], [10000, 100, 1000]);
+  // The most instructions for a size: an empty group repeated, each copy optional and with its mark.
+  const copies = tryTranslate("(){0,1000}".repeat(9) + "(){0,990}", Plain);
+  assert.ok(!(copies instanceof RegexError));
+  assert.equal(copies.ops.length, 5 * (MaxSize - 10) + 3);
+  assert.ok(tryMatch(new Matcher(copies), "a", 0, new Int32Array(2)));
+  // The most states: every instruction inside a hundred loops that can match nothing.
+  const nested = (levels: number, inner: string): string => "(?:".repeat(levels) + inner + ")*".repeat(levels);
+  const deep = compiled(nested(MaxNesting, "a?".repeat(4900)));
+  assert.ok(deep.states > 1000000 && deep.states < 2000000, String(deep.states));
+  assert.ok(tryMatch(deep, "a".repeat(100) + "b", 0, new Int32Array(2)));
+  assert.equal(line(`"a" * 300 | [match("${nested(MaxNesting, "a*")}"; "g") | .length]`), "[300,0]");
+  // The most capture slots: a thousand groups, each thread with its own.
+  const groups = compiled("(a)".repeat(MaxGroups));
+  assert.equal(groups.slots, 2 * (MaxGroups + 1));
+  const spans = new Int32Array(groups.slots);
+  assert.ok(tryMatch(groups, "a".repeat(MaxGroups + 5), 0, spans));
+  assert.deepEqual([...spans.subarray(0, 4), ...spans.subarray(groups.slots - 2)], [0, 1000, 0, 1, 999, 1000]);
+  // Past a limit the translation fails, with the fixed reason.
+  const failure = tryCompile("(a)".repeat(MaxGroups + 1), Plain);
+  assert.ok(failure instanceof RegexError);
+  assert.equal(failure.reason, "the pattern is too large");
 });
