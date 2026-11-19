@@ -31,7 +31,9 @@ delegate Signal? Emit(JqValue value, Path? path);
 /// <see cref="EvalOne"/> is the same evaluation for nodes that yield at most one output (the
 /// resolver marks them, <see cref="Node.AtMostOne"/>): it returns the output instead of pushing it,
 /// so arithmetic, indexing, object construction and the like run without callbacks or allocations.
-/// <see cref="Eval"/> hands such nodes to it.
+/// <see cref="Eval"/> hands such nodes to it. A call it evaluates (a single call, spec §7.7) has
+/// ended when its output is returned, so it leaves the depth of §11 before that output is used; a
+/// call <see cref="Eval"/> enters stays in the depth while its outputs are pushed.
 /// </para>
 /// <para>
 /// The host stack: both are loops where a node's last step is another node (a pipe whose left side
@@ -350,10 +352,37 @@ sealed class Interpreter
                         return signal;
                     node = ((Bind)node).Body;
                     continue;
+                case NodeKind.CallFunction:
+                    return EvalCallOne((CallFunction)node, env, input, path, out has, out value, out at);
+                case NodeKind.CallParameter:
+                    // The argument of a $ parameter of a single call (Resolver.Call): it is single too.
+                    var closure = Env.Up(env, ((CallParameter)node).Hops)!.Closures![((CallParameter)node).Slot];
+                    env = closure.Env;
+                    node = closure.Node;
+                    continue;
                 default:
                     return EvalOther(node, env, input, path, out has, out value, out at);
             }
         }
+    }
+
+    // A single call (spec §7.7): it has ended when its output is here, so, unlike a call Eval
+    // enters, it does not count in the depth of §11 while that output is consumed.
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    Signal? EvalCallOne(CallFunction call, Env? env, JqValue input, Path? path, out bool has, out JqValue value, out Path? at)
+    {
+        if (++depth > maxDepth)
+        {
+            depth--;
+            has = false;
+            value = default;
+            at = null;
+            return Fail(Errors.DepthExceeded);
+        }
+
+        var signal = EvalOne(program.Functions[call.Function].Body, CallEnv(call.Hops, call.Arguments, env), input, path, out has, out value, out at);
+        depth--;
+        return signal;
     }
 
     // The nodes of EvalOne that are not in tail position.
@@ -378,7 +407,9 @@ sealed class Interpreter
             case NodeKind.Template:
                 return EvalTemplateOne((Template)node, env, input, out has, out value);
             case NodeKind.CallNative:
-                return EvalNativeOne((CallNative)node, env, input, out has, out value);
+                return ((CallNative)node).Native.TakesClosures
+                    ? EvalClosureNativeOne((CallNative)node, env, input, path, out has, out value, out at)
+                    : EvalNativeOne((CallNative)node, env, input, out has, out value);
             case NodeKind.Label:
                 return EvalLabelOne((Label)node, env, input, path, out has, out value, out at);
             case NodeKind.Bind:
@@ -421,6 +452,15 @@ sealed class Interpreter
         var label = ++labels;
         var signal = EvalOne(node.Body, new Env(env, label), input, path, out has, out value, out at);
         return signal is { Kind: SignalKind.Break } && signal.Label == label ? null : signal;
+    }
+
+    // A native that takes closures and gives at most one output (Native.SingleWhen): its output is kept.
+    Signal? EvalClosureNativeOne(CallNative node, Env? env, JqValue input, Path? path, out bool has, out JqValue value, out Path? at)
+    {
+        var capture = new Capture();
+        var signal = NativeTable.Closure(node.Native)(this, env, node.Arguments, input, path, capture.Emit);
+        (has, value, at) = (capture.Has, capture.Value, capture.At);
+        return signal;
     }
 
     // Reduce with one initial value: through the general evaluation, keeping its output.

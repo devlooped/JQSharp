@@ -71,6 +71,18 @@ sealed partial class Resolver
 
     readonly record struct Task(Step Step, S.Node? Node = null, S.Definition? Definition = null, int A = 0, int B = 0);
 
+    // A function whose body is being bound. Single: whether its calls of itself in that body are
+    // bound as single (spec §7.7): assumed at first, and checked when the body is bound, unless the
+    // answer is Known already. SelfCalls counts the calls bound as single on that assumption.
+    sealed class Defining(int index, ImmutableArray<int> valueParameters, bool single, bool known)
+    {
+        public readonly int Index = index;
+        public readonly ImmutableArray<int> ValueParameters = valueParameters;
+        public bool Single = single;
+        public bool Known = known;
+        public int SelfCalls;
+    }
+
     static readonly Node identity = new Identity();
 
     readonly Prelude? prelude;
@@ -86,6 +98,12 @@ sealed partial class Resolver
     readonly List<Node> results = [];
     // The binders made and not yet built into their node, with the names of their slots.
     readonly List<(Binder Binder, List<string> Names)> binders = [];
+    // The functions being defined, innermost last.
+    readonly List<Defining> defining = [];
+    // While the body of a function is bound a second time (EndFunction): whether each function
+    // nested in it is single, as the first time found, by index from replayStart.
+    List<bool>? replay;
+    int replayStart;
     int depth;
     SyntaxError? error;
 
@@ -187,7 +205,7 @@ sealed partial class Resolver
                 results.Add(Build(task.Node!, task.A));
                 break;
             case Step.BuildCall:
-                results.Add(new CallFunction(task.A, task.B, PopAll(((S.Call)task.Node!).Arguments.Length)));
+                results.Add(Call(task.A, task.B, PopAll(((S.Call)task.Node!).Arguments.Length)));
                 break;
             case Step.BuildNative:
                 results.Add(new CallNative(Natives.All[task.A], PopAll(((S.Call)task.Node!).Arguments.Length)));
@@ -202,7 +220,7 @@ sealed partial class Resolver
                 Define(task.Definition!, task.A == 1);
                 break;
             case Step.EndFunction:
-                functions[task.A] = new Function(task.Definition!.Name, task.Definition.Params.Length, BindParameters(task.Definition, Pop()));
+                EndFunction(task.Definition!, task.A);
                 break;
             default:
                 scope.RemoveRange(task.A, scope.Count - task.A);
@@ -460,6 +478,10 @@ sealed partial class Resolver
             exports.Add(index);
         scope.Add(new Entry(EntryKind.Function, definition.Name, definition.Params.Length, depth, index, topLevel));
 
+        // Single until its body says otherwise, or what the first binding of this body found.
+        var replayed = replay is not null && index - replayStart < replay.Count;
+        defining.Add(new Defining(index, ValueParameters(definition), !replayed || replay![index - replayStart], replayed));
+
         Leave();
         tasks.Add(new Task(Step.EndFunction, Definition: definition, A: index));
         Push(definition.Body);
@@ -477,6 +499,71 @@ sealed partial class Resolver
                 scope.Add(new Entry(EntryKind.Variable, parameter.Name, 0, depth, 0));
             }
         }
+    }
+
+    // The body of functions[index] is bound: the function is single when its body is (spec §7.7).
+    void EndFunction(S.Definition definition, int index)
+    {
+        var body = Pop();
+        var own = defining[^1];
+        if (own.Single && !body.AtMostOne && !own.Known)
+        {
+            // It was assumed single and is not. The calls of itself bound as single are wrong, and so
+            // is every node built on them: bind the body again, this time knowing. The functions
+            // nested in it do not depend on the assumption (their calls of this one are never
+            // single, Call), so they keep what this binding found and are not bound a third time.
+            own.Single = false;
+            own.Known = true;
+            if (own.SelfCalls > 0)
+            {
+                replay = [];
+                replayStart = index + 1;
+                for (var i = replayStart; i < functions.Count; i++)
+                    replay.Add(functions[i]!.Single);
+                functions.RemoveRange(replayStart, functions.Count - replayStart);
+                tasks.Add(new Task(Step.EndFunction, Definition: definition, A: index));
+                Push(definition.Body);
+                return;
+            }
+        }
+
+        defining.RemoveAt(defining.Count - 1);
+        if (replay is not null && replayStart == index + 1)
+            replay = null;
+        functions[index] = new Function(definition.Name, definition.Params.Length, BindParameters(definition, body), body.AtMostOne, own.ValueParameters);
+    }
+
+    // A call of functions[function]: single when the function is and the argument of each of its $
+    // parameters is. A function still being defined is single in its own body as long as its
+    // Defining says so; seen from a function nested in it, it is not.
+    CallFunction Call(int function, int hops, ImmutableArray<Node> arguments)
+    {
+        var single = false;
+        if (functions[function] is { } defined)
+        {
+            single = defined.Single && Node.All(defined.ValueParameters, arguments);
+        }
+        else if (defining[^1] is { Single: true } own && own.Index == function && Node.All(own.ValueParameters, arguments))
+        {
+            single = true;
+            if (!own.Known)
+                own.SelfCalls++;
+        }
+
+        return new CallFunction(function, hops, arguments, single);
+    }
+
+    // The slots of the $ parameters.
+    static ImmutableArray<int> ValueParameters(S.Definition definition)
+    {
+        var slots = ImmutableArray.CreateBuilder<int>();
+        for (var slot = 0; slot < definition.Params.Length; slot++)
+        {
+            if (definition.Params[slot].IsVariable)
+                slots.Add(slot);
+        }
+
+        return slots.ToImmutable();
     }
 
     static readonly Binder parameterBinder = new([new VariablePattern(0)], 1);

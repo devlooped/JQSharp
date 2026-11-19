@@ -419,6 +419,25 @@ Examples: `[(1,2) + (10,20)]` → `[11,12,21,22]`; `[{a:(1,2), b:(3,4)}]` → `[
 - Parameters are bound from left to right, so a later parameter shadows an earlier one of the same name: `def f(a; a): a; f(1; 2)` → `2`; `def f(a; $a): [a, $a]; f(1; 2)` → `[2,2]`; `def f($a; a): [a, $a]; f(1; 2)` → `[2,1]`.
 - Builtins are resolved like user functions, after them; a user definition of a builtin's name and arity shadows it.
 
+**Single expressions.** An expression is *single* when the rules below say that it yields at most one output, whatever its input and its environment. The rules look at the text of the program only: `1, empty` yields one output and is not single. A single call ends when it has given its output, which is what the call depth of §11 counts.
+
+| Expression | Single |
+| --- | --- |
+| `.`, a literal, `$x`, `$__loc__`, `$ENV`, `@format`, `break $x` | always |
+| `[…]` | always, whatever it contains |
+| `a \| b`, `a op b`, `a and b`, `a or b`, `a // b`, `-a`, `T[e]`, `T[e1:e2]`, `{…}`, an interpolated string, `if`, `try` and `?`, `label $x \| B` | when every operand is: the keys and values of the object, the interpolations of the string, the condition and every branch, the body and the handler |
+| `S as P \| B`, with any number of `?//` alternatives | when `S`, the key expressions of the patterns and `B` are |
+| `reduce S as P (INIT; UPDATE)` | when `INIT` is |
+| `T[]`, `a, b`, `foreach` | never |
+| a call of a closure parameter | never |
+| a call of a native with value arguments (§9.1) | when every argument is |
+| a call of a native that takes closures (§9.1) | `empty`, `halt`, `halt_error(c)`, `last(f)`: always; `getpath(p)`, `until(c; u)`: when their arguments are; the others never |
+| a call `f(a1; …; an)` of a function defined in jqlite (the program's, a module's, the prelude's) | when `f` is single and the argument of each of its `$` parameters is |
+
+A function is single when its body is single, its `$` parameters being variables there (the binding of §3.3 is not counted). Inside that body a call of the function itself is taken as single: if the body is then single, the function is; if not, the function is not single and neither are those calls. Seen from the body of a definition nested in it, a function that is still being defined is not single.
+
+Examples: `def fib: if . < 2 then . else (. - 1 | fib) + (. - 2 | fib) end;` is single. `def r: ., (.[]? | r);` is not. With `def f($a): $a + 1;`, `f(1)` is single and `f(1, 2)` is not. With `def f(g): g + 1;`, no call of `f` is single, and with `def f(g): [g];` every call is. In `def f: def g: f; g;` neither `g` nor `f` is single.
+
 ### 7.8 reduce
 
 `reduce SRC as P (INIT; UPDATE)`: for each output `s0` of `INIT` (on the input), a separate reduction: the state starts as `s0`; for each output `v` of `SRC` (on the input), bound by `P` (patterns as in §7.5), the state becomes the **last** output of `UPDATE` applied to the state, or `null` if `UPDATE` produced none. The final state is output.
@@ -545,7 +564,7 @@ So:
 
 ### 9.1 Conventions
 
-- Each builtin is identified by `name/arity`. **N** = native (implemented in the host language, listed in the native table of the port); **P** = prelude (defined in jqlite; the definition given here goes to `spec/prelude.jq` as is: first the two definitions of §8.3, then those of §9 in the order of this section). A port MAY implement a prelude builtin natively for speed if the results, the errors and the path behavior are identical.
+- Each builtin is identified by `name/arity`. **N** = native (implemented in the host language, listed in the native table of the port); **P** = prelude (defined in jqlite; the definition given here goes to `spec/prelude.jq` as is: first the two definitions of §8.3, then those of §9 in the order of this section). A port MAY implement a prelude builtin natively for speed if the results, the errors and the path behavior are identical, and its calls are single (§7.7) exactly when those of the definition are.
 - Names starting with `_` are internal: callable, never listed by `builtins`.
 - In the tables, `\|` is the character `|` (Markdown escaping); `spec/prelude.jq` contains the definitions without it.
 - Natives receive their arguments as closures. Unless an entry says otherwise, a native with value arguments evaluates each argument on the input and calls itself once per combination (§6.3: first argument fastest).
@@ -558,7 +577,7 @@ So:
 | --- | --- | --- | --- |
 | `empty/0` | N | no output | |
 | `error/0` | N | raise `Error(.)` | |
-| `error/1` | P | `def error(msg): msg \| error;` | |
+| `error/1` | P | `def error($msg): $msg \| error;` | |
 | `not/0` | P | `def not: if . then false else true end;` | |
 | `type/0` | N | `"null"`, `"boolean"`, `"number"`, `"string"`, `"array"`, `"object"` | |
 | `length/0` | N | null → 0; number → absolute value; string → code points; array → elements; object → keys | boolean: `<T> (<D>) has no length` |
@@ -572,7 +591,7 @@ So:
 | `recurse/1` | P | `def recurse(f): def r: ., (f \| r); r;` | |
 | `recurse/2` | P | `def recurse(f; cond): def r: ., (f \| select(cond) \| r); r;` | |
 | `recurse/0` | P | `def recurse: recurse(.[]?);` | |
-| `isempty/1` | P | `def isempty(g): label $go \| (g \| false, break $go), true;` | |
+| `isempty/1` | P | `def isempty(g): [limit(1; g \| null)] == [];` | |
 | `first/1` | P | `def first(f): label $out \| (f \| ., break $out);` | |
 | `first/0` | P | `def first: .[0];` | |
 | `last/0` | P | `def last: .[-1];` | |
@@ -1177,7 +1196,9 @@ All runtime errors, including `depth`, are ordinary `Error` signals: `try` catch
 | String repetition result | 2^31 − 1 UTF-8 bytes | error `Repeat string result too long` |
 | Regex repetition count | 1000 | invalid regex |
 
-- There are no tail calls: every call of a jqlite function counts, however it is called. Natives marked *loop* in §9 do not count their iterations. In the push model a call stays active while its outputs are consumed downstream, so the depth counts the calls nested along the current output (`def f: ., (. + 1 | f)` grows the depth with each output). Programs whose result depends on the exact depth at which the limit triggers are not portable; the corpus uses depths far from it.
+- There are no tail calls: every call of a jqlite function counts while it is active, however it is called. Natives marked *loop* in §9 do not count their iterations.
+- A single call (§7.7) is active until it has given its output, or ended without one: the output is consumed after the call. The depth of a recursion made of single calls is therefore the depth of the recursion: `def fib: if . < 2 then . else (. - 1 | fib) + (. - 2 | fib) end; 25 | fib` is 25 calls deep. Any other call stays active while its outputs are consumed downstream, as in the push model, so there the depth counts the calls nested along the current output: `def f: ., (. + 1 | f)` grows the depth with each output, and two such calls joined by an operator nest (`def g: if . < 2 then ., empty else (. - 1 | g) + (. - 2 | g) end; 15 | g` exceeds the default limit).
+- Programs whose result depends on the exact depth at which the limit triggers are not portable; the corpus uses depths far from it.
 - `MaxDepth` is the only limit on recursion a program can observe: up to it, a port MUST NOT fail because its host stack is short (it grows or replaces the stack, or does not recurse on the host stack); past it, the error is always `Maximum call depth exceeded`, never a host crash.
 - No operation may fail by exhausting the host stack for values or programs within these limits: natives that walk values (equality, ordering, `tojson`, `contains`, the reader) iterate or are written so that 10000 levels work.
 - `range`, `repeat`, `limit` and friends are lazy and have no length limit.
@@ -1219,7 +1240,7 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 | Regex `\v` | U+000B | the letter `v` (`"v" \| test("\\v")` → `true`, `"\u000b" \| test("\\v")` → `false`) | the escape every other engine has |
 | Regex empty matches | the search moves one code point after an empty match: `"é😀é😀b" \| [match(""; "g")] \| length` → `6` | moves one UTF-8 byte, reporting repeated offsets: `14` (offsets `[0,1,1,2,2,2,2,…]`) | offsets are code points everywhere else |
 | Regex `l` flag | accepted, no effect | longest match | no common engine support |
-| Recursion | depth limit (§11), no tail calls | grows the heap, tail calls optimized | host stacks differ (Python 1000 frames) |
+| Recursion | depth limit (§11), no tail calls; a call that is not single (§7.7) stays in the depth while its outputs are consumed | grows the heap, tail calls optimized | host stacks differ (Python 1000 frames) |
 | Special functions | `erf`, `erfc`, `tgamma`, `lgamma`, `gamma`, `lgamma_r`, `j0`, `j1`, `jn`, `y0`, `y1`, `yn`, `exp2`, `exp10`, `expm1`, `log1p` by the formulas of §9.8 | libm | JavaScript, Java, Rust lack some; .NET's `expm1`/`log1p` are inaccurate near 0 |
 | Math edge cases | `fmin`/`fmax` of `0` and `-0` give the first argument; `ldexp`/`scalbln` with a NaN exponent give NaN, with an infinite or huge one the limit (`ldexp(1; 1e10)` → +Infinity); `frexp` of ±Infinity/NaN has exponent 0; `copysign` with a NaN `y` gives `\|x\|`; `jn`/`yn` with `\|n\| ≥ 2^31` give NaN | libm and C casts: `fmin` gives `-0` and `fmax` `0` for both orders; the exponent is cast to a C `int` (`ldexp(1; nan)`, `ldexp(1; infinite)`, `ldexp(1; 1e10)` → `0`); `frexp` exponent −1 (Windows); `copysign(1; -nan)` → `-1` (the sign bit of the NaN); the order of `jn`/`yn` is cast to a C `int` | exact and the same in every language; JavaScript cannot tell the sign of a NaN |
 | NaN ordering | `compare` treats NaNs as equal and below all numbers: `[nan < nan, nan <= nan, nan > nan, nan >= nan]` → `[false,true,false,true]`; `unique`/`group_by` merge NaNs | `[true,true,false,false]` | a consistent total order sorts identically everywhere |

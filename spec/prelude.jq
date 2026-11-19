@@ -13,7 +13,7 @@ def _modify(paths; update):
   | . as [$x, $del] | $x | delpaths($del);
 
 # §9.2 Core
-def error(msg): msg | error;
+def error($msg): $msg | error;
 def not: if . then false else true end;
 def env: $ENV;
 def halt_error: halt_error(5);
@@ -21,7 +21,7 @@ def select(f): if f then . else empty end;
 def recurse(f): def r: ., (f | r); r;
 def recurse(f; cond): def r: ., (f | select(cond) | r); r;
 def recurse: recurse(.[]?);
-def isempty(g): label $go | (g | false, break $go), true;
+def isempty(g): [limit(1; g | null)] == [];
 def first(f): label $out | (f | ., break $out);
 def first: .[0];
 def last: .[-1];

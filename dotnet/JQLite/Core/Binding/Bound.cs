@@ -20,9 +20,10 @@ namespace JQLite.Core.Binding;
 // Host variables are the one late-bound name (spec §7.5): each has an index in
 // BoundProgram.HostVariables, so the host's values can be looked up once per evaluation.
 //
-// Every node also says whether it yields at most one output (AtMostOne), computed from its
-// children when it is built: the interpreter evaluates such nodes directly to a value, without
-// callbacks (Interpreter.EvalOne).
+// Every node also says whether it yields at most one output (AtMostOne: the single expressions of
+// spec §7.7), computed from its children when it is built: the interpreter evaluates such nodes
+// directly to a value, without callbacks (Interpreter.EvalOne). A call is single when its function
+// is; the resolver knows that of a function still being defined by assuming it (Resolver.Call).
 
 enum NodeKind
 {
@@ -72,6 +73,18 @@ abstract record Node(NodeKind Kind, bool AtMostOne)
     }
 
     protected static bool One(Node? node) => node is null || node.AtMostOne;
+
+    /// <summary>Whether the arguments in <paramref name="slots"/> are all single: what makes a call single (spec §7.7).</summary>
+    public static bool All(ImmutableArray<int> slots, ImmutableArray<Node> arguments)
+    {
+        foreach (var slot in slots)
+        {
+            if (!arguments[slot].AtMostOne)
+                return false;
+        }
+
+        return true;
+    }
 }
 
 sealed record Identity() : Node(NodeKind.Identity, true);
@@ -98,14 +111,17 @@ sealed record HostVariable(string Name, int Index) : Node(NodeKind.HostVariable,
 /// <summary><c>$ENV</c> where no binding shadows it.</summary>
 sealed record EnvVariable() : Node(NodeKind.EnvVariable, true);
 
-/// <summary>A call of <see cref="BoundProgram.Functions"/>[<see cref="Function"/>], defined <see cref="Hops"/> frames out.</summary>
-sealed record CallFunction(int Function, int Hops, ImmutableArray<Node> Arguments) : Node(NodeKind.CallFunction, false);
+/// <summary>
+/// A call of <see cref="BoundProgram.Functions"/>[<see cref="Function"/>], defined <see cref="Hops"/> frames out.
+/// <see cref="Single"/>: the function is single and the argument of each of its <c>$</c> parameters is (spec §7.7).
+/// </summary>
+sealed record CallFunction(int Function, int Hops, ImmutableArray<Node> Arguments, bool Single) : Node(NodeKind.CallFunction, Single);
 
 /// <summary>A call of a closure parameter: slot <see cref="Slot"/> of the call frame <see cref="Hops"/> frames out.</summary>
 sealed record CallParameter(int Hops, int Slot) : Node(NodeKind.CallParameter, false);
 
 /// <summary>A call of a native; the arguments are closures over the caller's environment.</summary>
-sealed record CallNative(Native Native, ImmutableArray<Node> Arguments) : Node(NodeKind.CallNative, !Native.TakesClosures && All(Arguments));
+sealed record CallNative(Native Native, ImmutableArray<Node> Arguments) : Node(NodeKind.CallNative, Native.SingleWhen is { } slots && All(slots, Arguments));
 
 sealed record Pipe(Node Left, Node Right) : Node(NodeKind.Pipe, Left.AtMostOne && Right.AtMostOne);
 
@@ -226,8 +242,12 @@ sealed record ObjectPattern(ImmutableArray<PatternEntry> Entries) : Pattern(Patt
 /// </summary>
 sealed record PatternEntry(Node Key, int Slot, Pattern? Value);
 
-/// <summary>A jqlite-defined function (user or prelude). Its body runs with its parameters' frame pushed when <see cref="Arity"/> &gt; 0.</summary>
-sealed record Function(string Name, int Arity, Node Body)
+/// <summary>
+/// A jqlite-defined function (user or prelude). Its body runs with its parameters' frame pushed when <see cref="Arity"/> &gt; 0.
+/// <see cref="Single"/>: the body yields at most one output for each binding of the <c>$</c> parameters,
+/// whose slots are <see cref="ValueParameters"/> (spec §7.7).
+/// </summary>
+sealed record Function(string Name, int Arity, Node Body, bool Single, ImmutableArray<int> ValueParameters)
 {
     public override string ToString() => $"{Name}/{Arity}";
 }

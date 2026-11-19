@@ -32,6 +32,13 @@ sealed record Native(string Name, int Arity, NativeGroup Group, int Index, bool 
     /// </summary>
     public bool OverridesPrelude { get; init; }
 
+    /// <summary>
+    /// The arguments that must be single for a call to be single (spec §7.7), or null when a call
+    /// never is. A native with value arguments gives one output per combination of them: all of
+    /// them. A native that takes closures says it in <see cref="Natives"/>.
+    /// </summary>
+    public ImmutableArray<int>? SingleWhen { get; init; }
+
     public override string ToString() => $"{Name}/{Arity}";
 }
 
@@ -41,6 +48,15 @@ sealed record Native(string Name, int Arity, NativeGroup Group, int Index, bool 
 /// </summary>
 static class Natives
 {
+    // §7.7: the natives that take closures and yet give at most one output, when these arguments
+    // are single (none: always). The two overrides are single when their prelude definitions are.
+    // Before All: static fields are set in this order.
+    static readonly (string Signature, int[] Arguments)[] singles =
+    [
+        ("empty/0", []), ("halt/0", []), ("halt_error/1", []), ("last/1", []), ("getpath/1", [0]), ("until/2", [0, 1]),
+        ("_modify/2", []), ("_assign/2", [1]),
+    ];
+
     public static readonly ImmutableArray<Native> All = WithOverrides(["_modify/2", "_assign/2"], Build(
     [
         // §9.2 Core
@@ -93,7 +109,7 @@ static class Natives
         foreach (var signature in overrides)
         {
             var slash = signature.IndexOf('/');
-            all.Add(new Native(signature[..slash], int.Parse(signature[(slash + 1)..]), NativeGroup.Core, all.Count, TakesClosures: true) { OverridesPrelude = true });
+            all.Add(new Native(signature[..slash], int.Parse(signature[(slash + 1)..]), NativeGroup.Core, all.Count, TakesClosures: true) { OverridesPrelude = true, SingleWhen = SingleWhen(signature, true) });
         }
 
         return all.ToImmutable();
@@ -113,8 +129,27 @@ static class Natives
         {
             var slash = signature.IndexOf('/');
             var takesClosures = Array.IndexOf(closures, signature) >= 0;
-            natives.Add(new Native(signature[..slash], int.Parse(signature[(slash + 1)..]), group, natives.Count, takesClosures));
+            natives.Add(new Native(signature[..slash], int.Parse(signature[(slash + 1)..]), group, natives.Count, takesClosures) { SingleWhen = SingleWhen(signature, takesClosures) });
         }
+    }
+
+    static ImmutableArray<int>? SingleWhen(string signature, bool takesClosures)
+    {
+        if (takesClosures)
+        {
+            foreach (var single in singles)
+            {
+                if (single.Signature == signature)
+                    return [.. single.Arguments];
+            }
+
+            return null;
+        }
+
+        var all = ImmutableArray.CreateBuilder<int>();
+        for (var slot = 0; slot < int.Parse(signature[(signature.IndexOf('/') + 1)..]); slot++)
+            all.Add(slot);
+        return all.ToImmutable();
     }
 
     static Dictionary<string, Native> Index(ImmutableArray<Native> natives)
