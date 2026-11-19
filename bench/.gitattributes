@@ -1,0 +1,2 @@
+# Byte-exact: the runners compare their outputs with the .expected files.
+cases/** -text
