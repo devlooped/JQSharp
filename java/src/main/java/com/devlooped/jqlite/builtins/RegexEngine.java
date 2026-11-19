@@ -1,554 +1,443 @@
 package com.devlooped.jqlite.builtins;
 
-import java.util.ArrayList;
+import com.devlooped.jqlite.builtins.RegexSyntax.Op;
+import com.devlooped.jqlite.builtins.RegexSyntax.Options;
+import com.devlooped.jqlite.builtins.RegexSyntax.Translation;
 import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The regex engine of §9.10: compiles a pattern that {@link RegexSyntax} translated and finds the
- * next match from a position.
+ * The engine of §9.10: compiles a pattern through {@link RegexSyntax} and finds the next match from
+ * a position. It is portable code, no host regex engine: none reads the flavor with one meaning
+ * (docs/porting.md §3.3).
  *
- * <p>Java: the port does not use {@code java.util.regex}, a backtracking engine that recurses once
- * per repetition of a group on the caller's thread, so that {@code ("ab" * 20000) | test("^(a|b)*$")}
- * exhausts the host stack (spec §11 forbids that). The dialect has no backreferences and no
- * lookaround (its {@code \b} and {@code \B} are conditions on one position), so this file is a small
- * linear matcher instead: the pattern compiles to a Thompson automaton, run by a Pike VM over the
- * code points of the input, with the threads in priority order so that the match and its groups are
- * those of a backtracking engine (leftmost, then the first alternative, greedy or lazy repetition).
- * Time is O(input × pattern), memory O(pattern), and nothing recurses: the pattern is read with an
- * explicit stack of groups, and the closure over the empty transitions with an explicit stack of
- * states. Offsets are UTF-16 units of the Java string; the input is walked by code point, so a match
- * never splits a surrogate pair. A port whose host engine is linear (Go, Rust) or does not recurse
- * per repetition plugs it in here instead.
+ * <p>The matcher reads the input once, from the start position on, and follows every way the
+ * program can match at the same time (a Pike machine): a thread is an instruction that waits for a
+ * code point, with the captures of the way that led to it. The threads are kept in the order a
+ * backtracking matcher would try them (a greedy quantifier takes all it can first, a lazy one as
+ * little, the left alternative first), and a state reached a second time at the same position is
+ * dropped: the first way to it has priority and the same future. So the time is the length of the
+ * input times the size of the program, and the memory depends on the program alone. The
+ * translation bounds the program (§11), so nothing is refused here: within those limits a program
+ * has at most 50,000 instructions, a hundred levels and 2,002 capture slots per thread. A search for
+ * the leftmost match does not start again at each position: a new thread starts at each position,
+ * behind the ones already running, until a match is found. Nothing recurses.
  *
- * <p>The syntax read is the one RegexSyntax writes, nothing more: {@code \x{H}}, classes
- * {@code [..]} and {@code [^..]} of {@code \x{H}} and ranges, {@code (}, {@code (?:}, {@code )},
- * {@code |}, the quantifiers {@code * + ? {n} {n,} {n,m}} and their lazy forms, {@code ^},
- * {@code \z}, {@code \b}, {@code \B}. The limits of a pattern are RegexSyntax's too (§11): within
- * them the automaton has at most a few states per unit of the pattern's size, so nothing is
- * refused here. Compiled patterns are cached per process in a thread-safe map that is emptied
- * when it reaches {@link #CACHE_LIMIT} entries.
+ * <p>A loop whose body can match nothing ends after an iteration that matched nothing
+ * ({@link Op#MARK} and {@link Op#EMPTY_EXIT}). Whether an iteration has matched something yet
+ * belongs to the state of a thread, as its level: of the loops with a mark around its instruction,
+ * how many have, counted from the outermost (if an outer iteration has matched nothing, the inner
+ * ones it contains have not either).
+ *
+ * <p>The input is read by code point: a match never splits a surrogate pair, and the positions are
+ * UTF-16 indices. Compiled programs are immutable and cached per process in a thread-safe map that
+ * is emptied when it reaches {@link #CACHE_LIMIT} entries; the memory of a search is a
+ * {@link RegexMatcher} of its own.
  */
 final class RegexEngine {
     private static final int CACHE_LIMIT = 256;
 
-    private static final ConcurrentHashMap<String, HostPattern> CACHE = new ConcurrentHashMap<>();
-
-    // The operations of the automaton.
-    private static final int CHAR = 0;      // a = class index: consume one code point of the class
-    private static final int SPLIT = 1;     // a, b = next states, a preferred
-    private static final int JUMP = 2;      // a = next state
-    private static final int SAVE = 3;      // a = slot
-    private static final int BEGIN = 4;     // the start of the input
-    private static final int END = 5;       // the end of the input
-    private static final int BOUNDARY = 6;  // an ASCII word boundary
-    private static final int INSIDE = 7;    // not an ASCII word boundary
-    private static final int MATCH = 8;
+    private static final ConcurrentHashMap<String, RegexProgram> CACHE = new ConcurrentHashMap<>();
 
     private RegexEngine() {
     }
 
-    /** A compiled pattern: the automaton (op, a, b per state), its classes, and its number of groups. */
-    static final class HostPattern {
-        final int[] code;
-        final int[][] classes;
-        final boolean[] negated;
-        final int groups;
-
-        HostPattern(int[] code, int[][] classes, boolean[] negated, int groups) {
-            this.code = code;
-            this.classes = classes;
-            this.negated = negated;
-            this.groups = groups;
+    /** The program of {@code pattern} under {@code options}, or Java null with why the pattern is not of the flavor or beyond its limits in {@code reason[0]}. */
+    static RegexProgram tryCompile(String pattern, Options options, String[] reason) {
+        String key = (options.extended() ? "x" : "-") + (options.dotAll() ? "m" : "-") + (options.ignoreCase() ? "i" : "-") + pattern;
+        RegexProgram program = CACHE.get(key);
+        if (program != null) {
+            return program;
         }
-    }
-
-    /** A compiled pattern applied to one input, with the scratch space of the search. */
-    static final class HostMatcher {
-        final HostPattern pattern;
-        final String input;
-        int[] current;
-        int[][] currentSlots;
-        int[] next;
-        int[][] nextSlots;
-        final int[] seen;
-        int generation;
-        final int[] stack;
-        final int[][] stackSlots;
-
-        HostMatcher(HostPattern pattern, String input) {
-            this.pattern = pattern;
-            this.input = input;
-            int states = pattern.code.length / 3;
-            current = new int[states];
-            currentSlots = new int[states][];
-            next = new int[states];
-            nextSlots = new int[states][];
-            seen = new int[states];
-            stack = new int[states + 1];
-            stackSlots = new int[states + 1][];
-        }
-    }
-
-    /** A compiled pattern, or Java null with the reason in {@code reason[0]}. */
-    static HostPattern tryCompile(String pattern, String[] reason) {
-        HostPattern compiled = CACHE.get(pattern);
-        if (compiled != null) {
-            return compiled;
-        }
-
-        compiled = new Compiler(pattern).compile(reason);
-        if (compiled == null) {
+        Translation translation = RegexSyntax.tryTranslate(pattern, options, reason);
+        if (translation == null) {
             return null;
         }
+        program = new RegexProgram(translation);
         if (CACHE.size() >= CACHE_LIMIT) {
             CACHE.clear();
         }
-        CACHE.put(pattern, compiled);
-        return compiled;
+        CACHE.put(key, program);
+        return program;
     }
 
-    /** The pattern ready to search {@code input}. */
-    static HostMatcher open(HostPattern compiled, String input) {
-        return new HostMatcher(compiled, input);
+    /** A translated pattern ready to run: immutable, shared by the searches of every thread. */
+    static final class RegexProgram {
+        /** One name (or null) per capturing group. */
+        final String[] groups;
+
+        /** The capture slots of a thread: 2 · (groups + 1). */
+        final int slots;
+
+        /** The states of the program: its instructions, each at every level it can have. */
+        final int states;
+
+        /** The instructions that read a code point. */
+        final int readers;
+
+        final Op[] ops;
+        final int[] a;
+        final int[] b;
+        final int[][] sets;
+
+        /** Per instruction: the loops with a mark around it. */
+        final int[] depth;
+
+        /** Per instruction: its first state (the one of level 0). */
+        final int[] base;
+
+        /** The UTF-16 unit a match must start with, or -1. */
+        final int literal;
+
+        /** Whether a match can only start at the start of the input. */
+        final boolean anchored;
+
+        RegexProgram(Translation translation) {
+            Op[] ops = translation.ops();
+            this.ops = ops;
+            a = translation.a();
+            b = translation.b();
+            sets = translation.sets();
+            groups = translation.groups();
+            slots = 2 * (translation.groups().length + 1);
+            depth = new int[ops.length];
+            base = new int[ops.length];
+            int level = 0;
+            int count = 0;
+            int reading = 0;
+            for (int pc = 0; pc < ops.length; pc++) {
+                depth[pc] = level;
+                base[pc] = count;
+                count += level + 1;
+                if (ops[pc] == Op.MARK) {
+                    level++;
+                } else if (ops[pc] == Op.EMPTY_EXIT) {
+                    level--;
+                } else if (isReader(ops[pc])) {
+                    reading++;
+                }
+            }
+
+            states = count;
+            readers = reading;
+            // The program starts with the instruction that stores the start of the match: what follows
+            // it is the first thing every match does.
+            literal = ops[1] == Op.CHAR && translation.a()[1] <= 0xFFFF ? translation.a()[1] : -1;
+            anchored = ops[1] == Op.BEGIN;
+        }
+    }
+
+    // Whether an instruction reads a code point: Char, Set, Any, AnyButLineFeed come first in Op.
+    static boolean isReader(Op op) {
+        return op.ordinal() <= Op.ANY_BUT_LINE_FEED.ordinal();
     }
 
     /**
-     * The first match starting at or after UTF-16 index {@code start} (anchors and word boundaries
-     * see the whole input). {@code spans} receives start and end of the match, then of each group
-     * (-1, -1 for a group that did not participate): 2 · (groups + 1) entries.
+     * The memory of the searches of one caller over one program: one mark per state, a stack of at
+     * most two entries per state, and two lists of threads of at most one thread per instruction that
+     * reads a code point. Made at the first search and used again by the next ones; never shared
+     * between threads.
      */
-    static boolean tryMatch(HostMatcher search, int start, int[] spans) {
-        HostPattern pattern = search.pattern;
-        String input = search.input;
-        int length = input.length();
-        int slots = 2 * (pattern.groups + 1);
-        int[] matched = null;
-        int count = 0;
-        int listGeneration = ++search.generation;
-        for (int at = start; ; ) {
-            // A thread that starts here, below every running one, until something matched.
-            if (matched == null) {
-                int[] seed = new int[slots];
-                Arrays.fill(seed, -1);
-                seed[0] = at;
-                count = close(search, search.current, search.currentSlots, count, 0, seed, at, listGeneration);
-            }
-            if (count == 0) {
-                if (matched != null || at >= length) {
-                    break;
-                }
-                at += Character.charCount(input.codePointAt(at));
-                listGeneration = ++search.generation;
-                continue;
-            }
+    static final class RegexMatcher {
+        private static final int[] NONE = new int[0];
 
-            int c = at < length ? input.codePointAt(at) : -1;
-            int nextAt = c < 0 ? at : at + Character.charCount(c);
-            int nextGeneration = ++search.generation;
-            int nextCount = 0;
-            for (int i = 0; i < count; i++) {
-                int state = search.current[i];
-                int op = pattern.code[3 * state];
-                if (op == MATCH) {
-                    // The threads below this one lose.
-                    matched = search.currentSlots[i].clone();
-                    matched[1] = at;
-                    break;
-                }
-                if (op == CHAR && c >= 0 && contains(pattern, pattern.code[3 * state + 1], c)) {
-                    nextCount = close(search, search.next, search.nextSlots, nextCount, state + 1, search.currentSlots[i], nextAt, nextGeneration);
-                }
-            }
+        private final RegexProgram program;
+        // Per state: the generation that reached it last. A generation is one position of one search.
+        private int[] seen = NONE;
+        private int generation;
+        // Pairs: an instruction and its level, still to follow; or -1 - slot and the value to put back.
+        private int[] stack = NONE;
+        // The captures of the thread being followed.
+        private int[] work = NONE;
+        private Threads current;
+        private Threads next;
 
-            int[] swap = search.current;
-            search.current = search.next;
-            search.next = swap;
-            int[][] swapSlots = search.currentSlots;
-            search.currentSlots = search.nextSlots;
-            search.nextSlots = swapSlots;
-            Arrays.fill(search.nextSlots, 0, count, null);
-            count = nextCount;
-            listGeneration = nextGeneration;
-            if (c < 0 || (count == 0 && matched != null)) {
-                break;
-            }
-            at = nextAt;
+        RegexMatcher(RegexProgram program) {
+            this.program = program;
         }
 
-        if (matched == null) {
-            return false;
+        RegexProgram program() {
+            return program;
         }
-        System.arraycopy(matched, 0, spans, 0, Math.min(spans.length, matched.length));
-        return true;
-    }
 
-    // Adds the state and every state its empty transitions reach, in priority order, to the list;
-    // the conditions are checked at position at. Returns the new count. No recursion: an explicit
-    // stack, the preferred branch first. generation marks the states already in this list.
-    private static int close(HostMatcher search, int[] list, int[][] listSlots, int count, int state, int[] slots, int at, int generation) {
-        HostPattern pattern = search.pattern;
-        int[] code = pattern.code;
-        int[] stack = search.stack;
-        int[][] stackSlots = search.stackSlots;
-        int[] seen = search.seen;
-        int top = 0;
-        stack[top] = state;
-        stackSlots[top++] = slots;
-        while (top > 0) {
-            int s = stack[--top];
-            int[] threadSlots = stackSlots[top];
-            stackSlots[top] = null;
-            while (seen[s] != generation) {
-                seen[s] = generation;
-                int op = code[3 * s];
-                if (op == SPLIT) {
-                    stack[top] = code[3 * s + 2];
-                    stackSlots[top++] = threadSlots;
-                    s = code[3 * s + 1];
-                } else if (op == JUMP) {
-                    s = code[3 * s + 1];
-                } else if (op == SAVE) {
-                    threadSlots = threadSlots.clone();
-                    threadSlots[code[3 * s + 1]] = at;
-                    s++;
-                } else if (op == BEGIN || op == END || op == BOUNDARY || op == INSIDE) {
-                    if (!holds(op, search.input, at)) {
+        /**
+         * The first match starting at or after UTF-16 index {@code start} (anchors and word boundaries
+         * see the whole input). {@code spans} receives start and end of the match, then of each group
+         * (-1, -1 for a group that did not participate): 2 · (groups + 1) entries. A shorter
+         * {@code spans} receives the first entries only; an empty one asks only whether there is a
+         * match.
+         */
+        boolean tryMatch(String input, int start, int[] spans) {
+            Op[] ops = program.ops;
+            int[] a = program.a;
+            int[][] sets = program.sets;
+            int[] depth = program.depth;
+            int length = input.length();
+            int width = Math.min(spans.length, program.slots);
+            if (seen.length == 0) {
+                seen = new int[program.states];
+                stack = new int[2 * program.states];
+                work = new int[program.slots];
+                int capacity = Math.min(8, program.readers + 1);
+                current = new Threads(capacity, program.slots);
+                next = new Threads(capacity, program.slots);
+            }
+
+            current.count = 0;
+            boolean matched = false;
+            int pos = start;
+            advance();
+            while (true) {
+                // The threads at pos are in current. Until a match is found, one more starts here,
+                // behind them: a match that starts earlier has priority.
+                if (!matched) {
+                    if (current.count == 0) {
+                        if (program.anchored && pos > 0) {
+                            return false;
+                        }
+                        if (program.literal >= 0) {
+                            int at = input.indexOf(program.literal, pos);
+                            if (at < 0) {
+                                return false;
+                            }
+                            if (at != pos) {
+                                pos = at;
+                                advance();
+                            }
+                        }
+                    }
+
+                    for (int slot = 0; slot < width; slot++) {
+                        work[slot] = -1;
+                    }
+                    if (follow(current, 0, 0, input, pos, width, spans)) {
+                        if (width == 0) {
+                            return true;
+                        }
+                        matched = true;
+                    }
+                }
+
+                if (pos >= length) {
+                    return matched;
+                }
+                int c = input.charAt(pos);
+                int size = 1;
+                if (Character.isHighSurrogate(input.charAt(pos)) && pos + 1 < length && Character.isLowSurrogate(input.charAt(pos + 1))) {
+                    c = Character.toCodePoint(input.charAt(pos), input.charAt(pos + 1));
+                    size = 2;
+                }
+
+                if (current.count == 0) {
+                    if (matched) {
+                        return true;
+                    }
+                    pos += size;
+                    advance();
+                    continue;
+                }
+
+                // Every thread reads the code point at pos: the ones that accept it go on after it.
+                advance();
+                next.count = 0;
+                for (int i = 0; i < current.count; i++) {
+                    int pc = current.pcs[i];
+                    Op op = ops[pc];
+                    if (op == Op.CHAR ? a[pc] != c : op == Op.SET ? !inSet(sets[a[pc]], c) : op == Op.ANY_BUT_LINE_FEED && c == '\n') {
+                        continue;
+                    }
+                    System.arraycopy(current.captures, i * program.slots, work, 0, width);
+                    // It has read a code point: every loop around it has matched something.
+                    if (follow(next, pc + 1, depth[pc + 1], input, pos + size, width, spans)) {
+                        if (width == 0) {
+                            return true;
+                        }
+                        // The threads behind this one have a lower priority than the match.
+                        matched = true;
                         break;
                     }
-                    s++;
-                } else {
-                    list[count] = s;
-                    listSlots[count++] = threadSlots;
-                    break;
                 }
-            }
-        }
-        return count;
-    }
 
-    private static boolean holds(int op, String input, int at) {
-        return switch (op) {
-            case BEGIN -> at == 0;
-            case END -> at == input.length();
-            default -> {
-                boolean before = at > 0 && isWord(input.charAt(at - 1));
-                boolean after = at < input.length() && isWord(input.charAt(at));
-                yield (before != after) == (op == BOUNDARY);
-            }
-        };
-    }
-
-    private static boolean isWord(char c) {
-        return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
-    }
-
-    private static boolean contains(HostPattern pattern, int index, int c) {
-        int[] ranges = pattern.classes[index];
-        int low = 0;
-        int high = ranges.length / 2 - 1;
-        boolean found = false;
-        while (low <= high) {
-            int middle = (low + high) >>> 1;
-            if (c < ranges[2 * middle]) {
-                high = middle - 1;
-            } else if (c > ranges[2 * middle + 1]) {
-                low = middle + 1;
-            } else {
-                found = true;
-                break;
-            }
-        }
-        return found != pattern.negated[index];
-    }
-
-    /**
-     * Reads the translated pattern into the automaton, without recursion: each open group is a frame
-     * holding its finished alternatives and the pieces of the current one. A piece is a fragment of
-     * code whose jumps are relative to the state that holds them, so pieces are concatenated,
-     * wrapped and repeated by copying.
-     */
-    private static final class Compiler {
-        private final String text;
-        private int pos;
-        private final List<int[]> classes = new ArrayList<>();
-        private final List<Boolean> negated = new ArrayList<>();
-        private int groups;
-        private String failure;
-
-        // A fragment: op, a, b per state; a and b of SPLIT and JUMP are relative.
-        private static final class Fragment {
-            int[] code = new int[24];
-            int size;
-
-            void add(int op, int a, int b) {
-                if (size + 3 > code.length) {
-                    code = Arrays.copyOf(code, code.length * 2);
-                }
-                code[size++] = op;
-                code[size++] = a;
-                code[size++] = b;
-            }
-
-            void append(Fragment other) {
-                if (size + other.size > code.length) {
-                    code = Arrays.copyOf(code, Math.max(code.length * 2, size + other.size));
-                }
-                System.arraycopy(other.code, 0, code, size, other.size);
-                size += other.size;
-            }
-
-            int states() {
-                return size / 3;
+                pos += size;
+                Threads swap = current;
+                current = next;
+                next = swap;
             }
         }
 
-        private static final class Frame {
-            final int capture;
-            final List<Fragment> alternatives = new ArrayList<>();
-            Fragment current = new Fragment();
-            // The current alternative's last piece, the one a quantifier applies to.
-            Fragment last;
-
-            Frame(int capture) {
-                this.capture = capture;
+        // The next position of the search: no state has been reached at it yet.
+        private void advance() {
+            if (generation == Integer.MAX_VALUE) {
+                Arrays.fill(seen, 0);
+                generation = 0;
             }
 
-            void flush() {
-                if (last != null) {
-                    current.append(last);
-                    last = null;
-                }
-            }
+            generation++;
         }
 
-        Compiler(String text) {
-            this.text = text;
-        }
-
-        HostPattern compile(String[] reason) {
-            List<Frame> frames = new ArrayList<>();
-            frames.add(new Frame(-1));
-            while (pos < text.length() && failure == null) {
-                Frame frame = frames.get(frames.size() - 1);
-                char c = text.charAt(pos);
-                switch (c) {
-                    case '(' -> {
-                        frame.flush();
-                        int capture = -1;
-                        if (text.startsWith("(?:", pos)) {
-                            pos += 3;
-                        } else {
-                            capture = ++groups;
-                            pos++;
+        // Follows a thread from an instruction at pos, with the captures in work, through the
+        // instructions that read nothing: each reading instruction it reaches first becomes a thread
+        // of threads, in priority order. True when it reached the end of the program: the match is
+        // then in spans, and what it had still to follow has a lower priority.
+        private boolean follow(Threads threads, int pc, int level, String input, int pos, int width, int[] spans) {
+            Op[] ops = program.ops;
+            int[] a = program.a;
+            int[] b = program.b;
+            int[] depth = program.depth;
+            int[] states = program.base;
+            int slots = program.slots;
+            int top = 0;
+            while (true) {
+                Op op = ops[pc];
+                // What an instruction that reads does next does not depend on the level.
+                int state = isReader(op) ? states[pc] : states[pc] + level;
+                boolean alive = seen[state] != generation;
+                if (alive) {
+                    seen[state] = generation;
+                    switch (op) {
+                        case CHAR, SET, ANY, ANY_BUT_LINE_FEED -> {
+                            int index = threads.count;
+                            if (index == threads.pcs.length) {
+                                threads.grow();
+                            }
+                            threads.pcs[index] = pc;
+                            System.arraycopy(work, 0, threads.captures, index * slots, width);
+                            threads.count = index + 1;
+                            alive = false;
                         }
-                        frames.add(new Frame(capture));
-                    }
-                    case ')' -> {
-                        pos++;
-                        frames.remove(frames.size() - 1);
-                        Fragment body = alternation(frame);
-                        if (frame.capture > 0) {
-                            Fragment group = new Fragment();
-                            group.add(SAVE, 2 * frame.capture, 0);
-                            group.append(body);
-                            group.add(SAVE, 2 * frame.capture + 1, 0);
-                            body = group;
+                        case SPLIT -> {
+                            stack[top++] = pc + b[pc];
+                            stack[top++] = level;
+                            pc += a[pc];
                         }
-                        Frame parent = frames.get(frames.size() - 1);
-                        parent.last = body;
+                        case JUMP -> pc += a[pc];
+                        case SAVE -> {
+                            int slot = a[pc];
+                            if (slot < width) {
+                                stack[top++] = -1 - slot;
+                                stack[top++] = work[slot];
+                                work[slot] = pos;
+                            }
+
+                            pc++;
+                        }
+                        case BEGIN -> {
+                            if (pos == 0) {
+                                pc++;
+                            } else {
+                                alive = false;
+                            }
+                        }
+                        case END -> {
+                            if (pos == input.length()) {
+                                pc++;
+                            } else {
+                                alive = false;
+                            }
+                        }
+                        case WORD_BOUNDARY, NOT_WORD_BOUNDARY -> {
+                            boolean boundary = (pos > 0 && isWord(input.charAt(pos - 1))) != (pos < input.length() && isWord(input.charAt(pos)));
+                            if (boundary == (op == Op.WORD_BOUNDARY)) {
+                                pc++;
+                            } else {
+                                alive = false;
+                            }
+                        }
+                        case MARK -> {
+                            // An iteration starts: it has matched nothing yet, so the level stays.
+                            pc++;
+                        }
+                        case EMPTY_EXIT -> {
+                            // The iteration of the innermost loop ends: it matched something if the level counts it.
+                            int inner = depth[pc];
+                            pc += level < inner ? b[pc] : 1;
+                            if (level == inner) {
+                                level = inner - 1;
+                            }
+                        }
+                        default -> {
+                            System.arraycopy(work, 0, spans, 0, width);
+                            return true;
+                        }
                     }
-                    case '|' -> {
-                        pos++;
-                        frame.flush();
-                        frame.alternatives.add(frame.current);
-                        frame.current = new Fragment();
+                }
+
+                if (alive) {
+                    continue;
+                }
+
+                // This way ended: back to the last one left aside, putting back the captures stored since.
+                while (true) {
+                    if (top == 0) {
+                        return false;
                     }
-                    case '*', '+', '?', '{' -> quantifier(frame);
-                    case '^' -> {
-                        pos++;
-                        frame.flush();
-                        frame.last = single(BEGIN, 0);
+                    int value = stack[--top];
+                    int entry = stack[--top];
+                    if (entry >= 0) {
+                        pc = entry;
+                        level = value;
+                        break;
                     }
-                    case '[' -> {
-                        frame.flush();
-                        frame.last = single(CHAR, readClass());
-                    }
-                    case '\\' -> {
-                        frame.flush();
-                        frame.last = escape();
-                    }
-                    default -> failure = "unexpected '" + c + "' in the translated pattern";
+
+                    work[-1 - entry] = value;
                 }
             }
+        }
 
-            if (failure == null && frames.size() != 1) {
-                failure = "missing close parenthesis";
-            }
-            if (failure != null) {
-                reason[0] = failure;
-                return null;
-            }
+        // The ASCII word characters of §9.10: a UTF-16 unit of a code point above U+FFFF is not one.
+        private static boolean isWord(char unit) {
+            return (unit >= '0' && unit <= '9') || (unit >= 'A' && unit <= 'Z') || (unit >= 'a' && unit <= 'z') || unit == '_';
+        }
 
-            Fragment body = alternation(frames.get(0));
-            Fragment program = new Fragment();
-            program.append(body);
-            program.add(MATCH, 0, 0);
-
-            // Relative jumps to absolute states.
-            int[] code = Arrays.copyOf(program.code, program.size);
-            for (int s = 0; s < code.length / 3; s++) {
-                int op = code[3 * s];
-                if (op == SPLIT) {
-                    code[3 * s + 1] += s;
-                    code[3 * s + 2] += s;
-                } else if (op == JUMP) {
-                    code[3 * s + 1] += s;
+        // Whether a code point is in a set: sorted pairs low, high.
+        private static boolean inSet(int[] ranges, int c) {
+            if (ranges.length <= 8) {
+                for (int i = 0; i < ranges.length; i += 2) {
+                    if (c < ranges[i]) {
+                        return false;
+                    }
+                    if (c <= ranges[i + 1]) {
+                        return true;
+                    }
                 }
-            }
-            boolean[] flags = new boolean[negated.size()];
-            for (int i = 0; i < flags.length; i++) {
-                flags[i] = negated.get(i);
-            }
-            return new HostPattern(code, classes.toArray(new int[0][]), flags, groups);
-        }
 
-        private static Fragment single(int op, int a) {
-            Fragment fragment = new Fragment();
-            fragment.add(op, a, 0);
-            return fragment;
-        }
+                return false;
+            }
 
-        // The alternatives of a finished frame, the first preferred.
-        private static Fragment alternation(Frame frame) {
-            frame.flush();
-            List<Fragment> all = frame.alternatives;
-            all.add(frame.current);
-            Fragment result = all.get(all.size() - 1);
-            for (int i = all.size() - 2; i >= 0; i--) {
-                Fragment first = all.get(i);
-                // SPLIT +1, +k; first; JUMP +rest+1; rest
-                Fragment combined = new Fragment();
-                combined.add(SPLIT, 1, first.states() + 2);
-                combined.append(first);
-                combined.add(JUMP, result.states() + 1, 0);
-                combined.append(result);
-                result = combined;
-            }
-            return result;
-        }
-
-        private Fragment escape() {
-            if (text.startsWith("\\x{", pos)) {
-                int end = text.indexOf('}', pos);
-                int c = Integer.parseInt(text.substring(pos + 3, end), 16);
-                pos = end + 1;
-                classes.add(new int[] {c, c});
-                negated.add(false);
-                return single(CHAR, classes.size() - 1);
-            }
-            char e = pos + 1 < text.length() ? text.charAt(pos + 1) : 0;
-            pos += 2;
-            return switch (e) {
-                case 'z' -> single(END, 0);
-                case 'b' -> single(BOUNDARY, 0);
-                case 'B' -> single(INSIDE, 0);
-                default -> {
-                    failure = "unexpected escape in the translated pattern";
-                    yield new Fragment();
-                }
-            };
-        }
-
-        // [..] or [^..] of \x{H} and \x{H}-\x{H}: the index of the class.
-        private int readClass() {
-            pos++;
-            boolean negate = pos < text.length() && text.charAt(pos) == '^';
-            if (negate) {
-                pos++;
-            }
-            List<int[]> ranges = new ArrayList<>();
-            while (pos < text.length() && text.charAt(pos) != ']') {
-                int low = codePoint();
-                int high = low;
-                if (pos < text.length() && text.charAt(pos) == '-') {
-                    pos++;
-                    high = codePoint();
-                }
-                ranges.add(new int[] {low, high});
-            }
-            pos++;
-            ranges.sort((x, y) -> Integer.compare(x[0], y[0]));
-            int[] flat = new int[ranges.size() * 2];
-            int n = 0;
-            for (int[] range : ranges) {
-                if (n > 0 && range[0] <= flat[n - 1] + 1) {
-                    flat[n - 1] = Math.max(flat[n - 1], range[1]);
+            int low = 0;
+            int high = ranges.length / 2 - 1;
+            while (low <= high) {
+                int middle = (low + high) >>> 1;
+                if (c < ranges[2 * middle]) {
+                    high = middle - 1;
+                } else if (c > ranges[2 * middle + 1]) {
+                    low = middle + 1;
                 } else {
-                    flat[n++] = range[0];
-                    flat[n++] = range[1];
+                    return true;
                 }
             }
-            classes.add(Arrays.copyOf(flat, n));
-            negated.add(negate);
-            return classes.size() - 1;
+
+            return false;
         }
 
-        private int codePoint() {
-            if (!text.startsWith("\\x{", pos)) {
-                failure = "unexpected class item in the translated pattern";
-                pos = text.length();
-                return 0;
-            }
-            int end = text.indexOf('}', pos);
-            int c = Integer.parseInt(text.substring(pos + 3, end), 16);
-            pos = end + 1;
-            return c;
-        }
+        // The threads at one position, in priority order: the instruction of each and its captures.
+        private static final class Threads {
+            private final int slots;
+            private int[] pcs;
+            private int[] captures;
+            private int count;
 
-        // * + ? {n} {n,} {n,m}, each maybe lazy, on the frame's last piece.
-        private void quantifier(Frame frame) {
-            int min;
-            int max;
-            char c = text.charAt(pos++);
-            if (c == '{') {
-                int end = text.indexOf('}', pos);
-                String body = text.substring(pos, end);
-                pos = end + 1;
-                int comma = body.indexOf(',');
-                min = Integer.parseInt(comma < 0 ? body : body.substring(0, comma));
-                max = comma < 0 ? min : comma == body.length() - 1 ? -1 : Integer.parseInt(body.substring(comma + 1));
-            } else {
-                min = c == '+' ? 1 : 0;
-                max = c == '?' ? 1 : -1;
+            Threads(int capacity, int slots) {
+                this.slots = slots;
+                pcs = new int[capacity];
+                captures = new int[capacity * slots];
             }
-            boolean greedy = true;
-            if (pos < text.length() && text.charAt(pos) == '?') {
-                greedy = false;
-                pos++;
+
+            // Room for one more thread: there are never more than the program has reading instructions.
+            void grow() {
+                pcs = Arrays.copyOf(pcs, pcs.length * 2);
+                captures = Arrays.copyOf(captures, pcs.length * slots);
             }
-            Fragment atom = frame.last == null ? new Fragment() : frame.last;
-            Fragment result = new Fragment();
-            for (int i = 0; i < min; i++) {
-                result.append(atom);
-            }
-            if (max < 0) {
-                // L: SPLIT body, out; body; JUMP L
-                result.add(SPLIT, greedy ? 1 : atom.states() + 2, greedy ? atom.states() + 2 : 1);
-                result.append(atom);
-                result.add(JUMP, -(atom.states() + 1), 0);
-            } else {
-                // (atom (atom (…)?)?)?: each optional copy jumps to the end when it is skipped.
-                int optional = max - min;
-                int each = atom.states() + 1;
-                for (int i = 0; i < optional; i++) {
-                    int toEnd = (optional - i) * each;
-                    result.add(SPLIT, greedy ? 1 : toEnd, greedy ? toEnd : 1);
-                    result.append(atom);
-                }
-            }
-            frame.last = result;
         }
     }
 }

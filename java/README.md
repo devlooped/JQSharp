@@ -29,6 +29,7 @@ The tests read the corpus from `../spec/tests` (not a copy):
 | --- | --- |
 | `ConformanceTests` | every case of `spec/tests/*.test`, twice: through `Jq.parse`/`JqExpression`, and through the core without native overrides; `localtime.test` with a clock at UTC+02:00, `modules.test` over `spec/tests/modules/` |
 | `core/values`, `core/syntax`, `core/binding`, `core/runtime` | the unit tests of `dotnet/Tests/Core/<Layer>/`, ported with the code they cover (catalogue against §9, limits on 1 MB and 256 KB threads, bound programs printed as hops and slots, native `_modify`/`_assign` against the prelude) |
+| `builtins` | the regex engine tests of `dotnet/Tests/Core/Builtins/`, in the engine's package for its package-private types: random patterns against a plain backtracking matcher of the same programs, linear time (on a 256 KB thread), memory, the largest patterns of spec 11 |
 | `Jq*Tests` | the host boundary: options, exceptions, streaming, variables, resolvers, `MaxDepth`, 32 threads on one expression |
 | `PortabilityTests` | the portability rules of `AGENTS.md` on the core packages: an allow-list of JDK imports per file, and rules on the code (streams, reflection, regex, dates, culture, process, threads, synchronization, throw, catch) with the allowed exceptions by file |
 
@@ -86,13 +87,11 @@ variable names (`$x`, `ENV`, `a-b`) are an `IllegalArgumentException` before eva
   evaluations continue on threads of 64 MB stacks (see Hops below); parsing continues on a fresh
   stack every 128 levels of nesting; values of any depth are read, written, compared and merged
   with explicit stacks.
-- **Regular expressions in linear time, without recursion.** `java.util.regex` recurses once per
-  repetition of a group on the caller's thread (`("ab" * 20000) | test("^(a|b)*$")` overflows
-  it), so the port does not use it: `builtins/RegexEngine.java` is a small Pike VM (a Thompson
-  automaton run over the code points, threads in priority order, so the matches and groups are those
-  of a backtracking engine). Time is O(input × pattern), memory O(pattern); 2,000,000 characters
-  match on a 256 KB thread. The limits of a pattern are the translator's (spec §11), so the engine
-  refuses nothing: within them an automaton has a few states per unit of the pattern's size.
+- **Regular expressions in linear time, without recursion.** `builtins/RegexEngine.java` is the
+  reference's engine (guide §3.3), not `java.util.regex`: time is O(input × pattern), memory
+  O(pattern), and 4,000,000 characters match on a 256 KB thread. The limits of a pattern (spec §11)
+  are the translator's (`RegexSyntax.Measure`), so the engine refuses nothing within them; past them
+  the error is `Regex failure: the pattern is too large`, which `try` catches.
 - **`MaxDepth`** is between 1 and `JqOptions.MAX_DEPTH_LIMIT` (100,000); `withMaxDepth` rejects
   other values. A level of recursion takes about 2 KB of thread stack, up to 4 KB, committed as it is
   used: 100,000 levels may take up to 400 MB.
@@ -135,7 +134,7 @@ Java's case (`TryAdd` is `tryAdd`, enum members are upper case). Files without a
 
 | Difference | Why |
 | --- | --- |
-| A C# file holding several public types is one Java file with nested types (`Ast`, `Bound`, `Modules`, `Evaluation`, `Env.Closure`, `Signal.SignalKind`, `Native.NativeGroup`), or a file of its own for the few the whole code names (`JqKind`, `TokenKind`, `SyntaxMessages`, `BindingMessages`, `Native`, `Emit`) | Java allows one public top-level type per file |
+| A C# file holding several public types is one Java file with nested types (`Ast`, `Bound`, `Modules`, `Evaluation`, `Env.Closure`, `Signal.SignalKind`, `Native.NativeGroup`, `RegexEngine.RegexProgram`, `RegexEngine.RegexMatcher`), or a file of its own for the few the whole code names (`JqKind`, `TokenKind`, `SyntaxMessages`, `BindingMessages`, `Native`, `Emit`) | Java allows one public top-level type per file |
 | `JqValue` is a sealed interface; `JqArray` and `JqObject` are values themselves, numbers and strings are records | the guide's §2.1 shape, without a wrapper per container |
 | A fallible operation returns `Result`: the value itself on success (every `JqValue` is a `Result`), `Result.Err` on failure; `tryParseNumber` returns a `Double` or null, `trySliceRange` writes its range to an `int[]` and returns the error or null | Java has no `out` parameters; success allocates nothing |
 | `EvalOne` writes its output to a mutable `One` holder (`has`, `value`, `at`, plus `frame` for `BindOne` and `key` for `EvalEntryOne`) | the guide's §2.3 for Java |
@@ -144,7 +143,6 @@ Java's case (`TryAdd` is `tryAdd`, enum members are upper case). Files without a
 | `StackGuard.hasStack(budget)`: the interpreter counts the guarded steps active on the current thread (a `Budget` per thread), 120 on the host's threads (fits a 256 KB stack under every JIT tier) and 16,384 on its own 64 MB threads, taken from a cached pool | the JVM tells neither the stack size of a thread nor what is left of it (.NET has `TryEnsureSufficientExecutionStack`) |
 | `BoundProgram` is a class with one volatile flag (`startsDeep`, `markDeep`): a program whose evaluation hopped 4 times or more starts its later evaluations on a fresh stack | a recursion applied to each element of a stream would otherwise pay two thread hand-offs per element |
 | `Parser` continues on a thread with a stack of its own every 128 levels of nesting | a C1-compiled frame of the parser is up to 4 times larger than the reference's: 1,000 levels took up to 850 KB, too close to a 1 MB thread stack |
-| `RegexEngine` is a linear matcher of the port's own (a Pike VM), not the host's engine; `RegexSyntax` writes code points (`\x{H}`) and classes directly, astral ranges included, and keeps `\b` `\B` (the engine's are ASCII), so `Translation` has no `lookaround` | `java.util.regex` recurses once per repetition of a group on the caller's thread and overflows it on long inputs (spec §11) |
 | `ValueText.formatNumber` corrects Java's two-digit results to one digit when one reads back (`Double.toString(4.9E-324)`) | JDK 19+ `Double.toString` picks the closest of the shortest decimals of at least two digits |
 | `MathExtra` adds `pow` (C99's `pow(1, y)` and `pow(-1, ±Infinity)` are 1), `acosh`, `asinh`, `atanh` (fdlibm formulas) and `log2` (exact for powers of two) | `StrictMath` lacks the last four and departs from C99 in `pow` |
 | `JqOptions` is immutable with `with…` methods; the clock is a `java.time.Clock` (instant and zone); `%Z` prints the offset, as in .NET; `withMaxDepth` accepts 1 to 100,000 | Java idiom; no abbreviations, as in the reference; the stack a level takes (see above) |

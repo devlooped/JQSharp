@@ -5,6 +5,8 @@ import static com.devlooped.jqlite.builtins.NativeTable.addClosure;
 import static com.devlooped.jqlite.builtins.NativeTable.fail;
 
 import com.devlooped.jqlite.binding.Bound.Node;
+import com.devlooped.jqlite.builtins.RegexEngine.RegexMatcher;
+import com.devlooped.jqlite.builtins.RegexEngine.RegexProgram;
 import com.devlooped.jqlite.runtime.Emit;
 import com.devlooped.jqlite.runtime.Env;
 import com.devlooped.jqlite.runtime.Interpreter;
@@ -20,8 +22,8 @@ import com.devlooped.jqlite.values.Result;
 
 /**
  * §9.10 {@code test/2} and {@code match/2}: the flags, the search loop and the match objects, with
- * offsets and lengths in code points. The pattern goes through {@link RegexSyntax} to the host engine
- * ({@link RegexEngine}), which reports UTF-16 units.
+ * offsets and lengths in code points. The pattern goes through {@link RegexSyntax} to the engine
+ * ({@link RegexEngine}), which works on UTF-16 units.
  */
 final class RegexNatives {
     private RegexNatives() {
@@ -32,8 +34,13 @@ final class RegexNatives {
         addClosure("match", 2, RegexNatives::match);
     }
 
-    // A search ready to run: the input, the compiled pattern and flags.
-    private record Search(String input, RegexEngine.HostPattern pattern, String[] groups, boolean global, boolean skipEmpty) {
+    private static final int[] NO_SPANS = new int[0];
+
+    // A search ready to run: the input, the matcher of the pattern and the flags.
+    private record Search(String input, RegexMatcher matcher, boolean global, boolean skipEmpty) {
+        String[] groups() {
+            return matcher.program().groups;
+        }
     }
 
     // Receives the spans of each match; returns false to stop.
@@ -47,8 +54,13 @@ final class RegexNatives {
         if (prepared instanceof JqValue error) {
             return fail(error);
         }
+        Search search = (Search) prepared;
+        // Whether there is a match, and nothing of it; with the n flag, a match that is not empty.
+        if (!search.skipEmpty) {
+            return JqValue.fromBool(search.matcher.tryMatch(search.input, 0, NO_SPANS));
+        }
         boolean[] found = {false};
-        run((Search) prepared, (spans, map) -> {
+        run(search, (spans, map) -> {
             found[0] = true;
             return false;
         });
@@ -105,22 +117,20 @@ final class RegexNatives {
         }
 
         String[] reason = {""};
-        RegexSyntax.Translation translation = RegexSyntax.tryTranslate(re.asString(), new RegexSyntax.Options(extended, dotAll, ignoreCase), reason);
-        RegexEngine.HostPattern pattern = translation == null ? null : RegexEngine.tryCompile(translation.pattern(), reason);
-        if (pattern == null) {
+        RegexProgram program = RegexEngine.tryCompile(re.asString(), new RegexSyntax.Options(extended, dotAll, ignoreCase), reason);
+        if (program == null) {
             return Errors.regexFailure(reason[0]);
         }
 
-        return new Search(input.asString(), pattern, translation.groups(), global, skipEmpty);
+        return new Search(input.asString(), new RegexMatcher(program), global, skipEmpty);
     }
 
     /** The search loop of §9.10, in code points; {@code report} returns false to stop. */
     private static void run(Search search, Report report) {
         CodePointMap map = new CodePointMap(search.input);
-        RegexEngine.HostMatcher matcher = RegexEngine.open(search.pattern, search.input);
-        int[] spans = new int[2 * (search.groups.length + 1)];
+        int[] spans = new int[2 * (search.groups().length + 1)];
         for (int p = 0; p <= map.length;) {
-            if (!RegexEngine.tryMatch(matcher, map.unit(p), spans)) {
+            if (!search.matcher.tryMatch(search.input, map.unit(p), spans)) {
                 return;
             }
             int start = map.codePoint(spans[0]);
@@ -133,9 +143,10 @@ final class RegexNatives {
     }
 
     private static JqValue matchObject(Search search, int[] spans, CodePointMap map) {
-        JqValue[] captures = new JqValue[search.groups.length];
+        String[] groups = search.groups();
+        JqValue[] captures = new JqValue[groups.length];
         for (int g = 0; g < captures.length; g++) {
-            JqValue name = search.groups[g] != null ? JqValue.fromString(search.groups[g]) : JqValue.NULL;
+            JqValue name = groups[g] != null ? JqValue.fromString(groups[g]) : JqValue.NULL;
             JqObjectBuilder capture = new JqObjectBuilder(4);
             int start = spans[2 * g + 2];
             int end = spans[2 * g + 3];
