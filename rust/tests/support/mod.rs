@@ -3,7 +3,10 @@
 #![allow(dead_code)]
 
 pub mod ast_printer;
+pub mod backtracking_matcher;
 pub mod bound_printer;
+pub mod pattern;
+pub mod regex_fuzz;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -142,10 +145,9 @@ pub fn compare(expected: &[String], actual: &[String]) -> Option<String> {
 /// The message lines of a `%%FAIL` case that are fixed texts of spec §10.2 must be contained in
 /// the error; the other lines are jq's own wording and are not compared (spec §14.1).
 pub fn missing_fixed_text(expected_error: Option<&Vec<String>>, message: &str) -> Option<String> {
-    let fixed = regex::Regex::new(
+    let fixed = pattern::Pattern::new(
         r"^(\S+/\d+ is not defined|\$\*label-\S+ is not defined|\$\S+::\S+ is not defined|Cannot use .+ as object key|May need parentheses around object key expression|Module metadata must be constant|Module metadata must be an object|Import path must be constant|Invalid escape)$",
-    )
-    .expect("the pattern is valid");
+    );
     for line in expected_error.into_iter().flatten() {
         if fixed.is_match(line) && !message.contains(line.as_str()) {
             return Some(format!("expected an error containing '{line}', got '{message}'"));

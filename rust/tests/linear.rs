@@ -1,6 +1,7 @@
 //! What must stay linear (porting guide §2.9): growing an array, an object or a string in a loop
-//! changes the accumulator in place when it is owned once. The reference measures the bytes its
-//! thread allocated; here a counting allocator does, per thread.
+//! changes the accumulator in place when it is owned once; the memory of a regex search is the
+//! size of its pattern. The reference measures the bytes its thread allocated, or the arrays of
+//! its matcher; here a counting allocator does, per thread.
 
 mod support;
 
@@ -8,6 +9,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::sync::Arc;
 
+use jqlite::builtins::regex_engine::{self, RegexMatcher};
+use jqlite::builtins::regex_syntax::Options;
 use jqlite::values::{JqArray, JqObject, JqValue};
 
 struct Counting;
@@ -116,5 +119,23 @@ fn accumulators_grow_in_place() {
         });
         assert_eq!(outputs, [expected], "{program}");
         assert!(bytes < megabytes * MEGABYTE, "{program}: {bytes} bytes");
+    }
+}
+
+#[test]
+fn the_memory_of_a_search_is_the_size_of_the_pattern() {
+    // The threads are kept in lists that grow with their number: a search over a long input
+    // allocates for its program, not for its input, and the next search allocates nothing.
+    let program = regex_engine::try_compile("^(?:(a)|(b)|[ab]c?)*$", Options::default()).expect("the pattern compiles");
+    assert_eq!(program.readers, 4);
+    assert_eq!(program.slots, 6);
+    let text = "ab".repeat(500000);
+    let mut matcher = RegexMatcher::new(program);
+    let mut spans = [0; 6];
+    for search in 0..2 {
+        let (found, bytes) = allocated(|| matcher.try_match(&text, 0, &mut spans));
+        assert!(found);
+        assert_eq!(spans, [0, 1000000, 999998, 999999, 999999, 1000000]);
+        assert!(bytes < if search == 0 { 4096 } else { 1 }, "search {search}: {bytes} bytes");
     }
 }

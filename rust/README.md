@@ -7,8 +7,8 @@ in Rust case, the same prelude (`spec/prelude.jq`, embedded unchanged) and the s
 corpus (`spec/tests`).
 
 - Crate `jqlite`, edition 2024, Rust 1.85 or later (built and tested with 1.96).
-- Dependencies: `regex` (the engine behind `test`, `match`, `sub`…) and `stacker` (a fresh stack
-  when the host stack runs short). Nothing else, and no `unsafe` code.
+- One dependency: `stacker` (a fresh stack when the host stack runs short). Nothing else, and no
+  `unsafe` code: regular expressions run on the reference's own engine, ported.
 
 ## Build, test, benchmark
 
@@ -26,14 +26,15 @@ The tests:
 
 | File | Tests | What |
 | --- | ---: | --- |
-| `tests/conformance.rs` | 2 | every case of `spec/tests/*.test` (1,129), once through the public API and once through the core without the native overrides of prelude builtins; `$ENV` empty, the zone at UTC+02:00, the modules of `spec/tests/modules` |
+| `tests/conformance.rs` | 2 | every case of `spec/tests/*.test` (1,151), once through the public API and once through the core without the native overrides of prelude builtins; `$ENV` empty, the zone at UTC+02:00, the modules of `spec/tests/modules` |
 | `tests/values.rs` | 54 | values: sharing, ordering, arithmetic, code points, number text, reader and writer, 10,000 levels read, written and compared |
 | `tests/syntax.rs` | 61 | lexer and parser: tokens, positions, the AST printed, every syntax error, 1,000 levels of nesting |
 | `tests/binding.rs` | 39 | resolver: hops and slots printed, single calls, binding errors, modules, the catalogue checked against the N and P lists of spec §9 |
-| `tests/runtime.rs` | 27 | interpreter: `MaxDepth`, deep recursion on a small stack, order of outputs, native and prelude `_modify`/`_assign` agree, every native is implemented, the largest patterns of spec §11 on small stacks and within the engine's size limit |
+| `tests/runtime.rs` | 25 | interpreter: `MaxDepth`, deep recursion on a small stack, order of outputs, native and prelude `_modify`/`_assign` agree, every native is implemented |
+| `tests/regex_engine.rs` | 6 | the regex engine: random patterns against a plain backtracking matcher of the same programs (`support/backtracking_matcher.rs`, `support/regex_fuzz.rs`), patterns and inputs that need linear time, the largest patterns of spec §11 run by the matcher, a hundred groups nested on a 256 KB stack |
 | `tests/api.rs` | 32 | the host boundary: options, variables, errors, resolvers, 64 threads on one expression |
-| `tests/linear.rs` | 3 | what must stay linear: bytes allocated while an array, an object or a string grows in a loop |
-| `tests/portability.rs` | 6 | the portability rules of `AGENTS.md` on the sources of the five layers, with the files allowed each exception and why; the order of the layers; the two dependencies |
+| `tests/linear.rs` | 4 | what must stay linear: bytes allocated while an array, an object or a string grows in a loop, and by a regex search over a long input |
+| `tests/portability.rs` | 6 | the portability rules of `AGENTS.md` on the sources of the five layers, with the files allowed each exception and why; the order of the layers; the one dependency. Its patterns, like those of the other tests, run on the crate's own engine (`support/pattern.rs`) |
 
 `cargo test` also runs the example of the crate's documentation.
 
@@ -112,7 +113,7 @@ The five layers are folders of `src/`, one file per file of `dotnet/JQLite/Core`
 | Reference | Here | Why |
 | --- | --- | --- |
 | `Values/JqArrayBuilder.cs`, `Values/JqObjectBuilder.cs` | no counterpart | An array or an object with one owner is changed in place: it is its own builder. |
-| `Runtime/StackGuard.cs` | `src/stack_guard.rs`, beside the layers | The parser and the regex engine use it too, and a layer uses only the layers before it (see Differences). |
+| `Runtime/StackGuard.cs` | `src/stack_guard.rs`, beside the layers | The parser uses it too, and a layer uses only the layers before it (see Differences). |
 
 Outside the core, the host boundary:
 
@@ -153,7 +154,7 @@ the reason.
 | Difference | Reason |
 | --- | --- |
 | The parser returns `Option` and records its one error (`fail`); the lexer works on a `Vec<char>`. | Positions are code points; no exceptions. |
-| The parser asks the stack guard before each nested expression. The guard is therefore not in `runtime` but beside the layers (`src/stack_guard.rs`): it is host-specific, knows nothing of jqlite, and three layers use it (parser, interpreter, regex engine). | A level of nesting takes about 2 KB of stack in a release build and 9 KB in a debug build: the 1,000 levels of spec §11 do not fit the 1 MB stack of a Windows thread otherwise. The reference keeps the parser's frames small enough instead. |
+| The parser asks the stack guard before each nested expression. The guard is therefore not in `runtime` but beside the layers (`src/stack_guard.rs`): it is host-specific, knows nothing of jqlite, and two layers use it (parser, interpreter). | A level of nesting takes about 2 KB of stack in a release build and 9 KB in a debug build: the 1,000 levels of spec §11 do not fit the 1 MB stack of a Windows thread otherwise. The reference keeps the parser's frames small enough instead. |
 | The text of a token is `Cow<'static, str>`: punctuation borrows its text from the lexer's table. | One allocation less per operator. |
 | `Binder::is_variable` marks the binder `$x` alone. | See frames, below. |
 
@@ -178,9 +179,8 @@ the reason.
 | --- | --- |
 | The natives are function pointers in a `Registry`, of two types: value natives and closure natives. | No reflection; the catalogue (`natives.rs`) is the reference's data. |
 | `_modify` and `_assign`: the value under update is changed in place by `setpath`; there are no drafts. The last write waits until the next read or write, or until the paths have all been generated (`WorkingTree` in `assign_natives.rs`); an update with one path at most takes the value out of the tree first. | The reference's working tree exists because its values cannot be changed in place. The write waits because the paths are generated lazily from the input, which shares its containers with the tree until the last path is out: writing at once would copy a container per path (`INDEX` was quadratic). Errors are raised when the reference raises them (`try_prepare_set`). |
-| Regular expressions are translated (`regex_syntax.rs`) for an engine that works on code points: `\x{…}` escapes, explicit classes, `(?s:.)`, `\z`, `(?-u:\b)`; the engine's offsets are bytes and are converted to code points. | Guide §3.3. No surrogate pairs to handle. |
-| The limits of a pattern are the translation's (spec §11), and the `regex` crate's own are set so that it takes every pattern within them: its nesting limit is lifted, a nested pattern is compiled on a stack of its size, and its size limit is 64 MiB (`regex_engine::SIZE_LIMIT`). | The crate unrolls counted repetitions, builds a UTF-8 automaton for each class (up to 1.2 KB for one as wide as `[^\x{10005}]`: the largest pattern of the dialect compiles to 11.5 MiB) and compiles groups by recursion. Its defaults (10 MiB, 250 levels of its syntax tree, its own messages) would refuse patterns the other implementations run. |
-| `regex_natives.rs` keeps the last prepared searches per thread; `regex_engine.rs` caches compiled patterns per process behind a mutex. | A program applies the same pattern to every record. |
+| The regex engine reads UTF-8: its positions are byte offsets, it decodes a code point at a time, and a word boundary looks at the bytes on each side; `regex_natives.rs` converts the offsets to code points. A match that starts with a fixed code point skips ahead with `str::find`, whatever the code point. | Guide §3.3: positions are the host's string index. The reference's are UTF-16 units, and it skips ahead only for a BMP code point (`IndexOf(char)`). |
+| `regex_natives.rs` keeps the last prepared searches per thread, each with its matcher; `regex_engine.rs` caches compiled programs per process behind a mutex. | A program applies the same pattern to every record: the memory of the matcher is made once. The reference makes a matcher per call of `test` or `match`. |
 
 ### Host boundary
 
@@ -203,6 +203,8 @@ the reason.
 | `Text_is_culture_invariant` | Rust formats and parses numbers without a culture. |
 | `Builder_replaces_in_place_and_removes`, `Slices_share_storage` | There are no builders and slices copy: ported as tests of an object changed in place and of slices that never change. |
 | The tests that measure allocated bytes with the garbage collector's counters | `tests/linear.rs`, with a counting allocator. |
+| `The_memory_of_a_search_is_the_size_of_the_pattern` (reads the matcher's arrays by reflection) | `tests/linear.rs`: the bytes the first search over a long input allocates, and none for the next one. |
+| `Linear_time` (2 s a case) | 10 s a case in a build without optimizations, which is about ten times slower; super-linear time takes minutes there. |
 | `An_exception_of_the_callback_propagates`, the JSONL helpers | No exceptions, no such helpers. |
 
 ## Performance
