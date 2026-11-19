@@ -309,36 +309,98 @@ final class MathExtra {
         return 1.0 - erf(x);
     }
 
-    private static final double[] LANCZOS = {
-        0.99999999999980993, 676.5203681218851, -1259.1392167224028,
-        771.32342877765313, -176.61502916214059, 12.507343278686905,
-        -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
-    };
-
-    /** Lanczos approximation, g = 7, with the reflection formula below 0.5. */
+    /**
+     * Γ(x): the Stirling series once x is shifted up to 10 or more, the power split so that it
+     * overflows only past 171.62; the reflection formula below 0.
+     */
     static double tGamma(double x) {
+        if (Double.isNaN(x) || x == Double.POSITIVE_INFINITY) {
+            return x;
+        }
+        if (x == 0) {
+            return 1 / x;
+        }
+        if (x < 0) {
+            if (Math.floor(x) == x) {
+                return Double.NaN;
+            }
+            if (x > -170) {
+                return PI / (sinPi(x) * tGamma(1 - x));
+            }
+            return PI / sinPi(x) * StrictMath.exp(-lGamma(1 - x));
+        }
+        if (x >= 172) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double q = 1.0;
+        while (x < 10) {
+            q = q * x;
+            x = x + 1;
+        }
+        double p = pow(x, (x - 0.5) / 2);
+        return StrictMath.sqrt(2 * PI) * (p * StrictMath.exp(-x)) * p * StrictMath.exp(stirling(x)) / q;
+    }
+
+    /**
+     * log |Γ(x)|: the Stirling series from 10 up, log(Γ(x + 1) / x) below;
+     * the reflection formula below 0.
+     */
+    static double lGamma(double x) {
+        if (Double.isNaN(x)) {
+            return x;
+        }
+        if (Double.isInfinite(x)) {
+            return Double.POSITIVE_INFINITY;
+        }
         if (x <= 0 && Math.floor(x) == x) {
             return Double.POSITIVE_INFINITY;
         }
-        if (x < 0.5) {
-            return PI / (StrictMath.sin(PI * x) * tGamma(1 - x));
+        if (x < 0) {
+            return StrictMath.log(PI) - StrictMath.log(Math.abs(sinPi(x))) - lGamma(1 - x);
         }
-        x = x - 1;
-        double sum = LANCZOS[0];
-        for (int i = 1; i <= 8; i++) {
-            sum = sum + LANCZOS[i] / (x + i);
+        if (x < 10) {
+            return StrictMath.log(tGamma(x + 1)) - StrictMath.log(x);
         }
-        double t = x + 7 + 0.5;
-        return StrictMath.sqrt(2 * PI) * pow(t, x + 0.5) * StrictMath.exp(-t) * sum;
+        return (x - 0.5) * StrictMath.log(x) - x + 0.5 * StrictMath.log(2 * PI) + stirling(x);
     }
 
-    static double lGamma(double x) {
-        return StrictMath.log(Math.abs(tGamma(x)));
-    }
-
-    /** The sign of tgamma(x): -1 when it is negative, else 1 (lgamma_r's second element). */
+    /**
+     * The sign of Γ(x) (lgamma_r's second element): -1 for -0 and for a negative non-integer x whose
+     * floor is odd, else 1.
+     */
     static double gammaSign(double x) {
-        return tGamma(x) < 0 ? -1.0 : 1.0;
+        if (x == 0) {
+            return isNegative(x) ? -1.0 : 1.0;
+        }
+        return x < 0 && Math.floor(x) != x && isOdd(Math.floor(x)) ? -1.0 : 1.0;
+    }
+
+    // The Stirling series of log Γ(x) − ((x − 0.5) · log(x) − x + log(2π) / 2), for x >= 10:
+    // B2k / (2k (2k − 1) x^(2k − 1)) for k = 1..8; the next term is below 2e-18 there.
+    private static double stirling(double x) {
+        double z = 1 / (x * x);
+        double s = 1.0 / 12 + z * (-1.0 / 360 + z * (1.0 / 1260 + z * (-1.0 / 1680 + z * (1.0 / 1188
+            + z * (-691.0 / 360360 + z * (1.0 / 156 + z * (-3617.0 / 122400)))))));
+        return s / x;
+    }
+
+    // sin(π · x) for a finite x that is not an integer, without the rounding of π · x: the fraction
+    // f = x − trunc(x) is exact, and so are 1 − f and −1 − f when |f| > 0.5.
+    private static double sinPi(double x) {
+        double n = truncate(x);
+        double f = x - n;
+        if (f > 0.5) {
+            f = 1 - f;
+        } else if (f < -0.5) {
+            f = -1 - f;
+        }
+        double s = StrictMath.sin(PI * f);
+        return isOdd(n) ? -s : s;
+    }
+
+    // Whether an integer-valued double is odd; n − 2 · floor(n / 2) is exact.
+    private static boolean isOdd(double n) {
+        return n - 2 * Math.floor(n / 2) != 0;
     }
 
     /** Bessel J0, Numerical Recipes rational approximations. */

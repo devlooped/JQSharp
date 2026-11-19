@@ -294,39 +294,98 @@ func (mathExtra) Erf(x float64) float64 {
 // Erfc is 1 − erf(x).
 func (mathExtra) Erfc(x float64) float64 { return 1.0 - MathExtra.Erf(x) }
 
-var lanczos = [...]float64{
-	0.99999999999980993, 676.5203681218851, -1259.1392167224028,
-	771.32342877765313, -176.61502916214059, 12.507343278686905,
-	-0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
+// TGamma is Γ(x): the Stirling series once x is shifted up to 10 or more, the power split so that
+// it overflows only past 171.62; the reflection formula below 0.
+func (mathExtra) TGamma(x float64) float64 {
+	if math.IsNaN(x) || math.IsInf(x, 1) {
+		return x
+	}
+	if x == 0 {
+		return 1 / x
+	}
+	if x < 0 {
+		if math.Floor(x) == x {
+			return math.NaN()
+		}
+		if x > -170 {
+			return pi / float64(sinPi(x)*MathExtra.TGamma(1-x))
+		}
+		return pi / sinPi(x) * math.Exp(-MathExtra.LGamma(1-x))
+	}
+	if x >= 172 {
+		return math.Inf(1)
+	}
+	q := 1.0
+	for x < 10 {
+		q = q * x
+		x = x + 1
+	}
+	p := math.Pow(x, (x-0.5)/2)
+	return math.Sqrt(2*pi) * float64(p*math.Exp(-x)) * p * math.Exp(stirling(x)) / q
 }
 
-// TGamma is the Lanczos approximation, g = 7, with the reflection formula below 0.5.
-func (mathExtra) TGamma(x float64) float64 {
+// LGamma is log |Γ(x)|: the Stirling series from 10 up, log(Γ(x + 1) / x) below; the reflection formula below 0.
+func (mathExtra) LGamma(x float64) float64 {
+	if math.IsNaN(x) {
+		return x
+	}
+	if math.IsInf(x, 0) {
+		return math.Inf(1)
+	}
 	if x <= 0 && math.Floor(x) == x {
 		return math.Inf(1)
 	}
-	if x < 0.5 {
-		return pi / float64(math.Sin(pi*x)*MathExtra.TGamma(1-x))
+	if x < 0 {
+		return math.Log(pi) - math.Log(math.Abs(sinPi(x))) - MathExtra.LGamma(1-x)
 	}
-	x = x - 1
-	sum := lanczos[0]
-	for i := 1; i <= 8; i++ {
-		sum = sum + lanczos[i]/(x+float64(i))
+	if x < 10 {
+		return math.Log(MathExtra.TGamma(x+1)) - math.Log(x)
 	}
-	t := x + 7 + 0.5
-	return math.Sqrt(2*pi) * math.Pow(t, x+0.5) * math.Exp(-t) * sum
+	return float64((x-0.5)*math.Log(x)) - x + float64(0.5*math.Log(2*pi)) + stirling(x)
 }
 
-// LGamma is log |tgamma(x)|.
-func (mathExtra) LGamma(x float64) float64 { return math.Log(math.Abs(MathExtra.TGamma(x))) }
-
-// GammaSign is the sign of tgamma(x): -1 when it is negative, else 1 (lgamma_r's second element).
+// GammaSign is the sign of Γ(x) (lgamma_r's second element): -1 for -0 and for a negative
+// non-integer x whose floor is odd, else 1.
 func (mathExtra) GammaSign(x float64) float64 {
-	if MathExtra.TGamma(x) < 0 {
+	if x == 0 {
+		if math.Signbit(x) {
+			return -1
+		}
+		return 1
+	}
+	if x < 0 && math.Floor(x) != x && isOdd(math.Floor(x)) {
 		return -1
 	}
 	return 1
 }
+
+// stirling is the Stirling series of log Γ(x) − ((x − 0.5) · log(x) − x + log(2π) / 2), for
+// x >= 10: B2k / (2k (2k − 1) x^(2k − 1)) for k = 1..8; the next term is below 2e-18 there.
+func stirling(x float64) float64 {
+	z := 1 / (x * x)
+	s := horner(z, 1.0/12, -1.0/360, 1.0/1260, -1.0/1680, 1.0/1188, -691.0/360360, 1.0/156, -3617.0/122400)
+	return s / x
+}
+
+// sinPi is sin(π · x) for a finite x that is not an integer, without the rounding of π · x: the
+// fraction f = x − trunc(x) is exact, and so are 1 − f and −1 − f when |f| > 0.5.
+func sinPi(x float64) float64 {
+	n := math.Trunc(x)
+	f := x - n
+	if f > 0.5 {
+		f = 1 - f
+	} else if f < -0.5 {
+		f = -1 - f
+	}
+	s := math.Sin(pi * f)
+	if isOdd(n) {
+		return -s
+	}
+	return s
+}
+
+// isOdd is whether an integer-valued double is odd; n − 2 · floor(n / 2) is exact.
+func isOdd(n float64) bool { return n-float64(2*math.Floor(n/2)) != 0 }
 
 // horner is c[0] + y*(c[1] + y*(c[2] + …)), each product rounded before it is added.
 func horner(y float64, c ...float64) float64 {

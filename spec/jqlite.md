@@ -841,22 +841,41 @@ erf(x):  if x is NaN: return NaN
 erfc(x): 1.0 - erf(x)
 ```
 
-`tgamma/0`, `lgamma/0`, `gamma/0`, `lgamma_r/0` (Lanczos, g = 7):
+`tgamma/0`, `lgamma/0`, `gamma/0`, `lgamma_r/0` (the Stirling series from 10 up, reached from below by Γ(x + 1) = x · Γ(x); the reflection formula below 0; the power is split in two so that `tgamma` overflows only where Γ does, past 171.62):
 
 ```
-tgamma(x): if x <= 0 and floor(x) == x: return +Infinity
-           if x < 0.5: return π / (sin(π * x) * tgamma(1 - x))
-           x = x - 1
-           c = [0.99999999999980993, 676.5203681218851, -1259.1392167224028,
-                771.32342877765313, -176.61502916214059, 12.507343278686905,
-                -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7]
-           sum = c[0]; for i in 1..8: sum = sum + c[i] / (x + i)
-           t = x + 7 + 0.5
-           return sqrt(2 * π) * pow(t, x + 0.5) * exp(-t) * sum
-lgamma(x):   log(|tgamma(x)|)
+tgamma(x):   if x is NaN or x == +Infinity: return x
+             if x == 0: return 1 / x                          (+Infinity, or -Infinity for -0)
+             if x < 0:
+               if floor(x) == x: return NaN                   (negative integers and -Infinity)
+               if x > -170: return π / (SinPi(x) * tgamma(1 - x))
+               return π / SinPi(x) * exp(-lgamma(1 - x))
+             if x >= 172: return +Infinity
+             q = 1
+             while x < 10: q = q * x; x = x + 1
+             p = pow(x, (x - 0.5) / 2)
+             return sqrt(2 * π) * (p * exp(-x)) * p * exp(Stirling(x)) / q
+lgamma(x):   if x is NaN: return NaN
+             if x is ±Infinity: return +Infinity
+             if x <= 0 and floor(x) == x: return +Infinity
+             if x < 0: return log(π) - log(|SinPi(x)|) - lgamma(1 - x)
+             if x < 10: return log(tgamma(x + 1)) - log(x)
+             return (x - 0.5) * log(x) - x + 0.5 * log(2 * π) + Stirling(x)
 gamma(x):    lgamma(x)
-lgamma_r(x): [lgamma(x), -1 if tgamma(x) < 0 else 1]
+lgamma_r(x): [lgamma(x), s] with s = -1 if x is -0, or if x < 0, floor(x) != x and floor(x) is odd; else s = 1
+
+Stirling(x): z = 1 / (x * x)
+             s = 1 / 12 + z * (-1 / 360 + z * (1 / 1260 + z * (-1 / 1680 + z * (1 / 1188
+                 + z * (-691 / 360360 + z * (1 / 156 + z * (-3617 / 122400)))))))
+             return s / x
+SinPi(x):    n = trunc(x); f = x - n                          (exact; x finite, not an integer)
+             if f > 0.5: f = 1 - f
+             if f < -0.5: f = -1 - f
+             s = sin(π * f)
+             return -s if n is odd else s
 ```
+
+`Stirling` is the series of log Γ(x) − ((x − 0.5) · log(x) − x + log(2π) / 2), B₂ₖ / (2k (2k − 1) x^(2k−1)) for k = 1..8, each coefficient a division of two doubles; `SinPi` is sin(π · x) without the rounding of π · x. An integer-valued double `n` is odd when `n - 2 * floor(n / 2)` is not 0.
 
 `π` is the double nearest π (3.141592653589793).
 
@@ -950,7 +969,7 @@ yn(n, x): if n or x is NaN, or |n| >= 2^31 (Infinity included): return NaN
 Operations are evaluated left to right as written, each rounded to double (no fused multiply-add, no extended precision).
 
 > [!NOTE]
-> Non-normative: these formulas are approximations with known weak points, kept as specified. `erf` is accurate to about 1.5e−7 only. `tgamma` overflows to +Infinity above about x = 141 (the true value is finite up to about 171.6), gives +Infinity at the poles (C gives NaN for negative integers) and NaN for +Infinity. `lgamma` is `log|tgamma|`, so it overflows where `tgamma` does, far below the true limit of `lgamma`. `j0`, `j1`, `y0`, `y1`, `jn` and `yn` give NaN for ±Infinity (C gives 0); `j0`, `j1`, `y0` and `y1` are accurate to about 1e−8, and so are `jn` for `|x| > n` and `yn`. `frexp` of ±Infinity and NaN gives the exponent 0, where C leaves it unspecified (jq 1.8.2 on Windows: −1).
+> Non-normative: these formulas are approximations with known weak points, kept as specified. `erf` is accurate to about 1.5e−7 only. `tgamma` and `lgamma` are accurate to a few units in the last place (near the zeros of `lgamma`, to a few times 1e−16 absolute), and give C's values at the poles and infinities; below −170, the subnormal results of `tgamma` lose precision, as in C. `j0`, `j1`, `y0`, `y1`, `jn` and `yn` give NaN for ±Infinity (C gives 0); `j0`, `j1`, `y0` and `y1` are accurate to about 1e−8, and so are `jn` for `|x| > n` and `yn`. `frexp` of ±Infinity and NaN gives the exponent 0, where C leaves it unspecified (jq 1.8.2 on Windows: −1).
 
 `abs/0` is prelude: `def abs: if . < 0 then -. else . end;` (as jq 1.8.2: `-0` stays `-0`, values above all numbers such as strings are returned unchanged, `null` and booleans are below 0 and fail with `cannot be negated`).
 

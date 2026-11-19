@@ -203,32 +203,109 @@ static class MathExtra
 
     public static double Erfc(double x) => 1.0 - Erf(x);
 
-    static readonly double[] Lanczos =
-    [
-        0.99999999999980993, 676.5203681218851, -1259.1392167224028,
-        771.32342877765313, -176.61502916214059, 12.507343278686905,
-        -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
-    ];
-
-    /// <summary>Lanczos approximation, g = 7, with the reflection formula below 0.5.</summary>
+    /// <summary>Γ(x): the Stirling series once x is shifted up to 10 or more, the power split so that it overflows only past 171.62; the reflection formula below 0.</summary>
+    /// <remarks>
+    /// <code>
+    /// tgamma(x): if x is NaN or x == +Infinity: return x
+    ///            if x == 0: return 1 / x
+    ///            if x &lt; 0:
+    ///              if floor(x) == x: return NaN
+    ///              if x > -170: return π / (SinPi(x) * tgamma(1 - x))
+    ///              return π / SinPi(x) * exp(-lgamma(1 - x))
+    ///            if x >= 172: return +Infinity
+    ///            q = 1; while x &lt; 10: q = q * x; x = x + 1
+    ///            p = pow(x, (x - 0.5) / 2)
+    ///            return sqrt(2 * π) * (p * exp(-x)) * p * exp(Stirling(x)) / q
+    /// </code>
+    /// </remarks>
     public static double TGamma(double x)
     {
-        if (x <= 0 && Math.Floor(x) == x)
+        if (double.IsNaN(x) || double.IsPositiveInfinity(x))
+            return x;
+        if (x == 0)
+            return 1 / x;
+        if (x < 0)
+        {
+            if (Math.Floor(x) == x)
+                return double.NaN;
+            if (x > -170)
+                return Pi / (SinPi(x) * TGamma(1 - x));
+            return Pi / SinPi(x) * Math.Exp(-LGamma(1 - x));
+        }
+
+        if (x >= 172)
             return double.PositiveInfinity;
-        if (x < 0.5)
-            return Pi / (Math.Sin(Pi * x) * TGamma(1 - x));
-        x = x - 1;
-        var sum = Lanczos[0];
-        for (var i = 1; i <= 8; i++)
-            sum = sum + Lanczos[i] / (x + i);
-        var t = x + 7 + 0.5;
-        return Math.Sqrt(2 * Pi) * Math.Pow(t, x + 0.5) * Math.Exp(-t) * sum;
+        var q = 1.0;
+        while (x < 10)
+        {
+            q = q * x;
+            x = x + 1;
+        }
+
+        var p = Math.Pow(x, (x - 0.5) / 2);
+        return Math.Sqrt(2 * Pi) * (p * Math.Exp(-x)) * p * Math.Exp(Stirling(x)) / q;
     }
 
-    public static double LGamma(double x) => Math.Log(Math.Abs(TGamma(x)));
+    /// <summary>log |Γ(x)|: the Stirling series from 10 up, log(Γ(x + 1) / x) below; the reflection formula below 0.</summary>
+    /// <remarks>
+    /// <code>
+    /// lgamma(x): if x is NaN: return x
+    ///            if x is ±Infinity: return +Infinity
+    ///            if x &lt;= 0 and floor(x) == x: return +Infinity
+    ///            if x &lt; 0: return log(π) - log(|SinPi(x)|) - lgamma(1 - x)
+    ///            if x &lt; 10: return log(tgamma(x + 1)) - log(x)
+    ///            return (x - 0.5) * log(x) - x + 0.5 * log(2 * π) + Stirling(x)
+    /// </code>
+    /// </remarks>
+    public static double LGamma(double x)
+    {
+        if (double.IsNaN(x))
+            return x;
+        if (double.IsInfinity(x))
+            return double.PositiveInfinity;
+        if (x <= 0 && Math.Floor(x) == x)
+            return double.PositiveInfinity;
+        if (x < 0)
+            return Math.Log(Pi) - Math.Log(Math.Abs(SinPi(x))) - LGamma(1 - x);
+        if (x < 10)
+            return Math.Log(TGamma(x + 1)) - Math.Log(x);
+        return (x - 0.5) * Math.Log(x) - x + 0.5 * Math.Log(2 * Pi) + Stirling(x);
+    }
 
-    /// <summary>The sign of tgamma(x): -1 when it is negative, else 1 (lgamma_r's second element).</summary>
-    public static double GammaSign(double x) => TGamma(x) < 0 ? -1.0 : 1.0;
+    /// <summary>The sign of Γ(x) (lgamma_r's second element): -1 for -0 and for a negative non-integer x whose floor is odd, else 1.</summary>
+    public static double GammaSign(double x)
+    {
+        if (x == 0)
+            return double.IsNegative(x) ? -1.0 : 1.0;
+        return x < 0 && Math.Floor(x) != x && IsOdd(Math.Floor(x)) ? -1.0 : 1.0;
+    }
+
+    // The Stirling series of log Γ(x) − ((x − 0.5) · log(x) − x + log(2π) / 2), for x >= 10:
+    // B2k / (2k (2k − 1) x^(2k − 1)) for k = 1..8; the next term is below 2e-18 there.
+    static double Stirling(double x)
+    {
+        var z = 1 / (x * x);
+        var s = 1.0 / 12 + z * (-1.0 / 360 + z * (1.0 / 1260 + z * (-1.0 / 1680 + z * (1.0 / 1188
+            + z * (-691.0 / 360360 + z * (1.0 / 156 + z * (-3617.0 / 122400)))))));
+        return s / x;
+    }
+
+    // sin(π · x) for a finite x that is not an integer, without the rounding of π · x: the fraction
+    // f = x − trunc(x) is exact, and so are 1 − f and −1 − f when |f| > 0.5.
+    static double SinPi(double x)
+    {
+        var n = Math.Truncate(x);
+        var f = x - n;
+        if (f > 0.5)
+            f = 1 - f;
+        else if (f < -0.5)
+            f = -1 - f;
+        var s = Math.Sin(Pi * f);
+        return IsOdd(n) ? -s : s;
+    }
+
+    // Whether an integer-valued double is odd; n − 2 · floor(n / 2) is exact.
+    static bool IsOdd(double n) => n - 2 * Math.Floor(n / 2) != 0;
 
     /// <summary>Bessel J0, Numerical Recipes rational approximations.</summary>
     public static double J0(double x)

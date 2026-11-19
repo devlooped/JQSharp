@@ -285,29 +285,63 @@ export function erfc(x: number): number {
   return 1.0 - erf(x);
 }
 
-const Lanczos = [
-  0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6,
-  1.5056327351493116e-7,
-];
-
-/** Lanczos approximation, g = 7, with the reflection formula below 0.5. */
+/** Γ(x): the Stirling series once x is shifted up to 10 or more, the power split so that it overflows only past 171.62; the reflection formula below 0. */
 export function tgamma(x: number): number {
-  if (x <= 0 && Math.floor(x) === x) return Infinity;
-  if (x < 0.5) return Pi / (Math.sin(Pi * x) * tgamma(1 - x));
-  x = x - 1;
-  let sum = Lanczos[0]!;
-  for (let i = 1; i <= 8; i++) sum = sum + Lanczos[i]! / (x + i);
-  const t = x + 7 + 0.5;
-  return Math.sqrt(2 * Pi) * pow(t, x + 0.5) * Math.exp(-t) * sum;
+  if (Number.isNaN(x) || x === Infinity) return x;
+  if (x === 0) return 1 / x;
+  if (x < 0) {
+    if (Math.floor(x) === x) return NaN;
+    if (x > -170) return Pi / (sinPi(x) * tgamma(1 - x));
+    return (Pi / sinPi(x)) * Math.exp(-lgamma(1 - x));
+  }
+  if (x >= 172) return Infinity;
+  let q = 1.0;
+  while (x < 10) {
+    q = q * x;
+    x = x + 1;
+  }
+  const p = pow(x, (x - 0.5) / 2);
+  return (Math.sqrt(2 * Pi) * (p * Math.exp(-x)) * p * Math.exp(stirling(x))) / q;
 }
 
+/** log |Γ(x)|: the Stirling series from 10 up, log(Γ(x + 1) / x) below; the reflection formula below 0. */
 export function lgamma(x: number): number {
-  return Math.log(Math.abs(tgamma(x)));
+  if (Number.isNaN(x)) return x;
+  if (x === Infinity || x === -Infinity) return Infinity;
+  if (x <= 0 && Math.floor(x) === x) return Infinity;
+  if (x < 0) return Math.log(Pi) - Math.log(Math.abs(sinPi(x))) - lgamma(1 - x);
+  if (x < 10) return Math.log(tgamma(x + 1)) - Math.log(x);
+  return (x - 0.5) * Math.log(x) - x + 0.5 * Math.log(2 * Pi) + stirling(x);
 }
 
-/** The sign of tgamma(x): -1 when it is negative, else 1 (lgamma_r's second element). */
+/** The sign of Γ(x) (lgamma_r's second element): -1 for -0 and for a negative non-integer x whose floor is odd, else 1. */
 export function gammaSign(x: number): number {
-  return tgamma(x) < 0 ? -1.0 : 1.0;
+  if (x === 0) return isNegative(x) ? -1.0 : 1.0;
+  return x < 0 && Math.floor(x) !== x && isOdd(Math.floor(x)) ? -1.0 : 1.0;
+}
+
+// The Stirling series of log Γ(x) − ((x − 0.5) · log(x) − x + log(2π) / 2), for x >= 10:
+// B2k / (2k (2k − 1) x^(2k − 1)) for k = 1..8; the next term is below 2e-18 there.
+function stirling(x: number): number {
+  const z = 1 / (x * x);
+  const s = 1.0 / 12 + z * (-1.0 / 360 + z * (1.0 / 1260 + z * (-1.0 / 1680 + z * (1.0 / 1188 + z * (-691.0 / 360360 + z * (1.0 / 156 + z * (-3617.0 / 122400)))))));
+  return s / x;
+}
+
+// sin(π · x) for a finite x that is not an integer, without the rounding of π · x: the fraction
+// f = x − trunc(x) is exact, and so are 1 − f and −1 − f when |f| > 0.5.
+function sinPi(x: number): number {
+  const n = Math.trunc(x);
+  let f = x - n;
+  if (f > 0.5) f = 1 - f;
+  else if (f < -0.5) f = -1 - f;
+  const s = Math.sin(Pi * f);
+  return isOdd(n) ? -s : s;
+}
+
+// Whether an integer-valued double is odd; n − 2 · floor(n / 2) is exact.
+function isOdd(n: number): boolean {
+  return n - 2 * Math.floor(n / 2) !== 0;
 }
 
 /** Bessel J0, Numerical Recipes rational approximations. */
