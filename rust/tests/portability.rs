@@ -2,12 +2,15 @@
 //! for the reference: the core (the five layers under `src/`) must read the same in every
 //! language, so a host feature in its code fails here, naming the file and the line. Comments and
 //! string literals are not code and are not matched. Where a rule has exceptions, they are listed
-//! by file with the reason: a new use anywhere else must be justified by adding it here.
+//! by file with the reason: a new use anywhere else must be justified by adding it here. The
+//! patterns of the rules run on the crate's own regex engine (`support/pattern.rs`).
+
+mod support;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use regex::Regex;
+use support::pattern::Pattern;
 
 /// The layers of the core, in order: each uses only the ones before it.
 const LAYERS: [&str; 5] = ["values", "syntax", "binding", "runtime", "builtins"];
@@ -23,11 +26,7 @@ struct Rule {
 const CORE_RULES: &[Rule] = &[
     Rule { name: "unsafe code", pattern: r"\bunsafe\b", allowed: &[] },
     Rule { name: "a host JSON library", pattern: r"\bserde\w*\b|\bsimd_json\b|\bjson::|\bcrate::json\b", allowed: &[] },
-    Rule {
-        name: "the host regex engine",
-        pattern: r"\bregex::|\buse\s+regex\b|\bRegex(Builder|Set)?\b|\bregex_automata\b|\bCaptureLocations\b",
-        allowed: &[("builtins/regex_engine.rs", "the regex engine: the one place the host regex runs")],
-    },
+    Rule { name: "the host regex engine", pattern: r"\bregex::|\buse\s+regex\b|\bRegex(Builder|Set)?\b|\bregex_automata\b|\bCaptureLocations\b", allowed: &[] },
     Rule { name: "the stacker crate", pattern: r"\bstacker\b", allowed: &[] },
     Rule {
         name: "the stack guard",
@@ -35,7 +34,6 @@ const CORE_RULES: &[Rule] = &[
         allowed: &[
             ("syntax/parser.rs", "a level of nesting takes several KB of stack: 1,000 levels do not fit a 1 MB thread"),
             ("runtime/interpreter.rs", "every evaluation step and every output: only MaxDepth stops a recursion"),
-            ("builtins/regex_engine.rs", "the host engine compiles a nested pattern by recursion"),
         ],
     },
     Rule { name: "the host clock", pattern: r"\bstd::time\b|\bSystemTime\b|\bInstant\b|\bDuration\b|\bchrono\b", allowed: &[] },
@@ -77,8 +75,8 @@ const CORE_RULES: &[Rule] = &[
             ("builtins/core_natives.rs", "the list that `builtins` gives, made once: immutable"),
             ("builtins/native_table.rs", "the table of the native implementations, made once: immutable"),
             ("builtins/natives.rs", "the native catalogue, made once: immutable"),
-            ("builtins/regex_engine.rs", "the cache of compiled patterns, behind a mutex"),
-            ("builtins/regex_natives.rs", "the searches prepared last and the key strings of match objects, per thread"),
+            ("builtins/regex_engine.rs", "the cache of compiled programs (immutable), behind a mutex"),
+            ("builtins/regex_natives.rs", "the searches prepared last, each with its matcher, and the key strings of match objects, per thread"),
             ("values/jq_value.rs", "the depth of nested drops, per thread: values are released without recursion"),
             ("values/value_text.rs", "the key strings the JSON reader shares, per thread"),
         ],
@@ -218,7 +216,7 @@ fn code(source: &str) -> String {
 }
 
 // The lines of a file whose code matches the pattern: "line: text".
-fn matches_of(file: &str, pattern: &Regex) -> Vec<String> {
+fn matches_of(file: &str, pattern: &Pattern) -> Vec<String> {
     let source = read(file);
     let original: Vec<&str> = source.lines().collect();
     code(&source)
@@ -231,7 +229,7 @@ fn matches_of(file: &str, pattern: &Regex) -> Vec<String> {
 
 // The matches of a pattern in the given files, but for the allowed ones: "file:line: text".
 fn violations(files: &[String], pattern: &str, allowed: &[(&str, &str)]) -> Vec<String> {
-    let pattern = Regex::new(pattern).expect("the pattern of the rule compiles");
+    let pattern = Pattern::new(pattern);
     files
         .iter()
         .filter(|file| !allowed.iter().any(|(name, _)| name == file))
@@ -263,7 +261,7 @@ fn the_core_follows_the_portability_rules() {
 fn allowances_are_still_used() {
     // An allowance nothing uses any more is removed, so the lists stay the truth.
     for rule in CORE_RULES {
-        let pattern = Regex::new(rule.pattern).expect("the pattern of the rule compiles");
+        let pattern = Pattern::new(rule.pattern);
         for (file, _) in rule.allowed {
             assert!(!matches_of(file, &pattern).is_empty(), "{file} no longer uses {}: remove it from the allowed files.", rule.name);
         }
@@ -279,7 +277,7 @@ const LINKS: &[(&str, &str, &str)] = &[
 
 #[test]
 fn a_layer_uses_only_the_layers_before_it() {
-    let module = Regex::new(r"\bcrate::(\w+)(::\w+)?").expect("the pattern compiles");
+    let module = Pattern::new(r"\bcrate::(\w+)(::\w+)?");
     let mut failures = Vec::new();
     let mut used: BTreeMap<&str, bool> = LINKS.iter().map(|(_, pattern, _)| (*pattern, false)).collect();
     for file in core_files() {
@@ -287,7 +285,7 @@ fn a_layer_uses_only_the_layers_before_it() {
         let source = read(&file);
         for (index, line) in code(&source).lines().enumerate() {
             for found in module.captures_iter(line) {
-                let name = &found[1];
+                let name = found[1];
                 // The stack guard belongs to no layer; its uses are a rule of their own.
                 if name == "stack_guard" {
                     continue;
@@ -299,8 +297,7 @@ fn a_layer_uses_only_the_layers_before_it() {
                 if other <= layer {
                     continue;
                 }
-                let link =
-                    LINKS.iter().find(|(from, pattern, _)| *from == LAYERS[layer] && Regex::new(pattern).expect("the link compiles").is_match(&found[0]));
+                let link = LINKS.iter().find(|(from, pattern, _)| *from == LAYERS[layer] && Pattern::new(pattern).is_match(found[0]));
                 match link {
                     Some((_, pattern, _)) => {
                         used.insert(*pattern, true);
@@ -317,11 +314,11 @@ fn a_layer_uses_only_the_layers_before_it() {
 }
 
 #[test]
-fn only_their_files_use_the_two_dependencies() {
+fn only_its_file_uses_the_dependency() {
     // Over the whole crate, the host boundary included.
     let files = files_of(&source_directory());
     assert_eq!(violations(&files, r"\bstacker\b", &[("stack_guard.rs", "")]), Vec::<String>::new());
-    assert_eq!(violations(&files, r"\bregex::|\buse\s+regex\b", &[("builtins/regex_engine.rs", "")]), Vec::<String>::new());
+    assert_eq!(violations(&files, r"\bregex::|\buse\s+regex\b", &[]), Vec::<String>::new());
     assert_eq!(violations(&files, r"\bunsafe\b", &[]), Vec::<String>::new());
     // The clock of the host is read at the boundary only.
     let clock = violations(&files, r"\bstd::time\b|\bSystemTime\b", &[("host/clock.rs", "")]);
@@ -343,10 +340,10 @@ fn keys(manifest: &str, section: &str) -> Vec<String> {
 }
 
 #[test]
-fn the_crate_has_two_dependencies() {
+fn the_crate_has_one_dependency() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("the manifest is read");
-    assert_eq!(keys(&manifest, "dependencies"), ["regex", "stacker"]);
+    assert_eq!(keys(&manifest, "dependencies"), ["stacker"]);
     for section in ["build-dependencies", "dev-dependencies", "features"] {
         assert!(!manifest.contains(&format!("[{section}]")) && !manifest.contains(&format!("[{section}.")), "the manifest has a [{section}] section");
     }

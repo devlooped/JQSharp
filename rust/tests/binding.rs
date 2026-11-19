@@ -16,6 +16,7 @@ use jqlite::syntax::parser::{MAX_NESTING, Parser};
 use jqlite::values::{JqValue, value_text};
 
 use support::bound_printer::{bind, bind_error as error, print_program};
+use support::pattern::Pattern;
 use support::{DirectoryModules, MemoryModules, on_thread};
 
 const MEGABYTE: usize = 1024 * 1024;
@@ -673,25 +674,30 @@ fn section<'a>(text: &'a str, start: &str, end: &str) -> &'a str {
 }
 
 fn signatures(text: &str) -> Vec<String> {
-    let pattern = regex::Regex::new(r"`([A-Za-z_][A-Za-z0-9_]*/[0-9]+)`").expect("the pattern is valid");
-    pattern.captures_iter(text).map(|found| found[1].to_owned()).collect()
+    let pattern = Pattern::new(r"`([A-Za-z_][A-Za-z0-9_]*/[0-9]+)`");
+    pattern.captures_iter(text).into_iter().map(|found| found[1].to_owned()).collect()
 }
+
+// The library paragraph of §9.8: its signatures and its names "(one input)".
+const LIBRARY: &str = r"^\*\*Library functions\*\*(.*?`([a-z0-9 ]+)` \(one input\).*)$";
 
 // The signatures in the first cells of table rows, in the library paragraph, and at the start of lines.
 fn declarations(text: &str) -> BTreeSet<String> {
-    let first_cells = regex::Regex::new(r"(?m)^\| ([^|\n]*) \|").expect("the pattern is valid");
-    let library = regex::Regex::new(r"(?m)^\*\*Library functions\*\*(.*?`([a-z0-9 ]+)` \(one input\).*)$").expect("the pattern is valid");
+    let first_cells = Pattern::new(r"^\| ([^|]*) \|");
+    let library = Pattern::new(LIBRARY);
     // One or more signatures at the start of a line, separated by ", ".
-    let headings = regex::Regex::new(r"(?m)^`[A-Za-z_][A-Za-z0-9_]*/[0-9]+`(, `[A-Za-z_][A-Za-z0-9_]*/[0-9]+`)*").expect("the pattern is valid");
+    let headings = Pattern::new(r"^`[A-Za-z_][A-Za-z0-9_]*/[0-9]+`(, `[A-Za-z_][A-Za-z0-9_]*/[0-9]+`)*");
     let mut declared = BTreeSet::new();
-    for cell in first_cells.captures_iter(text) {
-        declared.extend(signatures(&cell[1]));
-    }
-    for paragraph in library.captures_iter(text) {
-        declared.extend(signatures(&paragraph[1]));
-    }
-    for heading in headings.find_iter(text) {
-        declared.extend(signatures(heading.as_str()));
+    for line in text.lines() {
+        if let Some(cell) = first_cells.captures(line) {
+            declared.extend(signatures(cell[1]));
+        }
+        if let Some(paragraph) = library.captures(line) {
+            declared.extend(signatures(paragraph[1]));
+        }
+        if let Some(heading) = headings.find(line) {
+            declared.extend(signatures(heading));
+        }
     }
     declared
 }
@@ -706,30 +712,30 @@ fn spec_builtins() -> SpecLists {
     let section9 = section(&text, "## 9. ", "## 10. ");
     let math = section(section9, "### 9.8 ", "### 9.9 ");
     let mut math_declared = declarations(math);
-    let library = regex::Regex::new(r"(?m)^\*\*Library functions\*\*(.*?`([a-z0-9 ]+)` \(one input\).*)$").expect("the pattern is valid");
-    let names = library.captures(math).expect("The library functions of §9.8 were not found");
+    let library = Pattern::new(LIBRARY);
+    let names = math.lines().find_map(|line| library.captures(line)).expect("The library functions of §9.8 were not found");
     for name in names[2].split(' ') {
         math_declared.insert(format!("{name}/0"));
     }
-    let formulas = regex::Regex::new(r"(?m)^\s*([a-z][a-z0-9]*)\(x\):").expect("the pattern is valid");
-    for formula in formulas.captures_iter(math) {
-        math_declared.insert(format!("{}/0", &formula[1]));
+    let formulas = Pattern::new(r"^\s*([a-z][a-z0-9]*)\(x\):");
+    for formula in math.lines().filter_map(|line| formulas.captures(line)) {
+        math_declared.insert(format!("{}/0", formula[1]));
     }
 
     // The first sentence of §9.11, which names the members of the optional group.
-    let group = regex::Regex::new(r"A port MAY leave out the whole group:[^.]*\.").expect("the pattern is valid");
+    let group = Pattern::new(r"A port MAY leave out the whole group:[^.]*\.");
     let sentence = group.find(section(section9, "### 9.11 ", "### 9.12 ")).expect("The group sentence of §9.11 was not found");
-    let modules: BTreeSet<String> = signatures(sentence.as_str()).into_iter().collect();
+    let modules: BTreeSet<String> = signatures(sentence).into_iter().collect();
 
     let mut all = declarations(section9);
     all.extend(math_declared.iter().cloned());
     all.extend(modules.iter().cloned());
     let mut native = modules.clone();
     let mut prelude = BTreeSet::new();
-    let kind_rows = regex::Regex::new(r"(?m)^\| ([^|]*) \| ([NP]) \|").expect("the pattern is valid");
-    for row in kind_rows.captures_iter(section9) {
-        let kind = if &row[2] == "N" { &mut native } else { &mut prelude };
-        kind.extend(signatures(&row[1]));
+    let kind_rows = Pattern::new(r"^\| ([^|]*) \| ([NP]) \|");
+    for row in section9.lines().filter_map(|line| kind_rows.captures(line)) {
+        let kind = if row[2] == "N" { &mut native } else { &mut prelude };
+        kind.extend(signatures(row[1]));
     }
     for signature in math_declared {
         if signature == "abs/0" {

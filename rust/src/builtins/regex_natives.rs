@@ -1,5 +1,5 @@
 //! §9.10 `test/2` and `match/2`: the flags, the search loop and the match objects, with offsets
-//! and lengths in code points. The pattern goes through `regex_syntax` to the host engine
+//! and lengths in code points. The pattern goes through `regex_syntax` to the engine
 //! (`regex_engine`), which works on UTF-8 bytes.
 
 use std::borrow::Cow;
@@ -16,24 +16,27 @@ use crate::values::value_ops::Fallible;
 use crate::values::{JqArray, JqObject, JqString, JqValue, errors};
 
 use super::native_table::Registry;
-use super::regex_engine::{self, HostPattern, Spans};
-use super::regex_syntax::{self, Options};
+use super::regex_engine::{self, RegexMatcher};
+use super::regex_syntax::Options;
 
 pub fn register(table: &mut Registry) {
     table.value("test", 2, test);
     table.closure("match", 2, match_all);
 }
 
-// A search ready to run: the compiled pattern, the names of its groups and the flags of the loop.
+// A search ready to run: the matcher of the pattern, the names of its groups and the flags of the
+// loop. The matcher is borrowed for one call of `try_match` at a time: an output of `match` can
+// run the same search again.
 struct Search {
-    pattern: Arc<HostPattern>,
+    matcher: RefCell<RegexMatcher>,
     groups: Vec<JqValue>,
     global: bool,
     skip_empty: bool,
 }
 
 // The searches this thread prepared last, by the regex and flags they were asked with: a program
-// asks for the same few again and again, and this spares it the translation and the shared cache.
+// asks for the same few again and again, and this spares it the shared cache and the memory of a
+// new matcher.
 struct Prepared {
     re: JqString,
     flags: Option<JqString>,
@@ -64,19 +67,15 @@ thread_local! {
 
 fn test(_: &Interpreter<'_>, input: Input<'_>, arguments: &mut [JqValue]) -> Fallible {
     let (text, search) = try_prepare(&input, &arguments[0], &arguments[1])?;
-    let mut found = false;
-    let mut p = 0;
-    while p <= text.len() {
-        let Some((start, end)) = search.pattern.try_find(text, p) else {
-            break;
-        };
-        if !(search.skip_empty && start == end) {
-            found = true;
-            break;
-        }
-        p = after(text, start, end);
+    // Whether there is a match, and nothing of it; with the n flag, a match that is not empty.
+    if !search.skip_empty {
+        return Ok(JqValue::from_bool(search.matcher.borrow_mut().try_match(text, 0, &mut [])));
     }
-
+    let mut found = false;
+    run(text, &search, |_| {
+        found = true;
+        false
+    });
     Ok(JqValue::from_bool(found))
 }
 
@@ -89,25 +88,37 @@ fn match_all<'p>(interpreter: &Interpreter<'p>, env: &EnvRef<'p>, arguments: &'p
                 Ok(prepared) => prepared,
                 Err(error) => return Err(fail(error)),
             };
-            // The search loop of §9.10, on bytes; the match objects are in code points.
+            // The match objects are in code points.
             let map = CodePointMap::new(text);
-            let mut spans = search.pattern.spans();
-            let mut p = 0;
-            while p <= text.len() {
-                let Some((start, end)) = search.pattern.try_match(text, p, &mut spans) else {
-                    break;
-                };
-                if !(search.skip_empty && start == end) {
-                    output(emit, match_object(&search, text, &map, (start, end), &spans), at.clone())?;
-                    if !search.global {
-                        break;
-                    }
-                }
-                p = after(text, start, end);
-            }
-            Ok(())
+            let mut flow = Ok(());
+            run(text, &search, |spans| {
+                flow = output(emit, match_object(&search, text, &map, spans), at.clone());
+                flow.is_ok()
+            });
+            flow
         })
     })
+}
+
+/// The search loop of §9.10, on bytes; `report` receives the spans of each match and returns
+/// false to stop.
+fn run(text: &str, search: &Search, mut report: impl FnMut(&[isize]) -> bool) {
+    let mut spans = vec![-1; 2 * (search.groups.len() + 1)];
+    let mut p = 0;
+    while p <= text.len() {
+        if !search.matcher.borrow_mut().try_match(text, p, &mut spans) {
+            return;
+        }
+        let (start, end) = (spans[0] as usize, spans[1] as usize);
+        // The n flag skips an empty match; without the g flag, the first match reported ends the loop.
+        if !(search.skip_empty && start == end) {
+            let go_on = report(&spans);
+            if !go_on || !search.global {
+                return;
+            }
+        }
+        p = after(text, start, end);
+    }
 }
 
 // Where the next search starts after a match: at its end, or one code point further when it is empty.
@@ -155,10 +166,9 @@ fn try_prepare<'a>(input: &'a JqValue, re: &JqValue, flags: &JqValue) -> Result<
         }
     }
 
-    let translation = regex_syntax::try_translate(pattern, options).map_err(|reason| errors::regex_failure(&reason))?;
-    let compiled = regex_engine::try_compile(&translation.pattern, translation.nesting).map_err(|reason| errors::regex_failure(&reason))?;
-    let groups = translation.groups.into_iter().map(|name| name.map_or(JqValue::Null, JqValue::from_string)).collect();
-    let search = Rc::new(Search { pattern: compiled, groups, global, skip_empty });
+    let program = regex_engine::try_compile(pattern, options).map_err(|reason| errors::regex_failure(&reason))?;
+    let groups = program.groups.iter().map(|name| name.as_ref().map_or(JqValue::Null, |name| JqValue::from_text(name))).collect();
+    let search = Rc::new(Search { matcher: RefCell::new(RegexMatcher::new(program)), groups, global, skip_empty });
     PREPARED.with_borrow_mut(|prepared| {
         if prepared.len() >= PREPARED_LIMIT {
             prepared.remove(0);
@@ -180,24 +190,20 @@ fn same_flags(a: &Option<JqString>, b: Option<&JqString>) -> bool {
     }
 }
 
-fn match_object(search: &Search, input: &str, map: &CodePointMap, found: (usize, usize), spans: &Spans) -> JqValue {
+fn match_object(search: &Search, input: &str, map: &CodePointMap, spans: &[isize]) -> JqValue {
     KEYS.with(|keys| {
         let mut captures = Vec::with_capacity(search.groups.len());
         for (g, name) in search.groups.iter().enumerate() {
             let mut capture = JqObject::with_capacity(4);
-            match spans.group(g + 1) {
-                Some((start, end)) if start < end => add_span(&mut capture, keys, input, map, start, end),
-                Some((start, _)) => {
-                    // An empty group has the key order of an absent one, as jq.
-                    capture.insert(Arc::clone(&keys.offset), JqValue::Number(map.code_point(start) as f64));
-                    capture.insert(Arc::clone(&keys.string), JqValue::from_text(""));
-                    capture.insert(Arc::clone(&keys.length), JqValue::Number(0.0));
-                }
-                None => {
-                    capture.insert(Arc::clone(&keys.offset), JqValue::Number(-1.0));
-                    capture.insert(Arc::clone(&keys.string), JqValue::Null);
-                    capture.insert(Arc::clone(&keys.length), JqValue::Number(0.0));
-                }
+            let (start, end) = (spans[2 * g + 2], spans[2 * g + 3]);
+            if start == end || start < 0 {
+                // An empty or absent group has jq's other key order.
+                let offset = if start < 0 { -1.0 } else { map.code_point(start as usize) as f64 };
+                capture.insert(Arc::clone(&keys.offset), JqValue::Number(offset));
+                capture.insert(Arc::clone(&keys.string), if start < 0 { JqValue::Null } else { JqValue::from_text("") });
+                capture.insert(Arc::clone(&keys.length), JqValue::Number(0.0));
+            } else {
+                add_span(&mut capture, keys, input, map, start as usize, end as usize);
             }
 
             capture.insert(Arc::clone(&keys.name), name.clone());
@@ -205,7 +211,7 @@ fn match_object(search: &Search, input: &str, map: &CodePointMap, found: (usize,
         }
 
         let mut matched = JqObject::with_capacity(4);
-        add_span(&mut matched, keys, input, map, found.0, found.1);
+        add_span(&mut matched, keys, input, map, spans[0] as usize, spans[1] as usize);
         matched.insert(Arc::clone(&keys.captures), JqValue::Array(JqArray::from_owned(captures)));
         JqValue::Object(matched)
     })
