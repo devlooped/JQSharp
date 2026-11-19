@@ -25,6 +25,7 @@ To change behaviour: **spec first, then a corpus case, then the code**.
 2. Add or fix the case in `spec/tests/*.test`. Expected outputs are what jq 1.8.2 prints, unless
    §13 lists the difference; then the case states jqlite's output and §13 says why.
 3. Change the code until the corpus passes.
+4. Carry the change to every port (`docs/porting.md` §5): each runs the same corpus, so a port that lags fails the new cases.
 
 Probing jq byte-safely: write the program to a UTF-8 file and run `jq -f prog.jq input.json`, read
 stdout as UTF-8 bytes, never pass non-ASCII text on the command line or through the console code
@@ -86,6 +87,12 @@ Values, the bound program and the prelude are immutable and shared between threa
   the WhatsApp `Message.jq` filter, with and without a cached `JqExpression`, and measures four
   programs whose cost must stay linear or lazy (`ScalingBenchmarks`). Run one with
   `dotnet run -c Release --project dotnet/Benchmarks -- --filter *Scaling*`.
+
+## Ports
+
+`go/`, `java/`, `python/`, `rust/` and `typescript/` hold the ports of `dotnet/JQLite/Core`, file by file, each with its own host boundary, tests and `README.md` (its differences from the reference, with their reasons); `docs/porting.md` §5 has their test commands. The layers and the portability rules above hold in each, and each has a portability test of its own. Do not fix a port's behaviour in the port alone: when a port and the reference disagree, the spec decides, and the corpus gets the case.
+
+`bench/` is the cross-language benchmark (`bench/README.md`): `pwsh bench/run.ps1` builds every implementation, checks that their outputs equal `bench/cases/*.expected` and writes the times relative to .NET. The .NET runner is `dotnet/Benchmarks/CrossBench.cs` (`Benchmarks cross …`).
 
 ## Where a change goes
 

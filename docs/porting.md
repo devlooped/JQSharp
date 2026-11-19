@@ -31,7 +31,7 @@ flowchart BT
 
 An arrow means "is used by". Values depends on nothing; Syntax on Values; Binding on Syntax, Values and the native *catalogue*; Runtime on Binding and Values; the native *implementations* on everything below them.
 
-The one cycle: the interpreter calls natives through `Builtins/NativeTable.cs`, and the natives call back into the interpreter. C#, Java, Rust (one crate) and JavaScript accept it. Go forbids import cycles and Python dislikes them, so there: put the two native function types and the table in the runtime package, and let the builtins package fill the table at start-up (as `NativeTable`'s static constructor does through each family's `Register()`).
+The one cycle: the interpreter calls natives through `Builtins/NativeTable.cs`, and the natives call back into the interpreter. C#, Java, Rust (one crate) and JavaScript accept it. Go forbids import cycles and Python dislikes them, so there: put the two native function types and the table in the runtime package and the catalogue (`Natives.cs`, which the resolver uses) in the binding package, and let the builtins package fill the table at start-up (as `NativeTable`'s static constructor does through each family's `Register()`).
 
 ### 1.2 Files
 
@@ -181,20 +181,20 @@ func (in *Interpreter) Eval(n Node, env *Env, input Value, path *Path, emit Emit
 ```
 
 ```rust
-type Flow = std::ops::ControlFlow<Signal>;      // Break(signal) stops; Continue(()) goes on; `?` passes it up
+type Flow = Result<(), Signal>;                 // Err(signal) stops; Ok(()) goes on; `?` passes it up
 fn eval(&mut self, n: &Node, env: &Option<Rc<Env>>, input: Value, path: Option<&Path>,
         emit: &mut dyn FnMut(Value, Option<Path>) -> Flow) -> Flow
 ```
 
 `Signal` (`Runtime/Signal.cs`) is `Error(value)`, `Break(label)`, `Halt(value?, code)` or `Stop` (the host stopped the stream). Every construct passes a signal up unchanged, except the one that handles it.
 
-`EvalOne` is the same evaluation for nodes the resolver marked `AtMostOne` (literals, arithmetic, indexes, object construction…): it returns the output instead of pushing it, so most of a program runs without callbacks.
+`EvalOne` is the same evaluation for nodes the resolver marked `AtMostOne`, the single expressions of §7.7 (literals, arithmetic, indexes, object construction, calls of single functions…): it returns the output instead of pushing it, so most of a program runs without callbacks.
 
 | Language | `EvalOne` |
 | --- | --- |
 | C# | `Signal? EvalOne(Node, Env?, JqValue input, Path? path, out bool has, out JqValue value, out Path? at)` |
 | TS | return `Signal \| null` and write `has/value/at` into a reusable scratch object of the interpreter |
-| Python | `-> tuple[Signal \| None, bool, JqValue, Path \| None]` |
+| Python | return the value, a `NOTHING` marker or the signal, and leave the path in a field of the interpreter: a tuple per node costs an allocation |
 | Java | a mutable `One` holder passed in (`one.has`, `one.value`, `one.at`), returns `Signal` |
 | Go | `func (in *Interpreter) EvalOne(…) (sig *Signal, has bool, v Value, at *Path)` |
 | Rust | `fn eval_one(…) -> Result<Option<(Value, Option<Path>)>, Signal>` |
@@ -232,7 +232,9 @@ var value = Env.Up(env, hops)!.Values![slot];
 | Go | `type Env struct { Parent *Env; Values []Value; Closures []*Closure; Label int64 }` |
 | Rust | `struct Env { parent: Option<Rc<Env>>, frame: Frame }`, `enum Frame { Values(Vec<Value>), Closures(Vec<Rc<Closure>>), Label(u64) }` |
 
-A call runs the body in the caller's environment with `Hops` frames removed plus a frame of closures (§7.7); recursion is an index, never a cycle, so frames and the bound program are plain trees (Rust: `Rc`, or `Arc` to share a program across threads). Each call of a jqlite function increments the depth counter of §11 for as long as its outputs are consumed (`Interpreter.Eval`, `calls`).
+A call runs the body in the caller's environment with `Hops` frames removed plus a frame of closures (§7.7); recursion is an index, never a cycle, so frames and the bound program are plain trees (Rust: `Rc`, or `Arc` to share a program across threads). Each call of a jqlite function increments the depth counter of §11: a single call until `EvalOne` returns its output (`Interpreter.EvalCallOne`), any other call for as long as its outputs are consumed (`Interpreter.Eval`, `calls`).
+
+**Single functions (§7.7).** `Function.Single` is the `AtMostOne` of the function's body, and a `CallFunction` is `AtMostOne` when its function is single and the arguments of its `$` parameters (`Function.ValueParameters`) are. Nodes compute `AtMostOne` when they are built and are never changed, so the resolver must know whether a function is single before it has bound its body: it assumes so (`Resolver.Defining`), binds the calls of the function in its own body as single (`Resolver.Call`), and checks the body at the end (`Resolver.EndFunction`). When the assumption was wrong and such calls exist, it binds the body a second time, knowing the answer; the functions nested in it get the same indexes and keep what the first binding found (`replay`), so no body is bound more often than its definition is nested deep. Natives: `Native.SingleWhen` (all the arguments of a native with value arguments, the list of §7.7 for one that takes closures); `EvalOne` runs a closure native with an `emit` that keeps its one output.
 
 ### 2.6 Paths
 
@@ -297,7 +299,7 @@ Every port formats with the same two steps as `ValueText.FormatNumber`: get the 
 | --- | --- | --- |
 | JS | `String(x)` already is ECMAScript `Number::toString` | none, except `-0` → `"-0"` |
 | C# | `x.ToString("R", InvariantCulture)` (.NET Core 3.0+) | §5.2 |
-| Java | `Double.toString(x)` is shortest from JDK 19 (check your minimum JDK); its layout differs (`1.0E20`) | §5.2 from its digits |
+| Java | `Double.toString(x)` from JDK 19 gives the closest decimal of at least two digits, which is not always the shortest (`4.9E-324` where the shortest is `5e-324`): drop the second digit when one reads back as the same double. Its layout differs (`1.0E20`) | §5.2 from its digits |
 | Python | `repr(x)` (shortest since 3.1), layout `1e+20`, `1e-07` | §5.2 from its digits |
 | Go | `strconv.FormatFloat(x, 'e', -1, 64)` | §5.2 |
 | Rust | `format!("{:e}", x)` (shortest) | §5.2 |
@@ -329,11 +331,11 @@ Ill-formed UTF-8 (§4.1, `@base64d`, host bytes): JS `TextDecoder` (non-fatal), 
 | `i` | never the engine's option: each ASCII letter becomes `[aA]`, classes and ranges are closed under ASCII case before negation (`RangeSet.AddAsciiCases`) |
 | `\b \B` | an ASCII word boundary: native in Go and JS, `(?-u:\b)` in Rust; elsewhere lookaround (`(?<=[0-9A-Za-z_])(?![0-9A-Za-z_])\|…`), which .NET's linear engine lacks, so the reference uses its backtracking engine for those patterns only |
 | named groups | plain groups; the translator keeps the names in group order (Java forbids `_`, Python spells `(?P<…>)`) |
-| UTF-16 engines (.NET, Java, JS without `u`) | code points above U+FFFF as surrogate pairs in non-capturing groups, classes split into a BMP part and pairs, so a match never splits a pair |
+| UTF-16 engines (.NET, JS without `u`) | code points above U+FFFF as surrogate pairs in non-capturing groups, classes split into a BMP part and pairs, so a match never splits a pair. `java.util.regex` matches whole code points although its strings are UTF-16: write them as `\x{H}` there, a pattern of surrogate pairs never matches |
 
-Searching from position `p` must see the whole input (`^`, `\b` look before `p`): JS `lastIndex` with the `g` (or `y`) flag and `d` for indices; Java `Matcher.find(int)`; Python `pattern.search(s, pos)` (check `\b` at `pos`); Rust `Regex::captures_at`; .NET `Regex.Match(s, start)`. Go's `regexp` has no start position: search `s[q:]` where `q` is the start of the code point before `p`, with the pattern `(?s:.)(?:.*?)(P)` (one character of context, then the leftmost match of `P` at or after `p`), and shift the group numbers. Convert offsets to code points (UTF-16 units in JS/Java/.NET, bytes in Go/Rust).
+Searching from position `p` must see the whole input (`^`, `\b` look before `p`): JS `lastIndex` with the `g` (or `y`) flag and `d` for indices; Java `Matcher.find(int)`; Python `pattern.search(s, pos)` (check `\b` at `pos`; its own `\B` never matches in an empty string, so keep the lookaround form of the rule above); Rust `Regex::captures_at`; .NET `Regex.Match(s, start)`. Go's `regexp` has no start position: search `s[q:]` where `q` is the start of the code point before `p`, with the pattern `^(?s:.)(?s:.*?)(P)` (anchored: one character of context, then the leftmost match of `P` at or after `p`, across line ends), and shift the group numbers. Convert offsets to code points (UTF-16 units in JS/Java/.NET, bytes in Go/Rust).
 
-Go and Rust engines are linear in the input; JS, Java and Python backtrack, so a jqlite pattern can be slow there (the dialect has no backreferences or lookaround, which bounds but does not remove the risk).
+Not every host engine will do. The dialect is matchable in time linear in the input, and .NET's non-backtracking engine and the engines of Go and Rust are. `java.util.regex` recurses once per repetition of a group and overflows the host stack on a long input (`"ab" * 20000 | test("^(a|b)*$")`), and JavaScript's `RegExp` forgets the captures of a group at each iteration of an enclosing repetition, which the corpus forbids: the Java and TypeScript ports therefore have a matcher of their own in `RegexEngine`, a Pike VM over the translator's instructions (time input × pattern, memory the pattern's size). Python's `re` neither recurses nor resets captures, but it backtracks: a pattern such as `^(a*)*b$` takes time exponential in the input there.
 
 ### 3.4 Dates
 
@@ -346,9 +348,9 @@ No date library: `Calendar.cs` (the `days` formula of §9.12 and its inverse, in
 | Language | Notes |
 | --- | --- |
 | JS | `Math.*` has all of them except `fma` (exact fused multiply-add needs an implementation: check), `Math.round` is not §9.8's `round` (use `MathExtra.Round`); `**` gives NaN for `pow(1; nan)` and `pow(-1; ±infinite)`, which C99 defines as 1 |
-| Python | `math.*`, but it raises `ValueError`/`OverflowError` (`math.log(0)`, `math.exp(1000)`): catch and return the IEEE result. `math.cbrt`, `math.exp2` need 3.11, `math.fma` 3.13 |
-| Java | prefer `StrictMath` (fdlibm, reproducible); `Math.fma` (JDK 9); `StrictMath.pow(1, NaN)` is NaN in Java, fix to 1 |
-| Go | `math.*` has all, `math.FMA`; C99 special cases of `Pow` already hold |
+| Python | `math.*`, but it raises `ValueError`/`OverflowError` (`math.log(0)`, `math.exp(1000)`, `math.fma` on overflow or an invalid operation): catch and return the IEEE result. `math.ceil`, `math.floor` and `math.trunc` return an `int`, which loses `-0` (`ceil(-0.5)` is `-0`). `math.cbrt`, `math.exp2` need 3.11, `math.fma` 3.13 |
+| Java | prefer `StrictMath` (fdlibm, reproducible); `Math.fma` (JDK 9); `StrictMath.pow(1, NaN)` and `pow(-1, ±Infinity)` are NaN in Java, fix to 1; no `acosh`, `asinh`, `atanh` or `log2`: write them from `log` and `sqrt` |
+| Go | `math.*` has all, `math.FMA`; C99 special cases of `Pow` already hold. The compiler may fuse `x*y + z` into one operation (it does on arm64): write `float64(x*y) + z` in the formulas of `MathExtra` |
 | Rust | `f64` methods (`mul_add` for `fma`, `hypot`, `cbrt`); `%` is `fmod` |
 
 ### 3.6 Recursion and the host stack
@@ -358,11 +360,11 @@ No date library: `Calendar.cs` (the `days` formula of §9.12 and its inverse, in
 | Language | At that point |
 | --- | --- |
 | C# | a new thread with a 16 MB stack, joined (`StackGuard.cs`) |
-| Go | nothing: goroutine stacks grow |
-| Rust | `stacker::maybe_grow(red_zone, size, || …)` |
-| Java | `new Thread(group, task, name, stackSize)`, then `join()` |
-| Python | `sys.setrecursionlimit(…)` and run the step on a thread created after `threading.stack_size(…)` |
-| JS | the stack cannot grow: keep a lower `MaxDepth`, or run the interpreter as a trampoline (check what your runtime allows) |
+| Go | goroutine stacks grow, but only to 1 GB, and overflowing that kills the process: count the `Eval`/`EvalOne` frames of the goroutine and continue the step on a new goroutine, the caller waiting, past a budget |
+| Rust | `stacker::maybe_grow(red_zone, size, || …)`, in the parser too (a nesting level takes 2 KB of stack in release and 9 KB in debug). Dropping must not recurse either: give deep values, long chains of frames and long paths a `Drop` that unlinks them in a loop |
+| Java | `new Thread(group, task, name, stackSize)`, then `join()`. No API tells how much stack is left: count the nested steps and hop on a budget small enough for the default stack with unoptimized frames. The parser needs the same hop: 1,000 levels of nesting do not fit in 1 MB before the JIT has compiled it |
+| Python | `sys.setrecursionlimit(…)` is what counts: from CPython 3.11 a call from Python to Python does not grow the C stack. Running the step on a thread created after `threading.stack_size(…)` is a safeguard for the calls that do |
+| JS | the stack cannot grow, and a recursive tree walker overflows Node's default stack near 3,000 levels: run the interpreter as a trampoline (`eval`, `output` and the return of a call schedule steps that one loop runs, what follows a call being a callback on an explicit stack), and keep the direct `evalOne` for small nodes that call nothing |
 
 ### 3.7 The prelude
 
@@ -434,3 +436,19 @@ modules.test with a module source over spec/tests/modules/ (README path rule), o
 | `Runtime/InterpreterTests` | signals through every construct, laziness, path mode, the depth limit, the host interface |
 | `Runtime/StackGuardTests` | deep evaluations on 1 MB and 256 KB stacks reach `MaxDepth`, never a host stack overflow |
 | `Runtime/AssignTests`, `NativeTableTests` | native `_modify`/`_assign` equal to the prelude's; every native implemented |
+
+## 5. The ports
+
+Each port lives in a folder beside `dotnet/`, has a `README.md` that lists its deliberate differences from the reference, and runs the shared corpus both ways (through its public API, and through its core without the native overrides).
+
+| Folder | Package | Tests (from the folder) | Host stack (§11) | Regex engine |
+| --- | --- | --- | --- | --- |
+| `go/` | module `github.com/devlooped/jqlite/go`, engine in `internal/` | `go generate ./...`, `go test ./...` | a new goroutine past 10,000 interpreter frames | `regexp` |
+| `java/` | `com.devlooped:jqlite`, Java 21 | `mvnw package` (needs `JAVA_HOME`) | 64 MB threads on a budget of nested steps, also in the parser | its own Pike VM |
+| `python/` | `jqlite`, Python 3.11+ | `python -m unittest` | the recursion limit, raised while a parse or an evaluation runs | `re` |
+| `rust/` | crate `jqlite`, edition 2024 | `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` | `stacker`, also in the parser | the `regex` crate |
+| `typescript/` | npm `jqlite`, ESM, Node 20+ | `npm ci`, `npm test`, `npm run check` | none used: a trampoline | its own Pike VM |
+
+A change of behaviour goes to the spec, the corpus and the reference first, then to every port: a port that lags fails the new corpus cases.
+
+`bench/` compares the implementations on the same programs and inputs, .NET being the baseline: each port has a runner and a `bench.json` (`bench/README.md`), and `pwsh bench/run.ps1` builds them, checks their outputs byte for byte and writes the tables.

@@ -69,7 +69,8 @@ public class ValueArithmeticTests
     [InlineData("\"\"", "5", "\"\"")]
     [InlineData("\"\"", "1e300", "\"\"")]
     [InlineData("\"é\"", "1.5e9", "error: Repeat string result too long")]
-    [InlineData("\"ab\"", "1e9", "error: Repeat string result too long")]
+    // 2.2e9 bytes: past the limit of §11 in every host (1e9 fails in .NET only, whose strings are shorter).
+    [InlineData("\"ab\"", "1.1e9", "error: Repeat string result too long")]
     [InlineData("{\"a\":{\"b\":1},\"c\":1}", "{\"a\":{\"d\":2},\"c\":{\"x\":1}}", "{\"a\":{\"b\":1,\"d\":2},\"c\":{\"x\":1}}")]
     [InlineData("{\"a\":{\"b\":{\"c\":1}}}", "{\"a\":{\"b\":{\"d\":2}},\"e\":3}", "{\"a\":{\"b\":{\"c\":1,\"d\":2}},\"e\":3}")]
     [InlineData("{\"a\":{\"b\":1}}", "{\"a\":1}", "{\"a\":1}")]
