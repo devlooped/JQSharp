@@ -12,13 +12,17 @@ namespace JQLite.Core.Builtins;
 /// </summary>
 /// <remarks>
 /// .NET runs the pattern with <see cref="RegexOptions.NonBacktracking"/> (linear time in the input)
-/// and works on UTF-16 units, which the translation accounts for. The one exception is a pattern
-/// with <c>\b</c> or <c>\B</c>: the dialect's word boundaries are ASCII, .NET's are Unicode, and the
-/// ASCII form needs lookaround, which the linear-time engine does not have; such a pattern runs on
-/// the backtracking engine and gives up the linear-time guarantee (it is validated by the dialect
-/// first, so it has no backreferences or other constructs beyond the lookaround of the boundary).
+/// and works on UTF-16 units, which the translation accounts for. Two kinds of pattern run on the
+/// backtracking engine instead and give up the linear-time guarantee (they are validated by the
+/// dialect first, so they have no backreferences or other constructs beyond the lookaround of a
+/// boundary). A pattern with <c>\b</c> or <c>\B</c>: the dialect's word boundaries are ASCII,
+/// .NET's are Unicode, and the ASCII form needs lookaround, which the linear-time engine does not
+/// have. And a pattern the linear-time engine refuses for its size: it takes at most 10,000
+/// automaton nodes, less than the limits of §11 allow (a literal of 10,000 code points, or 3,334
+/// <c>.</c>, each written as three sets of UTF-16 units), and a pattern within those limits must run.
 /// Case-insensitivity is never the engine's: the translation does it. Compiled patterns are cached
 /// per process in a thread-safe map that is emptied when it reaches <see cref="CacheLimit"/> entries.
+/// A port whose engine has a limit below those of §11 raises it, or replaces the engine.
 /// </remarks>
 static class RegexEngine
 {
@@ -36,16 +40,12 @@ static class RegexEngine
         if (cache.TryGetValue(pattern, out compiled!))
             return true;
 
-        Regex regex;
-        try
+        // The linear-time engine first; the backtracking one for what it cannot run.
+        var regex = lookaround ? null : Create(pattern, RegexOptions.NonBacktracking, out reason);
+        regex ??= Create(pattern, RegexOptions.None, out reason);
+        if (regex is null)
         {
-            regex = new Regex(pattern, RegexOptions.CultureInvariant | (lookaround ? RegexOptions.None : RegexOptions.NonBacktracking));
-        }
-        catch (Exception e) when (e is ArgumentException or NotSupportedException)
-        {
-            // The boundary of the host engine: its exception becomes the dialect's error.
             compiled = null!;
-            reason = e.Message;
             return false;
         }
 
@@ -54,6 +54,21 @@ static class RegexEngine
         compiled = new HostPattern(regex);
         cache[pattern] = compiled;
         return true;
+    }
+
+    // The boundary of the host engine: its exception becomes the reason of the dialect's error.
+    static Regex? Create(string pattern, RegexOptions engine, out string reason)
+    {
+        reason = "";
+        try
+        {
+            return new Regex(pattern, RegexOptions.CultureInvariant | engine);
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException)
+        {
+            reason = e.Message;
+            return null;
+        }
     }
 
     /// <summary>

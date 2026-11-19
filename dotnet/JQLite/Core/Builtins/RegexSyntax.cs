@@ -18,10 +18,27 @@ namespace JQLite.Core.Builtins;
 /// named groups as plain groups (engines number them differently). The <c>i</c> flag is done here,
 /// never by the engine: it folds ASCII letters only (<see cref="RangeSet.AddAsciiCases"/>, the one
 /// place of the rule). A port whose engine works on code points writes the classes directly.
+/// <para>
+/// The limits of §11 are checked here, while the pattern is read (<see cref="Measure"/>), so that
+/// no engine meets a pattern beyond them and every engine must take the ones within.
+/// </para>
 /// </remarks>
 static class RegexSyntax
 {
+    /// <summary>The largest count of a quantifier, and of the counts of nested quantifiers multiplied.</summary>
     public const int MaxRepeat = 1000;
+
+    /// <summary>The largest size of a pattern (§9.10): its items, counted repetitions written out.</summary>
+    public const int MaxSize = 10000;
+
+    /// <summary>The most groups open at once.</summary>
+    public const int MaxNesting = 100;
+
+    /// <summary>The most capturing groups.</summary>
+    public const int MaxGroups = 1000;
+
+    /// <summary>The reason of a pattern beyond <see cref="MaxSize"/>, <see cref="MaxNesting"/> or <see cref="MaxGroups"/>: a fixed text (§10.3).</summary>
+    public const string TooLarge = "the pattern is too large";
 
     const string AnyPair = @"[\uD800-\uDBFF][\uDC00-\uDFFF]";
 
@@ -53,7 +70,7 @@ static class RegexSyntax
         var points = Decode(pattern);
         var output = new StringBuilder(pattern.Length * 6);
         var groups = new List<string?>();
-        var open = 0;
+        var measure = new Measure();
         var previous = Previous.None;
         var lookaround = false;
         translation = new Translation("", [], false);
@@ -72,42 +89,57 @@ static class RegexSyntax
                 case '\\':
                     if (!TryEscape(points, ref i, output, options, ref previous, ref lookaround, out reason))
                         return false;
+                    if (!measure.Add(1))
+                        return Fail(TooLarge, out reason);
                     continue;
                 case '[':
-                    if (!TryClass(points, ref i, output, options, out reason))
+                    if (!TryClass(points, ref i, output, options, out var items, out reason))
                         return false;
+                    if (!measure.Add(items))
+                        return Fail(TooLarge, out reason);
                     previous = Previous.Atom;
                     continue;
                 case '.':
                     output.Append(options.DotAll ? @"(?:[^\uD800-\uDFFF]|" : @"(?:[^\n\uD800-\uDFFF]|").Append(AnyPair).Append(')');
+                    if (!measure.Add(1))
+                        return Fail(TooLarge, out reason);
                     previous = Previous.Atom;
                     i++;
                     continue;
                 case '^':
                     output.Append('^');
+                    if (!measure.Add(1))
+                        return Fail(TooLarge, out reason);
                     previous = Previous.Anchor;
                     i++;
                     continue;
                 case '$':
                     output.Append(@"\z");
+                    if (!measure.Add(1))
+                        return Fail(TooLarge, out reason);
                     previous = Previous.Anchor;
                     i++;
                     continue;
                 case '|':
                     output.Append('|');
+                    if (!measure.Add(1))
+                        return Fail(TooLarge, out reason);
                     previous = Previous.None;
                     i++;
                     continue;
                 case '(':
+                    if (measure.Depth == MaxNesting)
+                        return Fail(TooLarge, out reason);
                     if (!TryGroup(points, ref i, output, groups, out reason))
                         return false;
-                    open++;
+                    if (!measure.Open())
+                        return Fail(TooLarge, out reason);
                     previous = Previous.None;
                     continue;
                 case ')':
-                    if (open == 0)
+                    if (measure.Depth == 0)
                         return Fail("unmatched close parenthesis", out reason);
-                    open--;
+                    measure.Close();
                     output.Append(')');
                     previous = Previous.Atom;
                     i++;
@@ -115,7 +147,7 @@ static class RegexSyntax
                 case '*' or '+' or '?' or '{':
                     if (previous != Previous.Atom)
                         return Fail(previous == Previous.Quantifier ? "nested quantifier" : "quantifier without an operand", out reason);
-                    if (!TryQuantifier(points, ref i, output, options, out reason))
+                    if (!TryQuantifier(points, ref i, output, options, measure, out reason))
                         return false;
                     previous = Previous.Quantifier;
                     continue;
@@ -123,13 +155,15 @@ static class RegexSyntax
                     return Fail($"unescaped '{(char)c}'", out reason);
                 default:
                     Literal(output, c, options);
+                    if (!measure.Add(1))
+                        return Fail(TooLarge, out reason);
                     previous = Previous.Atom;
                     i++;
                     continue;
             }
         }
 
-        if (open > 0)
+        if (measure.Depth > 0)
             return Fail("missing close parenthesis", out reason);
         translation = new Translation(output.ToString(), [.. groups], lookaround);
         return true;
@@ -224,6 +258,8 @@ static class RegexSyntax
                 var name = Text(points, start, end);
                 if (groups.Contains(name))
                     return Fail($"duplicate group name {name}", out reason);
+                if (groups.Count == MaxGroups)
+                    return Fail(TooLarge, out reason);
                 groups.Add(name);
                 output.Append('(');
                 i = end + 1;
@@ -233,6 +269,8 @@ static class RegexSyntax
             return Fail("unsupported group syntax (?", out reason);
         }
 
+        if (groups.Count == MaxGroups)
+            return Fail(TooLarge, out reason);
         groups.Add(null);
         output.Append('(');
         i++;
@@ -240,10 +278,12 @@ static class RegexSyntax
     }
 
     // * + ? {n} {n,} {n,m}, each optionally followed by ? (lazy).
-    static bool TryQuantifier(int[] points, ref int i, StringBuilder output, Options options, out string reason)
+    static bool TryQuantifier(int[] points, ref int i, StringBuilder output, Options options, Measure measure, out string reason)
     {
         reason = "";
         var c = points[i];
+        // The count of §9.10: how many times the operand is written out.
+        var count = 1;
         if (c == '{')
         {
             var at = i + 1;
@@ -264,6 +304,9 @@ static class RegexSyntax
                 return Fail("'{' is not a quantifier", out reason);
             if (min > MaxRepeat || !unbounded && (max > MaxRepeat || max < min))
                 return Fail("invalid repetition count", out reason);
+            count = Math.Max(unbounded ? min : max, 1);
+            if (!measure.Multiply(count))
+                return Fail("invalid repetition count", out reason);
             output.Append('{').Append(min);
             if (unbounded)
                 output.Append(',');
@@ -278,6 +321,8 @@ static class RegexSyntax
             i++;
         }
 
+        if (!measure.Repeat(count))
+            return Fail(TooLarge, out reason);
         if (options.Extended)
         {
             while (i < points.Length && (IsExtendedSpace(points[i]) || points[i] == '#'))
@@ -306,10 +351,11 @@ static class RegexSyntax
         return at > start;
     }
 
-    // [...] or [^...]: literals, escapes, ranges of literals and shorthands.
-    static bool TryClass(int[] points, ref int i, StringBuilder output, Options options, out string reason)
+    // [...] or [^...]: literals, escapes, ranges of literals and shorthands; items is their number.
+    static bool TryClass(int[] points, ref int i, StringBuilder output, Options options, out int items, out string reason)
     {
         reason = "";
+        items = 0;
         var at = i + 1;
         var negated = at < points.Length && points[at] == '^';
         if (negated)
@@ -346,6 +392,7 @@ static class RegexSyntax
             {
                 set.AddShorthand(points[at + 1]);
                 previousLiteral = -1;
+                items++;
                 at += 2;
                 continue;
             }
@@ -354,6 +401,7 @@ static class RegexSyntax
                 return false;
             set.Add(literal, literal);
             previousLiteral = literal;
+            items++;
         }
 
         if (at == first)
@@ -551,6 +599,67 @@ static class RegexSyntax
     {
         reason = text;
         return false;
+    }
+
+    /// <summary>
+    /// The limits of §11 on the part of a pattern read so far: its size, the groups open, and the
+    /// counts of the counted quantifiers nested in one another.
+    /// </summary>
+    sealed class Measure
+    {
+        // Per open group: the size when it opened.
+        readonly List<int> starts = [];
+        // For the pattern and per open group: the largest product of the counts nested in it so far.
+        readonly List<int> products = [1];
+        int size;
+        // The last item, the operand of a quantifier: its size and the largest product of the counts nested in it.
+        int atom;
+        int atomProduct;
+
+        /// <summary>The groups open.</summary>
+        public int Depth => starts.Count;
+
+        /// <summary>An item of this size (a literal, a class, an anchor, a '|'); false when the pattern is too large.</summary>
+        public bool Add(int itemSize)
+        {
+            atom = itemSize;
+            atomProduct = 1;
+            size += itemSize;
+            return size <= MaxSize;
+        }
+
+        /// <summary>A group opens: it counts 1; false when the pattern is too large.</summary>
+        public bool Open()
+        {
+            starts.Add(size);
+            products.Add(1);
+            return Add(1);
+        }
+
+        /// <summary>A group closes: it is the last item, with all it holds.</summary>
+        public void Close()
+        {
+            atom = size - starts[^1];
+            atomProduct = products[^1];
+            starts.RemoveAt(starts.Count - 1);
+            products.RemoveAt(products.Count - 1);
+            products[^1] = Math.Max(products[^1], atomProduct);
+        }
+
+        /// <summary>A counted quantifier on the last item; false when the nested counts multiply above <see cref="MaxRepeat"/>.</summary>
+        public bool Multiply(int count)
+        {
+            var product = count * atomProduct;
+            products[^1] = Math.Max(products[^1], product);
+            return product <= MaxRepeat;
+        }
+
+        /// <summary>A quantifier on the last item: it counts 1, and the item once more for each count above 1; false when the pattern is too large.</summary>
+        public bool Repeat(int count)
+        {
+            size += atom * (count - 1) + 1;
+            return size <= MaxSize;
+        }
     }
 
     /// <summary>A set of code points as sorted, disjoint, non-adjacent ranges.</summary>

@@ -973,7 +973,7 @@ Operations are evaluated left to right as written, each rounded to double (no fu
 
 ### 9.10 Regular expressions
 
-**Flavor.** jq uses the Perl-NT flavor of Oniguruma. jqlite uses a flavor of its own, chosen the same way: the syntax that the regex engines of every port (RE2/Go, Rust `regex`, ECMAScript in `u` mode, Java, Python `re`, .NET) can all be made to read with one meaning. The table below and the flags are its whole definition; a pattern means what they say, also where Oniguruma reads it otherwise or refuses it (§13). Patterns are strings of code points.
+**Flavor.** jq uses the Perl-NT flavor of Oniguruma. jqlite uses a flavor of its own, chosen the same way: the syntax that the regex engines of every port (RE2/Go, Rust `regex`, ECMAScript in `u` mode, Java, Python `re`, .NET) can all be made to read with one meaning. The table below, the limits and the flags are its whole definition; a pattern means what they say, also where Oniguruma reads it otherwise or refuses it (§13). Patterns are strings of code points.
 
 | Element | Syntax |
 | --- | --- |
@@ -984,10 +984,18 @@ Operations are evaluated left to right as written, each rounded to double (no fu
 | shorthands | `\d` = `[0-9]`, `\w` = `[0-9A-Za-z_]`, `\s` = `[\t\n\v\f\r ]` (ASCII only); `\D \W \S` their complements |
 | anchors | `^` start of the input, `$` end of the input (no line mode); `\b`, `\B` ASCII word boundary (by `\w`) |
 | groups | `( … )` capturing, `(?: … )` non-capturing, `(?<name> … )` named capturing; names `[A-Za-z_][A-Za-z0-9_]*`, unique |
-| quantifiers | `* + ?`, `{n}`, `{n,}`, `{n,m}` (n ≤ m ≤ 1000), each optionally followed by `?` (lazy); a quantifier follows a literal, `.`, a class, a shorthand or a group, never an anchor, another quantifier (`a**` is an error), `\|`, `(` or the start |
+| quantifiers | `* + ?`, `{n}`, `{n,}`, `{n,m}` (n ≤ m ≤ 1000; nested counts multiply, see Limits), each optionally followed by `?` (lazy); a quantifier follows a literal, `.`, a class, a shorthand or a group, never an anchor, another quantifier (`a**` is an error), `\|`, `(` or the start |
 | alternation | `a\|b` (empty alternatives allowed) |
 
 Any other pattern is the error `Regex failure: <reason>` (as jq; the reason is implementation-defined): lookaround, backreferences, inline flags, `\p{…}`, POSIX classes and the other Oniguruma extensions are not in the flavor.
+
+**Limits** (§11). Engines write a counted repetition out, so a pattern is bounded by what it stands for, not by its length:
+
+- *Nested counts.* The count of a counted quantifier is `m` for `{n,m}` and `{n}`, `n` for `{n,}`, and 1 when that is 0. The counts of counted quantifiers nested in one another multiply, through groups and `* + ?`, and the product is at most 1000: `(?:a{10}){100}` is a pattern, `(?:a{10}){101}` and `(?:(?:a{10})*){101}` are the error of a count above 1000 (`Regex failure: <reason>`). Repetitions side by side do not multiply (`a{1000}b{1000}`).
+- *Size.* The size of a pattern is the sum of: 1 for each literal, `.`, shorthand and anchor outside a class; the number of its items (literals, ranges, shorthands) for a class; 1 for each group, each `|` and each quantifier; and, for a counted quantifier, the size of its operand once more for each count above 1. `a{3}` has size 4, `[a-c\d_]+` size 4, `(?:ab|c){2,10}` size 51 (the group is 5), `(?:ab){0}` size 4. With the `x` flag, what the flag removes counts nothing. The size is at most 10000.
+- *Groups.* At most 100 groups are open at once, and a pattern has at most 1000 capturing groups.
+
+A pattern beyond its size or its groups is the error `Regex failure: the pattern is too large`, a fixed text (§10.3). A pattern is read from left to right and its first error is the one reported: the size is checked on the part read so far (an open group counts 1 and what it holds), the groups at each `(`, and the count of a quantifier before the size it adds. `"(" * 101` is too large, not unclosed; `(?:a{1000}){1000}` has a count above 1000.
 
 Matching is leftmost-first, as in Perl and in every engine above: greedy or lazy quantifiers, left alternative first. A group inside a repetition reports its last successful participation. Offsets and lengths are in code points (as jq).
 
@@ -1186,6 +1194,7 @@ Reported before evaluation, with line and column (§2). Their message texts are 
 | delfield | `Cannot delete <T> field of object` | §8.2 |
 | delfrom | `Cannot delete fields from <T>` | §8.2 |
 | depth | `Maximum call depth exceeded` | §11 |
+| regexsize | `Regex failure: the pattern is too large` | §9.10, §11 |
 | *builtins* | the texts in the tables of §9 | |
 
 All runtime errors, including `depth`, are ordinary `Error` signals: `try` catches them.
@@ -1200,7 +1209,10 @@ All runtime errors, including `depth`, are ordinary `Error` signals: `try` catch
 | JSON writer nesting | values at level 10002 or deeper | written as `<skipped: too deep>` (§5.1) |
 | Array index set by `setpath` | 536870911 | error `Array index too large` |
 | String repetition result | 2^31 − 1 UTF-8 bytes | error `Repeat string result too long` |
-| Regex repetition count | 1000 | invalid regex |
+| Regex repetition count: the count of one quantifier, and the product of the counts of nested ones (§9.10) | 1000 | error `Regex failure: <reason>` (invalid regex) |
+| Regex pattern size (§9.10) | 10000 | error `Regex failure: the pattern is too large` |
+| Regex groups open at once | 100 | the same error |
+| Regex capturing groups | 1000 | the same error |
 
 - There are no tail calls: every call of a jqlite function counts while it is active, however it is called. Natives marked *loop* in §9 do not count their iterations.
 - A single call (§7.7) is active until it has given its output, or ended without one: the output is consumed after the call. The depth of a recursion made of single calls is therefore the depth of the recursion: `def fib: if . < 2 then . else (. - 1 | fib) + (. - 2 | fib) end; 25 | fib` is 25 calls deep. Any other call stays active while its outputs are consumed downstream, as in the push model, so there the depth counts the calls nested along the current output: `def f: ., (. + 1 | f)` grows the depth with each output, and two such calls joined by an operator nest (`def g: if . < 2 then ., empty else (. - 1 | g) + (. - 2 | g) end; 15 | g` exceeds the default limit).
@@ -1246,6 +1258,7 @@ Each difference makes jqlite portable or simpler to specify; jq programs that do
 | Regex `\v` | U+000B | the letter `v` (`"v" \| test("\\v")` → `true`, `"\u000b" \| test("\\v")` → `false`) | the escape every other engine has |
 | Regex empty matches | the search moves one code point after an empty match: `"é😀é😀b" \| [match(""; "g")] \| length` → `6` | moves one UTF-8 byte, reporting repeated offsets: `14` (offsets `[0,1,1,2,2,2,2,…]`) | offsets are code points everywhere else |
 | Regex `l` flag | accepted, no effect | longest match | no common engine support |
+| Regex limits | counts up to 1000, also multiplied through nested counted quantifiers; size up to 10000; 100 groups open at once; 1000 capturing groups (§9.10, §11): `(?:a{100}){11}`, a literal of 10001 code points, `"(" * 101 + "a" + ")" * 101` and `"(a)" * 1001` are errors | Oniguruma: counts up to 100000, not multiplied (`(?:a{1000}){1000}` is a pattern); no size limit; 511 groups open at once (`parse depth limit over`); 32767 capturing groups (`too many captures`) | engines that write counted repetitions out (Go, Rust, .NET's linear engine, a Pike VM) build an automaton of the pattern's size, and each has a limit of its own; RE2/Go refuses nested counts above 1000 and 1000 levels of syntax tree; the time of a search with captures grows with their number |
 | Recursion | depth limit (§11), no tail calls; a call that is not single (§7.7) stays in the depth while its outputs are consumed | grows the heap, tail calls optimized | host stacks differ (Python 1000 frames) |
 | Special functions | `erf`, `erfc`, `tgamma`, `lgamma`, `gamma`, `lgamma_r`, `j0`, `j1`, `jn`, `y0`, `y1`, `yn`, `exp2`, `exp10`, `expm1`, `log1p` by the formulas of §9.8 | libm | JavaScript, Java, Rust lack some; .NET's `expm1`/`log1p` are inaccurate near 0 |
 | Math edge cases | `fmin`/`fmax` of `0` and `-0` give the first argument; `ldexp`/`scalbln` with a NaN exponent give NaN, with an infinite or huge one the limit (`ldexp(1; 1e10)` → +Infinity); `frexp` of ±Infinity/NaN has exponent 0; `copysign` with a NaN `y` gives `\|x\|`; `jn`/`yn` with `\|n\| ≥ 2^31` give NaN | libm and C casts: `fmin` gives `-0` and `fmax` `0` for both orders; the exponent is cast to a C `int` (`ldexp(1; nan)`, `ldexp(1; infinite)`, `ldexp(1; 1e10)` → `0`); `frexp` exponent −1 (Windows); `copysign(1; -nan)` → `-1` (the sign bit of the NaN); the order of `jn`/`yn` is cast to a C `int` | exact and the same in every language; JavaScript cannot tell the sign of a NaN |

@@ -13,20 +13,29 @@
 //! Rust: the engine works on code points, so a class is written directly; the reference, whose
 //! engine works on UTF-16 units, splits each class into a BMP part and surrogate pairs, and needs
 //! lookaround for the ASCII word boundaries, which this engine has natively.
+//!
+//! The limits of §11 are checked here, while the pattern is read ([`Measure`]), so that the engine
+//! meets no pattern beyond them and must take the ones within (`regex_engine` sets the engine's own
+//! limits accordingly).
 
 use std::fmt::Write;
 
 use crate::values::code_points;
 
+/// The largest count of a quantifier, and of the counts of nested quantifiers multiplied.
 pub const MAX_REPEAT: u32 = 1000;
 
-/// The groups open at once in a pattern: more is [`TOO_LARGE`]. The dialect sets no limit, and
-/// the reference's engine none either; the host engine here compiles groups by recursion.
-pub const MAX_NESTING: usize = 1000;
+/// The largest size of a pattern (§9.10): its items, counted repetitions written out.
+pub const MAX_SIZE: u32 = 10000;
 
-/// The reason of the `Regex failure` of a pattern beyond what this port runs: more than
-/// [`MAX_NESTING`] groups open at once, or a compiled size beyond the engine's limit
-/// (`regex_engine::SIZE_LIMIT`).
+/// The most groups open at once.
+pub const MAX_NESTING: usize = 100;
+
+/// The most capturing groups.
+pub const MAX_GROUPS: usize = 1000;
+
+/// The reason of a pattern beyond [`MAX_SIZE`], [`MAX_NESTING`] or [`MAX_GROUPS`]: a fixed text
+/// (§10.3).
 pub const TOO_LARGE: &str = "the pattern is too large";
 
 /// The flags of §9.10 that change the pattern itself.
@@ -59,7 +68,7 @@ pub fn try_translate(pattern: &str, options: Options) -> Result<Translation, Str
     let points: Vec<char> = pattern.chars().collect();
     let mut output = String::with_capacity(pattern.len() * 6);
     let mut groups: Vec<Option<String>> = Vec::new();
-    let mut open = 0;
+    let mut measure = Measure::new();
     let mut nesting = 0;
     let mut previous = Previous::None;
     let mut i = 0;
@@ -70,67 +79,83 @@ pub fn try_translate(pattern: &str, options: Options) -> Result<Translation, Str
             continue;
         }
 
-        match c {
-            '\\' => try_escape(&points, &mut i, &mut output, options, &mut previous)?,
+        // Whether the pattern read so far is within MAX_SIZE.
+        let fits = match c {
+            '\\' => {
+                try_escape(&points, &mut i, &mut output, options, &mut previous)?;
+                measure.add(1)
+            }
             '[' => {
-                try_class(&points, &mut i, &mut output, options)?;
+                let items = try_class(&points, &mut i, &mut output, options)?;
                 previous = Previous::Atom;
+                measure.add(items)
             }
             '.' => {
                 output.push_str(if options.dot_all { "(?s:.)" } else { "[^\\x{A}]" });
                 previous = Previous::Atom;
                 i += 1;
+                measure.add(1)
             }
             '^' => {
                 output.push('^');
                 previous = Previous::Anchor;
                 i += 1;
+                measure.add(1)
             }
             '$' => {
                 output.push_str("\\z");
                 previous = Previous::Anchor;
                 i += 1;
+                measure.add(1)
             }
             '|' => {
                 output.push('|');
                 previous = Previous::None;
                 i += 1;
+                measure.add(1)
             }
             '(' => {
-                if open == MAX_NESTING {
+                if measure.depth() == MAX_NESTING {
                     return Err(TOO_LARGE.to_owned());
                 }
                 try_group(&points, &mut i, &mut output, &mut groups)?;
-                open += 1;
-                nesting = nesting.max(open);
                 previous = Previous::None;
+                let fits = measure.open();
+                nesting = nesting.max(measure.depth());
+                fits
             }
             ')' => {
-                if open == 0 {
+                if measure.depth() == 0 {
                     return Err("unmatched close parenthesis".to_owned());
                 }
-                open -= 1;
+                measure.close();
                 output.push(')');
                 previous = Previous::Atom;
                 i += 1;
+                true
             }
             '*' | '+' | '?' | '{' => {
                 if previous != Previous::Atom {
                     return Err((if previous == Previous::Quantifier { "nested quantifier" } else { "quantifier without an operand" }).to_owned());
                 }
-                try_quantifier(&points, &mut i, &mut output, options)?;
+                try_quantifier(&points, &mut i, &mut output, options, &mut measure)?;
                 previous = Previous::Quantifier;
+                true
             }
             ']' | '}' => return Err(format!("unescaped '{c}'")),
             _ => {
                 literal(&mut output, c, options);
                 previous = Previous::Atom;
                 i += 1;
+                measure.add(1)
             }
+        };
+        if !fits {
+            return Err(TOO_LARGE.to_owned());
         }
     }
 
-    if open > 0 {
+    if measure.depth() > 0 {
         return Err("missing close parenthesis".to_owned());
     }
     Ok(Translation { pattern: output, groups, nesting })
@@ -218,6 +243,9 @@ fn try_group(points: &[char], i: &mut usize, output: &mut String, groups: &mut V
             if groups.iter().any(|group| group.as_deref() == Some(name.as_str())) {
                 return Err(format!("duplicate group name {name}"));
             }
+            if groups.len() == MAX_GROUPS {
+                return Err(TOO_LARGE.to_owned());
+            }
             groups.push(Some(name));
             output.push('(');
             *i = end + 1;
@@ -227,6 +255,9 @@ fn try_group(points: &[char], i: &mut usize, output: &mut String, groups: &mut V
         return Err("unsupported group syntax (?".to_owned());
     }
 
+    if groups.len() == MAX_GROUPS {
+        return Err(TOO_LARGE.to_owned());
+    }
     groups.push(None);
     output.push('(');
     *i += 1;
@@ -234,8 +265,10 @@ fn try_group(points: &[char], i: &mut usize, output: &mut String, groups: &mut V
 }
 
 // * + ? {n} {n,} {n,m}, each optionally followed by ? (lazy).
-fn try_quantifier(points: &[char], i: &mut usize, output: &mut String, options: Options) -> Result<(), String> {
+fn try_quantifier(points: &[char], i: &mut usize, output: &mut String, options: Options, measure: &mut Measure) -> Result<(), String> {
     let c = points[*i];
+    // The count of §9.10: how many times the operand is written out.
+    let mut count = 1;
     if c == '{' {
         let mut at = *i + 1;
         let Some(min) = try_number(points, &mut at) else {
@@ -261,6 +294,10 @@ fn try_quantifier(points: &[char], i: &mut usize, output: &mut String, options: 
         if min > MAX_REPEAT || !unbounded && (max > MAX_REPEAT || max < min) {
             return Err("invalid repetition count".to_owned());
         }
+        count = (if unbounded { min } else { max }).max(1);
+        if !measure.multiply(count) {
+            return Err("invalid repetition count".to_owned());
+        }
         let _ = write!(output, "{{{min}");
         if unbounded {
             output.push(',');
@@ -274,6 +311,9 @@ fn try_quantifier(points: &[char], i: &mut usize, output: &mut String, options: 
         *i += 1;
     }
 
+    if !measure.repeat(count) {
+        return Err(TOO_LARGE.to_owned());
+    }
     if options.extended {
         while *i < points.len() && (is_extended_space(points[*i]) || points[*i] == '#') {
             *i = skip_extended(points, *i);
@@ -299,8 +339,10 @@ fn try_number(points: &[char], at: &mut usize) -> Option<u32> {
     if *at > start { Some(value) } else { None }
 }
 
-// [...] or [^...]: literals, escapes, ranges of literals and shorthands.
-fn try_class(points: &[char], i: &mut usize, output: &mut String, options: Options) -> Result<(), String> {
+// [...] or [^...]: literals, escapes, ranges of literals and shorthands; the result is the number
+// of its items.
+fn try_class(points: &[char], i: &mut usize, output: &mut String, options: Options) -> Result<u32, String> {
+    let mut items = 0;
     let mut at = *i + 1;
     let negated = points.get(at) == Some(&'^');
     if negated {
@@ -339,6 +381,7 @@ fn try_class(points: &[char], i: &mut usize, output: &mut String, options: Optio
         if c == '\\' && at + 1 < points.len() && matches!(points[at + 1], 'd' | 'w' | 's' | 'D' | 'W' | 'S') {
             set.add_shorthand(points[at + 1]);
             previous_literal = None;
+            items += 1;
             at += 2;
             continue;
         }
@@ -346,6 +389,7 @@ fn try_class(points: &[char], i: &mut usize, output: &mut String, options: Optio
         let item = try_class_literal(points, &mut at)?;
         set.add(item as u32, item as u32);
         previous_literal = Some(item);
+        items += 1;
     }
 
     if at == first {
@@ -357,7 +401,74 @@ fn try_class(points: &[char], i: &mut usize, output: &mut String, options: Optio
     }
     class(output, &mut set, negated);
     *i = at + 1;
-    Ok(())
+    Ok(items)
+}
+
+/// The limits of §11 on the part of a pattern read so far: its size, the groups open, and the
+/// counts of the counted quantifiers nested in one another.
+struct Measure {
+    // Per open group: the size when it opened.
+    starts: Vec<u32>,
+    // For the pattern and per open group: the largest product of the counts nested in it so far.
+    products: Vec<u32>,
+    size: u32,
+    // The last item, the operand of a quantifier: its size and the largest product of the counts
+    // nested in it.
+    atom: u32,
+    atom_product: u32,
+}
+
+impl Measure {
+    fn new() -> Measure {
+        Measure { starts: Vec::new(), products: vec![1], size: 0, atom: 0, atom_product: 1 }
+    }
+
+    /// The groups open.
+    fn depth(&self) -> usize {
+        self.starts.len()
+    }
+
+    /// An item of this size (a literal, a class, an anchor, a '|'); false when the pattern is too
+    /// large.
+    fn add(&mut self, item_size: u32) -> bool {
+        self.atom = item_size;
+        self.atom_product = 1;
+        self.size = self.size.saturating_add(item_size);
+        self.size <= MAX_SIZE
+    }
+
+    /// A group opens: it counts 1; false when the pattern is too large.
+    fn open(&mut self) -> bool {
+        self.starts.push(self.size);
+        self.products.push(1);
+        self.add(1)
+    }
+
+    /// A group closes: it is the last item, with all it holds.
+    fn close(&mut self) {
+        self.atom = self.size - self.starts.pop().unwrap_or(0);
+        self.atom_product = self.products.pop().unwrap_or(1);
+        if let Some(outer) = self.products.last_mut() {
+            *outer = (*outer).max(self.atom_product);
+        }
+    }
+
+    /// A counted quantifier on the last item; false when the nested counts multiply above
+    /// [`MAX_REPEAT`].
+    fn multiply(&mut self, count: u32) -> bool {
+        let product = count * self.atom_product;
+        if let Some(outer) = self.products.last_mut() {
+            *outer = (*outer).max(product);
+        }
+        product <= MAX_REPEAT
+    }
+
+    /// A quantifier on the last item: it counts 1, and the item once more for each count above 1;
+    /// false when the pattern is too large.
+    fn repeat(&mut self, count: u32) -> bool {
+        self.size += self.atom * (count - 1) + 1;
+        self.size <= MAX_SIZE
+    }
 }
 
 fn try_class_literal(points: &[char], at: &mut usize) -> Result<char, String> {

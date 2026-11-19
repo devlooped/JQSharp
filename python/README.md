@@ -71,7 +71,7 @@ streaming), and values are Python's JSON values instead of `JsonElement`.
 There is nothing to build. From this folder:
 
 ```
-python -m unittest                 # 2,459 tests: the corpus both ways, the unit tests of every layer
+python -m unittest                 # 2,502 tests: the corpus both ways, the unit tests of every layer
 python -m compileall -q jqlite tests crossbench.py
 python -m mypy                     # optional tools (pip install mypy ruff), configured in pyproject.toml
 python -m ruff check
@@ -79,7 +79,7 @@ python -m ruff check
 
 - `tests/test_conformance.py`: every case of `spec/tests/*.test` (read from the shared folder), one
   test each, through the public API (`CorpusPublicApi`) and through the core with every prelude
-  builtin bound to its definition (`CorpusWithoutNativeOverrides`): 1,108 + 1,108 tests.
+  builtin bound to its definition (`CorpusWithoutNativeOverrides`): 1,129 + 1,129 tests.
   `localtime.test` runs with a zone fixed at UTC+02:00, `modules.test` over `spec/tests/modules/`.
 - `tests/test_catalogue.py`: the N and P lists of §9, read from the spec, against the native
   catalogue and the prelude; the package's `jqlite/prelude.jq` against `spec/prelude.jq`.

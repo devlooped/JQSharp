@@ -517,3 +517,62 @@ true
 [test("[a-z]"; "i"), test("\\w"; "i")]
 "\u212a"
 [false,false]
+# The limits of a pattern (9.10, 11). Spec 13 (Regex limits row): jq 1.8.2 has none of them; each
+# comment gives its output.
+
+# The counts of nested counted quantifiers multiply, up to 1000; a count of 0 is 1; side by side
+# they do not multiply. jq 1.8.2 gives a boolean for each.
+[.[] | try test(.) catch "ERR"]
+["(?:a{10}){100}", "(?:a{10}){101}", "(?:(?:a{10})*b){101}", "(?:a{500,}){2}", "(?:a{501,}){2}", "(?:a{2,3}){333}", "(?:a{2,3}){334}", "(?:(?:a{10}){10}){10}", "(?:(?:a{10}){10}){11}", "(?:a{1000}){0,1}", "(?:(?:a{1000}){0}){2}", "a{1000}b{1000}", "(?:a{1000}|b{1000})+", "((a{1000})?){2}", "(?:a{1000}){1,}", "(?:a{1000}){2,}"]
+[false,"ERR","ERR",false,"ERR",false,"ERR",false,"ERR",true,"ERR",false,false,"ERR",false,"ERR"]
+
+# A size of 10000 is a pattern, 10001 is too large: literals count 1 each. jq 1.8.2: [false,true,false].
+("x" + "a" * 9999) as $p | [test($p), ($p | test($p)), (try test($p + "a") catch .)]
+"xa"
+[false,true,"Regex failure: the pattern is too large"]
+
+# A counted quantifier counts 1 and its operand once per count: a{1000} is 1001. jq 1.8.2: [true,false,false].
+("^" + "a{1000}" * 9 + "a{989}") as $p | [("a" * 9989 | test($p)), test($p), (try test($p + "a") catch .)]
+"a"
+[true,false,"Regex failure: the pattern is too large"]
+
+# {n,} counts n times, {0} once. jq 1.8.2: [false,false,false,false].
+[test("a{1000,}" * 9 + "a{990,}"), (try test("a{1000,}" * 9 + "a{990,}b") catch .), test("(?:abcd){0}" * 1666 + "wxyz"), (try test("(?:abcd){0}" * 1666 + "vwxyz") catch .)]
+"a"
+[false,"Regex failure: the pattern is too large",false,"Regex failure: the pattern is too large"]
+
+# A class counts its items; a group, a | and a quantifier count 1 each. jq 1.8.2: [false,false,false,false,false].
+[test("[abcde]{1000}[abcde]{999}xyz"), (try test("[abcde]{1000}[abcde]{999}xyzw") catch .), test("[a-e]{1000}[\\d_]{1000}[a-e]{1000}[a-e]{1000}"), test("(?:ab|c){1000}(ab|c){999}x*y"), (try test("(?:ab|c){1000}(ab|c){999}x*yz") catch .)]
+"a"
+[false,"Regex failure: the pattern is too large",false,false,"Regex failure: the pattern is too large"]
+
+# . and a negated class count 1 each, whatever an engine builds for them. jq 1.8.2: [true,false,false].
+[("a" * 9988 | test("^" + ".{1000}" * 9 + ".{988}$")), test("[^😀]{1000}" * 9 + "[^😀]{990}"), (try test("[^😀]{1000}" * 9 + "[^😀]{990}.") catch .)]
+"a"
+[true,false,"Regex failure: the pattern is too large"]
+
+# Anchors count 1 each. jq 1.8.2: [false,false].
+[test("^" * 9000 + "\\b" * 500 + "$" * 500), (try test("^" * 9000 + "\\b" * 500 + "$" * 501) catch .)]
+""
+[false,"Regex failure: the pattern is too large"]
+
+# What the x flag removes counts nothing. jq 1.8.2: [false,false,false].
+[test("a " * 10000; "x"), test("a#" + "b" * 20000; "x"), (try test("a " * 10001; "x") catch .)]
+"b"
+[false,false,"Regex failure: the pattern is too large"]
+
+# 100 groups open at once, capturing or not, however many there are in all; the first error is the
+# one reported. jq 1.8.2: [true,true,false,true,true,"Regex failure: end pattern with unmatched parenthesis",false].
+[("(" * 100 + "a" + ")" * 100), ("(?:" * 100 + "a" + ")" * 100), ("(b|c" * 100 + "a" + ")*d|e" * 100), ("(" * 101 + "a" + ")" * 101), ("(?:" * 101 + "a" + ")" * 101), ("(" * 101), ("(?:a)" * 2000)] | map(. as $p | try ("a" | test($p)) catch .)
+null
+[true,true,false,"Regex failure: the pattern is too large","Regex failure: the pattern is too large","Regex failure: the pattern is too large",false]
+
+# 1000 capturing groups, named or not. jq 1.8.2: [1000,false,false,false].
+("(a)" * 1000) as $p | [("a" * 1000 | match("^" + $p) | .captures | length), (try test($p + "(b)") catch .), (try test($p + "(?<n>b)") catch .), test($p + "(?:b)")]
+"a"
+[1000,"Regex failure: the pattern is too large","Regex failure: the pattern is too large",false]
+
+# The same error from every builtin that takes a pattern. jq 1.8.2: ["a",["a"]].
+("a" * 10001) as $p | [(try match($p) catch .), (try capture($p) catch .), (try scan($p) catch .), (try split($p; null) catch .), (try splits($p) catch .), (try sub($p; "") catch .), (try gsub($p; "") catch .)] | unique
+"a"
+["Regex failure: the pattern is too large"]
