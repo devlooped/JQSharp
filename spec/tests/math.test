@@ -392,7 +392,20 @@ null
 
 [.[] | [erf, erfc] | map(. * 1e9 | round)]
 [0, 0.5, -1, 2, 3.5, -0.25]
-[[0,1000000000],[520500016,479499984],[-842700690,1842700690],[995322140,4677860],[999999256,744],[-276326261,1276326261]]
+[[0,1000000000],[520499878,479500122],[-842700793,1842700793],[995322265,4677735],[999999257,743],[-276326390,1276326390]]
+
+# erfc is computed directly (spec 9.8), so it keeps its relative accuracy in the tail, down to the subnormals.
+[(5 | erfc * 1e21), (10 | erfc * 1e54), (26 | erfc * 1e300 * 1e5), (-3 | erfc * 1e9), (1e-300 | erf * 1e300 * 1e9), (0.3 | erfc * 1e9), (-0.5 | erfc * 1e9), (1.2 | erfc * 1e12), (-1.2 | erfc * 1e9), (2.9 | erfc * 1e14)] | map(. * 1000 | round)
+null
+[1537459794428,2088487583763,5663192408856,1999977909503,1128379167096,671373240541,1520499877813,89686021770365,1910313978230,4109787809946]
+
+[27 | erfc * 1e300 * 1e21 | round]
+null
+[524]
+
+[28, 30, -6.5, -30, infinite, -infinite] | map([erf, erfc])
+null
+[[1,0],[1,0],[-1,2],[-1,2],[1,0],[-1,2]]
 
 [.[] | [tgamma, lgamma] | map(. * 1e9 | round)]
 [0.5, 1, 5, 4.5, -1.5, 0.1, 10, -0.5]
@@ -402,10 +415,10 @@ null
 [0, 1, 5, 7.9, 8, 10, 25, -3]
 [[1000000003,0],[765197684,440050586],[-177596774,-327579139],[194361850,219179396],[171650807,234636342],[-245935764,43472746],[96266783,-125350250],[-260051958,-339058958]]
 
-# Poles, NaN and infinities: tgamma as C; j0, j1 and erf the values of their formulas (spec 9.8 note), not those of libm.
+# Poles, NaN and infinities: tgamma and erf as C; j0 and j1 the values of their formulas (spec 9.8 note), not those of libm.
 [0, -2, nan, infinite, -infinite] | map([tgamma, j0, j1, erf] | map(. * 1e9 | round))
 null
-[[1.7976931348623157e+308,1000000003,0,0],[null,223890782,-576724808,-995322140],[null,null,null,null],[1.7976931348623157e+308,null,null,1000000000],[null,null,null,-1000000000]]
+[[1.7976931348623157e+308,1000000003,0,0],[null,223890782,-576724808,-995322265],[null,null,null,null],[1.7976931348623157e+308,null,null,1000000000],[null,null,null,-1000000000]]
 
 # tgamma and lgamma over the whole double range (spec 9.8): finite up to 171.62, subnormal below -171.
 [(150 | tgamma / 1e254), (171 | tgamma / 1e300), (171.6 | tgamma / 1e302), (1e-300 | tgamma / 1e294), (-170.5 | tgamma * 1e300 * 1e14), (-171.5 | tgamma * 1e300 * 1e16), (-0.0000001 | tgamma)] | map(round)
