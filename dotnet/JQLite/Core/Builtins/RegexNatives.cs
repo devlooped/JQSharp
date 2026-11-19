@@ -51,7 +51,7 @@ static class RegexNatives
                 if (!TryPrepare(input, re, flags, out var search, out var error))
                     return Interpreter.Fail(error);
                 Signal? signal = null;
-                Run(search, (spans, map) => (signal = Interpreter.Output(emit, MatchObject(search, spans, map), null)) is null);
+                Run(search, (spans, map) => (signal = Interpreter.Output(emit, MatchObject(search, spans, map), Path.Of(path))) is null);
                 return signal;
             }));
 

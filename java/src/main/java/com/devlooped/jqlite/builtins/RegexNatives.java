@@ -65,7 +65,7 @@ final class RegexNatives {
                 }
                 Search search = (Search) prepared;
                 Signal[] signal = {null};
-                run(search, (spans, map) -> (signal[0] = interpreter.output(emit, matchObject(search, spans, map), null)) == null);
+                run(search, (spans, map) -> (signal[0] = interpreter.output(emit, matchObject(search, spans, map), Path.of(path))) == null);
                 return signal[0];
             }));
     }
