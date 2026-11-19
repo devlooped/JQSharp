@@ -134,12 +134,18 @@ func matchObject(s *search, spans []int, m *codePointMap) value {
 			name = values.FromString(group)
 		}
 		capture := values.NewObjectBuilder(4)
-		if spans[2*g+2] < 0 {
+		start, end := spans[2*g+2], spans[2*g+3]
+		if start < 0 {
 			capture.Set("offset", values.FromNumber(-1))
 			capture.Set("string", values.Null)
 			capture.Set("length", values.FromNumber(0))
+		} else if start == end {
+			// An empty group has the key order of an absent one, as jq.
+			capture.Set("offset", values.FromNumber(float64(m.codePoint(start))))
+			capture.Set("string", values.FromString(""))
+			capture.Set("length", values.FromNumber(0))
 		} else {
-			addSpan(capture, s.input, m, spans[2*g+2], spans[2*g+3])
+			addSpan(capture, s.input, m, start, end)
 		}
 		capture.Set("name", name)
 		captures[g] = values.FromObject(capture.ToObject())

@@ -1097,8 +1097,9 @@ while p <= length(input):
 {"offset": o, "length": l, "string": s, "captures": [c1, …]}
 c = {"offset": o, "length": l, "string": s, "name": n}    one per capturing group, in order of their "(";
                                                             n is null for unnamed groups;
-                                                            a group that did not participate: {"offset": -1, "string": null, "length": 0, "name": n}
-                                                            (this key order, as jq)
+                                                            a group that matched the empty string or did not participate:
+                                                            {"offset": o, "string": s, "length": 0, "name": n}, with o = -1 and
+                                                            s = null when it did not participate (this key order, as jq)
 ```
 
 Examples: `"abc" | [match(""; "g")] | length` → `4`; `"abc" | gsub(""; "-")` → `"-a-b-c-"`; `"foo bar foo" | [match("foo"; "g") | .offset]` → `[0,8]`.

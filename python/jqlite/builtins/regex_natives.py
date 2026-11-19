@@ -125,12 +125,13 @@ def _match_object(search: _Search, spans: list[int]) -> JqValue:
     for g, name in enumerate(search.groups):
         capture = JqObjectBuilder()
         start = spans[2 * g + 2]
-        if start < 0:
-            capture.set("offset", -1.0)
-            capture.set("string", None)
+        end = spans[2 * g + 3]
+        if start == end or start < 0:
+            # An empty or absent group has jq's other key order.
+            capture.set("offset", -1.0 if start < 0 else float(start))
+            capture.set("string", None if start < 0 else "")
             capture.set("length", 0.0)
         else:
-            end = spans[2 * g + 3]
             capture.set("offset", float(start))
             capture.set("length", float(end - start))
             capture.set("string", text[start:end])
