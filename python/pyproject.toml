@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jqlite"
+version = "1.0.0"
+description = "jqlite, the portable profile of the jq language: the Python port of the JQLite reference engine"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Typing :: Typed",
+]
+
+[tool.setuptools]
+packages = ["jqlite", "jqlite.values", "jqlite.syntax", "jqlite.binding", "jqlite.runtime", "jqlite.builtins"]
+
+[tool.setuptools.package-data]
+# A copy of spec/prelude.jq (tests/test_catalogue.py checks that they are equal).
+jqlite = ["prelude.jq", "py.typed"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["jqlite", "tests", "crossbench.py"]
+warn_unused_ignores = false
+check_untyped_defs = true
+disallow_untyped_defs = true
+
+[tool.ruff]
+line-length = 160
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    # The reference's names: `input`, `format`, `next`... as parameters, as in the C# code.
+    "A002",
+    # Lambdas in loops and closures bound late are deliberate in the tests.
+    "B023",
+    # zip() of keys with range(count) or of two lists of one length: strict checks cost time for nothing.
+    "B905",
+]
