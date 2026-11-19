@@ -19,10 +19,7 @@ public class PortabilityTests
         ("System.Text.Json", @"System\s*\.\s*Text\s*\.\s*Json", []),
         ("yield", @"\byield\s+(return|break)\b", []),
         ("System.Linq", @"System\s*\.\s*Linq", []),
-        ("System.Text.RegularExpressions", @"System\s*\.\s*Text\s*\.\s*RegularExpressions|\bRegex(Options)?\b", new()
-        {
-            ["Builtins/RegexEngine.cs"] = "the regex engine: the one place the host regex runs",
-        }),
+        ("System.Text.RegularExpressions", @"System\s*\.\s*Text\s*\.\s*RegularExpressions|\bRegex(Options)?\b", []),
         ("System.Reflection", @"System\s*\.\s*Reflection|\.\s*Assembly\b|\bGetManifestResource\w*|\bActivator\b|\b(Method|Property|Field|Type)Info\b", new()
         {
             ["Binding/Prelude.cs"] = "reads the embedded prelude: typeof(Prelude).Assembly.GetManifestResourceStream",
@@ -45,7 +42,6 @@ public class PortabilityTests
         }),
         ("catch", @"\bcatch\b", new()
         {
-            ["Builtins/RegexEngine.cs"] = "the host regex's exception becomes the dialect's error (one host boundary)",
             ["Runtime/StackGuard.cs"] = "carries a defect of a step from the fresh stack back to the caller's thread",
         }),
     ];

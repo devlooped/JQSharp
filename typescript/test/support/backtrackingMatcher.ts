@@ -13,7 +13,7 @@ const Slot = 1;
 const Mark = 2;
 
 /**
- * The first match starting at or after UTF-16 index `start`: its spans, as RegexEngine.tryMatch
+ * The first match starting at or after UTF-16 index `start`: its spans, as RegexMatcher.tryMatch
  * gives them; null when the search is not over after `budget` instructions.
  */
 export function tryMatch(program: Translation, input: string, start: number, spans: Int32Array, budget: number): boolean | null {

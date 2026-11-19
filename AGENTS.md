@@ -59,8 +59,7 @@ Code under `dotnet/JQLite/Core` must not use:
 - exceptions as control flow: errors are values (`TryX(…, out result, out error)`), and `Error`,
   `Break`, `Halt`, `Stop` are returned signals;
 - host regex, date or culture APIs, except in the files that exist for that purpose:
-  `Builtins/RegexEngine.cs` (the regex engine), `Values/ValueText.cs` (invariant-culture number
-  text: shortest digits and decimal parsing), `Runtime/StackGuard.cs` (the host stack),
+  `Values/ValueText.cs` (invariant-culture number text: shortest digits and decimal parsing), `Runtime/StackGuard.cs` (the host stack),
   `Binding/Prelude.cs` (reading the embedded prelude);
 - recursion whose depth comes from data or from long sequences: use loops and explicit stacks
   (`docs/porting.md` §2.10). The only recursion limit a program meets is `MaxDepth` (§11).

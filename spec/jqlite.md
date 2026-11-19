@@ -1039,7 +1039,7 @@ Operations are evaluated left to right as written, each rounded to double (no fu
 
 ### 9.10 Regular expressions
 
-**Flavor.** jq uses the Perl-NT flavor of Oniguruma. jqlite uses a flavor of its own, chosen the same way: the syntax that the regex engines of every port (RE2/Go, Rust `regex`, ECMAScript in `u` mode, Java, Python `re`, .NET) can all be made to read with one meaning. The table below, the limits and the flags are its whole definition; a pattern means what they say, also where Oniguruma reads it otherwise or refuses it (§13). Patterns are strings of code points.
+**Flavor.** jq uses the Perl-NT flavor of Oniguruma. jqlite uses a flavor of its own: the syntax common to the regex engines of the ports' languages (RE2/Go, Rust `regex`, ECMAScript in `u` mode, Java, Python `re`, .NET). The table below, the limits and the flags are its whole definition; a pattern means what they say, also where Oniguruma or one of those engines reads it otherwise or refuses it (§13). Patterns are strings of code points.
 
 | Element | Syntax |
 | --- | --- |
@@ -1063,7 +1063,7 @@ Any other pattern is the error `Regex failure: <reason>` (as jq; the reason is i
 
 A pattern beyond its size or its groups is the error `Regex failure: the pattern is too large`, a fixed text (§10.3). A pattern is read from left to right and its first error is the one reported: the size is checked on the part read so far (an open group counts 1 and what it holds), the groups at each `(`, and the count of a quantifier before the size it adds. `"(" * 101` is too large, not unclosed; `(?:a{1000}){1000}` has a count above 1000.
 
-Matching is leftmost-first, as in Perl and in every engine above: greedy or lazy quantifiers, left alternative first. A group inside a repetition reports its last successful participation. Offsets and lengths are in code points (as jq).
+Matching is leftmost-first, as in Perl and in every engine above: greedy or lazy quantifiers, left alternative first. A group inside a repetition reports its last successful participation. An iteration that matches the empty string ends its repetition, whatever its counts (`*`, `+`, `{n}`, `{n,m}`, greedy or lazy) and even below its minimum: no iteration follows it, so on backtracking that iteration's own next alternative is tried first (`"ca" | match("(c??){2}a")` captures the empty string at 1, not `"c"`). Offsets and lengths are in code points (as jq).
 
 How a port makes its engine read the flavor is not part of the language: `docs/porting.md` §3.3.
 

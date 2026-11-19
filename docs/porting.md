@@ -72,8 +72,8 @@ Host-specific files are marked **H**; the modules group (§9.11, optional) is ma
 | `AssignNatives.cs` | native `_modify`/`_assign` overriding the prelude (§3 below) | Runtime |
 | `MathNatives.cs`, `MathExtra.cs` | §9.8; `MathExtra` holds every formula and exact operation. **H**: the library functions of §9.8 | Values |
 | `Calendar.cs`, `Strftime.cs`, `DateNatives.cs` | §9.7, §9.12: no host date type | Runtime |
-| `RegexSyntax.cs` | the regex flavor of §9.10: validator and translator to the host's pattern syntax | Values |
-| `RegexEngine.cs` **H** | the host regex engine: compile, match from a position | — |
+| `RegexSyntax.cs` | the regex flavor of §9.10: validator and translator to the engine's instructions | Values |
+| `RegexEngine.cs` | the engine: compiled programs (cached), the Pike machine that finds a match from a position | RegexSyntax |
 | `RegexNatives.cs` | flags, search loop, match objects in code points | RegexSyntax, RegexEngine |
 | `ModuleNatives.cs` **M** | `modulemeta/0` | Modules |
 
@@ -323,23 +323,18 @@ Ill-formed UTF-8 (§4.1, `@base64d`, host bytes): JS `TextDecoder` (non-fatal), 
 
 ### 3.3 Regular expressions
 
-The spec defines only the flavor (§9.10); this section says how an engine is made to read it. `RegexSyntax` validates the flavor and writes a pattern for the engine; `RegexEngine` is the only host-specific part; `RegexNatives` runs the search loop of §9.10 in code points. What the translator emits so that no engine default leaks in:
+The spec defines the flavor (§9.10). No host engine reads it with that meaning, so every implementation runs the same small engine, portable code like the rest of the core:
 
-| Rule | Emit |
-| --- | --- |
-| `.` | an explicit class without U+000A (JS and Java exclude other line ends too); with `m`/`p`, any code point |
-| `\d \w \s` and complements | explicit ASCII classes (Python, .NET and Rust are Unicode by default) |
-| `$` | end of input only: `\z` (Java, Go, Rust), `\Z` (Python), `$` without `m` (JS) |
-| `i` | never the engine's option: each ASCII letter becomes `[aA]`, classes and ranges are closed under ASCII case before negation (`RangeSet.AddAsciiCases`) |
-| `\b \B` | an ASCII word boundary: native in Go and JS, `(?-u:\b)` in Rust; elsewhere lookaround (`(?<=[0-9A-Za-z_])(?![0-9A-Za-z_])\|…`), which .NET's linear engine lacks, so the reference uses its backtracking engine for those patterns (and for the ones too large for the linear engine, below) |
-| named groups | plain groups; the translator keeps the names in group order (Java forbids `_`, Python spells `(?P<…>)`) |
-| UTF-16 engines (.NET, JS without `u`) | code points above U+FFFF as surrogate pairs in non-capturing groups, classes split into a BMP part and pairs, so a match never splits a pair. `java.util.regex` matches whole code points although its strings are UTF-16: write them as `\x{H}` there, a pattern of surrogate pairs never matches |
+- `RegexSyntax` validates the flavor and translates a pattern, in one pass and without recursion, to a program of instructions with two operands each: `Char`, `Set` (sorted code point ranges), `Any`, `AnyButLineFeed`, `Split`, `Jump`, `Save`, `Begin`, `End`, `WordBoundary`, `NotWordBoundary`, `Mark`, `EmptyExit`, `Match`. A jump says how far, not where, so a quantifier copies the instructions of its atom as they are, and counted repetitions are written out. The meaning of §9.10 is spelled out there: `.` and classes as sets of code points, `$` as the end of the input, `\b \B` by the ASCII `\w`, the `i` flag as the other ASCII case added to letters and classes before a negation (`RangeSet.AddAsciiCases`).
+- An iteration that matches nothing ends its repetition, whatever its counts (§9.10). When the repeated atom can match nothing and there can be several iterations, each iteration starts with `Mark` and ends with `EmptyExit`, which leaves the repetition when the iteration has read nothing.
+- `RegexEngine` compiles a pattern to a `RegexProgram`, immutable and cached per process, and `RegexMatcher` runs it: a Pike machine that reads the input once from the start position and follows every way to match at the same time, in the order a backtracking matcher would try them, dropping a state reached a second time at the same position. A state is an instruction and its level: how many of the marked loops around it have read something in their current iteration (`EmptyExit` reads it). Time is input × program, memory the program's size, and nothing recurses. A `RegexMatcher` holds the memory of the searches of one caller (one `test` or `match`) and is never shared between threads.
+- `RegexNatives` runs the search loop of §9.10 and converts the engine's positions to code points.
+- The limits of §11 are the translator's: it checks them while it reads the pattern (`Measure` in `RegexSyntax`: the size of the part read, and per open group the size at its `(` and the largest product of the counts nested in it), so every implementation refuses the same patterns, with the same reason. The engine takes every pattern within them: a program has at most a few instructions per unit of size, and the memory of a search is the program times the capture slots of a thread.
 
-Searching from position `p` must see the whole input (`^`, `\b` look before `p`): JS `lastIndex` with the `g` (or `y`) flag and `d` for indices; Java `Matcher.find(int)`; Python `pattern.search(s, pos)` (check `\b` at `pos`; its own `\B` never matches in an empty string, so keep the lookaround form of the rule above); Rust `Regex::captures_at`; .NET `Regex.Match(s, start)`. Go's `regexp` has no start position: search `s[q:]` where `q` is the start of the code point before `p`, with the pattern `^(?s:.)(?s:.*?)(P)` (anchored: one character of context, then the leftmost match of `P` at or after `p`, across line ends), and shift the group numbers. Convert offsets to code points (UTF-16 units in JS/Java/.NET, bytes in Go/Rust).
+The engine reads the input by code point and reports positions in the host's string index: UTF-16 units in C#, Java and JS (a code point above U+FFFF is read as one, so a match never splits a pair), bytes in Go and Rust, code points in Python. A match that starts with a fixed BMP code point skips ahead with the host's string search (`IndexOf`).
 
-The limits of §11 are the translator's: it checks them while it reads the pattern (`Measure` in `RegexSyntax`: the size of the part read, and per open group the size at its `(` and the largest product of the counts nested in it), so every port refuses the same patterns, with the same reason, before its engine sees them. In return an engine must take every pattern within them: run the limit cases of `regex.test` early, and raise or work around what the engine refuses. .NET's non-backtracking engine refuses more than 10,000 automaton nodes, which a pattern within the limits can exceed (a literal of 10,000 code points is 10,001 nodes; a `.` is three sets of UTF-16 units): the reference then falls back to the backtracking engine. Rust `regex` refuses a compiled size above 10 MiB and 250 levels of syntax tree: the port sets 64 MiB and lifts the other. Go `regexp` refuses nested counts that multiply above 1000 and a syntax tree of more than 1,000 levels (a group can take four); it cannot be told otherwise, and those two limits of §11 are there for it. The memory of a Pike VM is its program (at most a few instructions per unit of size) times the capture slots of a thread.
+Why no host engine: .NET's non-backtracking engine and RE2 (Go, Rust) drop an iteration that matched nothing instead of ending the loop there (`"ab" | match("(?:a?|b)*")` gives `"ab"` where jq gives `"a"`); backtracking engines (.NET's other one, Python `re`) end a loop after such an iteration only past its minimum count (`"ca" | match("(c??){2}a")`) and take time exponential in the input on `^(a*)*b$`; `java.util.regex` recurses once per repetition of a group and overflows the host stack on a long input; JavaScript's `RegExp` forgets the captures of a group at each iteration of an enclosing repetition (`"ab" | match("(?:(a)|b)+")` captures `"a"`).
 
-Not every host engine will do. The dialect is matchable in time linear in the input, and .NET's non-backtracking engine and the engines of Go and Rust are. `java.util.regex` recurses once per repetition of a group and overflows the host stack on a long input (`"ab" * 20000 | test("^(a|b)*$")`), and JavaScript's `RegExp` forgets the captures of a group at each iteration of an enclosing repetition, which the corpus forbids: the Java and TypeScript ports therefore have a matcher of their own in `RegexEngine`, a Pike VM over the translator's instructions (time input × pattern, memory the pattern's size). Python's `re` neither recurses nor resets captures, but it backtracks: a pattern such as `^(a*)*b$` takes time exponential in the input there.
 
 ### 3.4 Dates
 
@@ -445,13 +440,13 @@ modules.test with a module source over spec/tests/modules/ (README path rule), o
 
 Each port lives in a folder beside `dotnet/`, has a `README.md` that lists its deliberate differences from the reference, and runs the shared corpus both ways (through its public API, and through its core without the native overrides).
 
-| Folder | Package | Tests (from the folder) | Host stack (§11) | Regex engine |
-| --- | --- | --- | --- | --- |
-| `go/` | module `github.com/devlooped/jqlite/go`, engine in `internal/` | `go generate ./...`, `go test ./...` | a new goroutine past 10,000 interpreter frames | `regexp` |
-| `java/` | `com.devlooped:jqlite`, Java 21 | `mvnw package` (needs `JAVA_HOME`) | 64 MB threads on a budget of nested steps, also in the parser | its own Pike VM |
-| `python/` | `jqlite`, Python 3.11+ | `python -m unittest` | the recursion limit, raised while a parse or an evaluation runs | `re` |
-| `rust/` | crate `jqlite`, edition 2024 | `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` | `stacker`, also in the parser | the `regex` crate |
-| `typescript/` | npm `jqlite`, ESM, Node 20+ | `npm ci`, `npm test`, `npm run check` | none used: a trampoline | its own Pike VM |
+| Folder | Package | Tests (from the folder) | Host stack (§11) |
+| --- | --- | --- | --- |
+| `go/` | module `github.com/devlooped/jqlite/go`, engine in `internal/` | `go generate ./...`, `go test ./...` | a new goroutine past 10,000 interpreter frames |
+| `java/` | `com.devlooped:jqlite`, Java 21 | `mvnw package` (needs `JAVA_HOME`) | 64 MB threads on a budget of nested steps, also in the parser |
+| `python/` | `jqlite`, Python 3.11+ | `python -m unittest` | the recursion limit, raised while a parse or an evaluation runs |
+| `rust/` | crate `jqlite`, edition 2024 | `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` | `stacker`, also in the parser |
+| `typescript/` | npm `jqlite`, ESM, Node 20+ | `npm ci`, `npm test`, `npm run check` | none used: a trampoline |
 
 A change of behaviour goes to the spec, the corpus and the reference first, then to every port: a port that lags fails the new corpus cases.
 

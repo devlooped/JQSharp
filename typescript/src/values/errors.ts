@@ -245,7 +245,7 @@ export function invalidModifiers(flags: string): JqValue {
   return `${flags} is not a valid modifier string`;
 }
 
-/** A pattern outside the dialect or that the engine rejects; the reason is implementation-defined. */
+/** A pattern outside the flavor or too large; the reason is implementation-defined. */
 export function regexFailure(reason: string): JqValue {
   return `Regex failure: ${reason}`;
 }

@@ -1,4 +1,4 @@
-// Random patterns of the dialect of §9.10 and random inputs for them, from a seed: the same
+// Random patterns of the flavor of §9.10 and random inputs for them, from a seed: the same
 // seed gives the same cases on every run.
 
 /** A generator of the numbers 0 .. n - 1 (a linear congruential generator, exact in 32 bits). */

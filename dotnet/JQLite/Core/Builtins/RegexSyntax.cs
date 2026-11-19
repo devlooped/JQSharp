@@ -4,23 +4,24 @@ using JQLite.Core.Values;
 namespace JQLite.Core.Builtins;
 
 /// <summary>
-/// The regex dialect of §9.10: reads a jqlite pattern, rejects everything outside the dialect, and
-/// writes an equivalent pattern for the host engine (<see cref="RegexEngine"/>) together with the
-/// names of its capturing groups in the order of their '('.
+/// The regex flavor of §9.10: reads a jqlite pattern, rejects everything outside the flavor, and
+/// writes an equivalent program for the engine (<see cref="RegexEngine"/>) together with the names
+/// of its capturing groups in the order of their '('.
 /// </summary>
 /// <remarks>
-/// The output is in the common syntax of the engines, with the meaning the spec demands spelled out
-/// so that no engine default leaks in: every code point is written as <c>\uXXXX</c> UTF-16 units
-/// (a code point above U+FFFF as its surrogate pair in a non-capturing group), <c>.</c>, classes and
-/// <c>\D \W \S</c> as alternatives of a BMP class without surrogates and the surrogate pairs of the
-/// code points above U+FFFF, so that a match never splits a pair; <c>\d \w \s</c> as ASCII classes;
-/// <c>$</c> as <c>\z</c>; <c>\b \B</c> as ASCII lookarounds (<see cref="Translation.Lookaround"/>);
-/// named groups as plain groups (engines number them differently). The <c>i</c> flag is done here,
-/// never by the engine: it folds ASCII letters only (<see cref="RangeSet.AddAsciiCases"/>, the one
-/// place of the rule). A port whose engine works on code points writes the classes directly.
+/// The program is made of the instructions of <see cref="Op"/>, with the meaning the spec demands
+/// spelled out: <c>.</c>, classes and <c>\d \w \s</c> as sets of code points, <c>$</c> as the end of
+/// the input, <c>\b \B</c> as ASCII word boundaries. The <c>i</c> flag is done here: it folds ASCII
+/// letters only (<see cref="RangeSet.AddAsciiCases"/>, the one place of the rule). No host regex
+/// engine reads the flavor with one meaning, so none is used (docs/porting.md §3.3).
 /// <para>
 /// The limits of §11 are checked here, while the pattern is read (<see cref="Measure"/>), so that
-/// no engine meets a pattern beyond them and every engine must take the ones within.
+/// the engine never meets a pattern beyond them and takes every one within.
+/// </para>
+/// <para>
+/// The pattern is read in one pass, without recursion, and each instruction that jumps says how far
+/// (not where to), so a piece of the program can be copied or moved as it is: a quantifier wraps or
+/// repeats the instructions of the atom before it.
 /// </para>
 /// </remarks>
 static class RegexSyntax
@@ -40,21 +41,72 @@ static class RegexSyntax
     /// <summary>The reason of a pattern beyond <see cref="MaxSize"/>, <see cref="MaxNesting"/> or <see cref="MaxGroups"/>: a fixed text (§10.3).</summary>
     public const string TooLarge = "the pattern is too large";
 
-    const string AnyPair = @"[\uD800-\uDBFF][\uDC00-\uDFFF]";
-
     /// <summary>The flags of §9.10 that change the pattern itself.</summary>
     public readonly record struct Options(bool Extended, bool DotAll, bool IgnoreCase);
 
-    /// <summary>
-    /// A translated pattern: the host pattern, one name (or null) per capturing group, and whether
-    /// it uses lookaround (for \b and \B), which a linear-time engine may not run.
-    /// </summary>
-    public sealed record Translation(string Pattern, string?[] Groups, bool Lookaround);
+    /// <summary>The instructions of a program; <c>a</c> and <c>b</c> are their operands.</summary>
+    public enum Op
+    {
+        /// <summary>The code point <c>a</c>.</summary>
+        Char,
 
-    // The ASCII word boundaries of §9.10, by the ASCII \w; an engine's own \b may be Unicode.
-    const string Word = "[0-9A-Za-z_]";
-    const string Boundary = $"(?:(?<={Word})(?!{Word})|(?<!{Word})(?={Word}))";
-    const string NotBoundary = $"(?:(?<={Word})(?={Word})|(?<!{Word})(?!{Word}))";
+        /// <summary>A code point of the set <c>a</c> of the program.</summary>
+        Set,
+
+        /// <summary>Any code point.</summary>
+        Any,
+
+        /// <summary>Any code point but U+000A.</summary>
+        AnyButLineFeed,
+
+        /// <summary>Go on <c>a</c> instructions further; if that fails, <c>b</c> instructions further.</summary>
+        Split,
+
+        /// <summary>Go on <c>a</c> instructions further.</summary>
+        Jump,
+
+        /// <summary>Store the position in slot <c>a</c> (2g: the start of group g; 2g + 1: its end; group 0 is the match).</summary>
+        Save,
+
+        /// <summary>The start of the input.</summary>
+        Begin,
+
+        /// <summary>The end of the input.</summary>
+        End,
+
+        /// <summary>An ASCII word boundary.</summary>
+        WordBoundary,
+
+        /// <summary>Not an ASCII word boundary.</summary>
+        NotWordBoundary,
+
+        /// <summary>Store the position in mark <c>a</c>: where an iteration of a repetition starts.</summary>
+        Mark,
+
+        /// <summary>
+        /// Go on <c>b</c> instructions further when the position is the one of mark <c>a</c> (an
+        /// iteration that matched nothing ends its repetition); else to the next instruction.
+        /// </summary>
+        EmptyExit,
+
+        /// <summary>The pattern matched.</summary>
+        Match,
+    }
+
+    /// <summary>
+    /// A translated pattern: the program (an instruction and its operands <c>a</c>, <c>b</c> per
+    /// index), its sets of code points (sorted pairs low, high), the number of its marks, and one name
+    /// (or null) per capturing group.
+    /// </summary>
+    public sealed class Translation(Op[] ops, int[] a, int[] b, int[][] sets, int marks, string?[] groups)
+    {
+        public Op[] Ops { get; } = ops;
+        public int[] A { get; } = a;
+        public int[] B { get; } = b;
+        public int[][] Sets { get; } = sets;
+        public int Marks { get; } = marks;
+        public string?[] Groups { get; } = groups;
+    }
 
     // What precedes a quantifier: only an atom may be repeated.
     enum Previous
@@ -66,138 +118,503 @@ static class RegexSyntax
     }
 
     public static bool TryTranslate(string pattern, Options options, out Translation translation, out string reason)
-    {
-        var points = Decode(pattern);
-        var output = new StringBuilder(pattern.Length * 6);
-        var groups = new List<string?>();
-        var measure = new Measure();
-        var previous = Previous.None;
-        var lookaround = false;
-        translation = new Translation("", [], false);
-        reason = "";
-        for (var i = 0; i < points.Length;)
-        {
-            var c = points[i];
-            if (options.Extended && (IsExtendedSpace(c) || c == '#'))
-            {
-                i = SkipExtended(points, i);
-                continue;
-            }
+        => new Translator(Decode(pattern), options).TryTranslate(out translation, out reason);
 
-            switch (c)
-            {
-                case '\\':
-                    if (!TryEscape(points, ref i, output, options, ref previous, ref lookaround, out reason))
-                        return false;
-                    if (!measure.Add(1))
-                        return Fail(TooLarge, out reason);
-                    continue;
-                case '[':
-                    if (!TryClass(points, ref i, output, options, out var items, out reason))
-                        return false;
-                    if (!measure.Add(items))
-                        return Fail(TooLarge, out reason);
-                    previous = Previous.Atom;
-                    continue;
-                case '.':
-                    output.Append(options.DotAll ? @"(?:[^\uD800-\uDFFF]|" : @"(?:[^\n\uD800-\uDFFF]|").Append(AnyPair).Append(')');
-                    if (!measure.Add(1))
-                        return Fail(TooLarge, out reason);
-                    previous = Previous.Atom;
-                    i++;
-                    continue;
-                case '^':
-                    output.Append('^');
-                    if (!measure.Add(1))
-                        return Fail(TooLarge, out reason);
-                    previous = Previous.Anchor;
-                    i++;
-                    continue;
-                case '$':
-                    output.Append(@"\z");
-                    if (!measure.Add(1))
-                        return Fail(TooLarge, out reason);
-                    previous = Previous.Anchor;
-                    i++;
-                    continue;
-                case '|':
-                    output.Append('|');
-                    if (!measure.Add(1))
-                        return Fail(TooLarge, out reason);
-                    previous = Previous.None;
-                    i++;
-                    continue;
-                case '(':
-                    if (measure.Depth == MaxNesting)
-                        return Fail(TooLarge, out reason);
-                    if (!TryGroup(points, ref i, output, groups, out reason))
-                        return false;
-                    if (!measure.Open())
-                        return Fail(TooLarge, out reason);
-                    previous = Previous.None;
-                    continue;
-                case ')':
-                    if (measure.Depth == 0)
-                        return Fail("unmatched close parenthesis", out reason);
-                    measure.Close();
-                    output.Append(')');
-                    previous = Previous.Atom;
-                    i++;
-                    continue;
-                case '*' or '+' or '?' or '{':
-                    if (previous != Previous.Atom)
-                        return Fail(previous == Previous.Quantifier ? "nested quantifier" : "quantifier without an operand", out reason);
-                    if (!TryQuantifier(points, ref i, output, options, measure, out reason))
-                        return false;
-                    previous = Previous.Quantifier;
-                    continue;
-                case ']' or '}':
-                    return Fail($"unescaped '{(char)c}'", out reason);
-                default:
-                    Literal(output, c, options);
-                    if (!measure.Add(1))
-                        return Fail(TooLarge, out reason);
-                    previous = Previous.Atom;
-                    i++;
-                    continue;
-            }
+    // An open group, or the whole pattern: where it starts, where its current alternative starts, the
+    // jumps of its earlier alternatives to its end, and whether it can match nothing (for the loops
+    // around it): `before` is whether every item of the current alternative but the last can, Last
+    // whether the last can (null: no item), Any whether an earlier alternative can.
+    sealed class Frame(int start, int group)
+    {
+        bool before = true;
+
+        public int Start { get; } = start;
+        public int Group { get; } = group;
+        public int Alternative { get; set; } = start;
+        public List<int> Jumps { get; } = [];
+        public bool? Last { get; set; }
+        public bool Any { get; private set; }
+
+        public void Add(bool nullable)
+        {
+            before = before && Last != false;
+            Last = nullable;
         }
 
-        if (measure.Depth > 0)
-            return Fail("missing close parenthesis", out reason);
-        translation = new Translation(output.ToString(), [.. groups], lookaround);
-        return true;
+        // Ends the current alternative.
+        public void Close()
+        {
+            Any = Any || before && Last != false;
+            before = true;
+            Last = null;
+        }
     }
 
-    // \x outside a class: a literal, a shorthand class or an anchor.
-    static bool TryEscape(int[] points, ref int i, StringBuilder output, Options options, ref Previous previous, ref bool lookaround, out string reason)
+    sealed class Translator(int[] points, Options options)
     {
-        reason = "";
-        if (i + 1 == points.Length)
-            return Fail("trailing backslash", out reason);
-        var c = points[i + 1];
-        switch (c)
+        readonly List<Op> ops = [];
+        readonly List<int> a = [];
+        readonly List<int> b = [];
+        readonly List<int[]> sets = [];
+        readonly List<string?> groups = [];
+        readonly List<Frame> frames = [];
+        readonly Measure measure = new();
+        int marks;
+        int i;
+        Previous previous = Previous.None;
+        // Where the instructions of the last atom start.
+        int atom;
+        string reason = "";
+
+        public bool TryTranslate(out Translation translation, out string failure)
         {
-            case 'b' or 'B':
-                output.Append(c == 'b' ? Boundary : NotBoundary);
-                lookaround = true;
-                previous = Previous.Anchor;
-                i += 2;
-                return true;
-            case 'd' or 'w' or 's' or 'D' or 'W' or 'S':
-                var set = new RangeSet();
-                set.AddShorthand(c);
-                Class(output, set, negated: false);
-                previous = Previous.Atom;
-                i += 2;
-                return true;
+            var translated = Translate();
+            translation = translated ? new Translation([.. ops], [.. a], [.. b], [.. sets], marks, [.. groups]) : null!;
+            failure = translated ? "" : reason;
+            return translated;
         }
 
-        if (!TryEscapedLiteral(points, ref i, out var literal, out reason))
+        bool Translate()
+        {
+            Emit(Op.Save, 0);
+            var frame = new Frame(ops.Count, 0);
+            frames.Add(frame);
+            while (i < points.Length)
+            {
+                var c = points[i];
+                if (options.Extended && (IsExtendedSpace(c) || c == '#'))
+                {
+                    i = SkipExtended(points, i);
+                    continue;
+                }
+
+                switch (c)
+                {
+                    case '\\':
+                        if (!TryEscape())
+                            return false;
+                        if (!measure.Add(1))
+                            return Fail(TooLarge);
+                        continue;
+                    case '[':
+                        if (!TryClass(out var items))
+                            return false;
+                        if (!measure.Add(items))
+                            return Fail(TooLarge);
+                        continue;
+                    case '.':
+                        StartAtom();
+                        Emit(options.DotAll ? Op.Any : Op.AnyButLineFeed);
+                        if (!measure.Add(1))
+                            return Fail(TooLarge);
+                        i++;
+                        continue;
+                    case '^':
+                        Anchor(Op.Begin);
+                        if (!measure.Add(1))
+                            return Fail(TooLarge);
+                        i++;
+                        continue;
+                    case '$':
+                        Anchor(Op.End);
+                        if (!measure.Add(1))
+                            return Fail(TooLarge);
+                        i++;
+                        continue;
+                    case '|':
+                        if (!measure.Add(1))
+                            return Fail(TooLarge);
+                        // The alternative so far, or the rest: it ends with a jump to the end of the group.
+                        Insert(frame.Alternative, Op.Split, 1, ops.Count - frame.Alternative + 2);
+                        frame.Jumps.Add(ops.Count);
+                        Emit(Op.Jump);
+                        frame.Alternative = ops.Count;
+                        frame.Close();
+                        previous = Previous.None;
+                        i++;
+                        continue;
+                    case '(':
+                        if (measure.Depth == MaxNesting)
+                            return Fail(TooLarge);
+                        var start = ops.Count;
+                        if (!TryGroup())
+                            return false;
+                        if (!measure.Open())
+                            return Fail(TooLarge);
+                        frame = new Frame(start, ops.Count > start ? groups.Count : 0) { Alternative = ops.Count };
+                        frames.Add(frame);
+                        previous = Previous.None;
+                        continue;
+                    case ')':
+                        if (frames.Count == 1)
+                            return Fail("unmatched close parenthesis");
+                        measure.Close();
+                        End(frame);
+                        if (frame.Group > 0)
+                            Emit(Op.Save, 2 * frame.Group + 1);
+                        frames.RemoveAt(frames.Count - 1);
+                        var group = frame;
+                        frame = frames[^1];
+                        frame.Add(group.Any);
+                        atom = group.Start;
+                        previous = Previous.Atom;
+                        i++;
+                        continue;
+                    case '*' or '+' or '?' or '{':
+                        if (previous != Previous.Atom)
+                            return Fail(previous == Previous.Quantifier ? "nested quantifier" : "quantifier without an operand");
+                        if (!TryQuantifier(frame))
+                            return false;
+                        previous = Previous.Quantifier;
+                        continue;
+                    case ']' or '}':
+                        return Fail($"unescaped '{(char)c}'");
+                    default:
+                        Literal(c);
+                        if (!measure.Add(1))
+                            return Fail(TooLarge);
+                        i++;
+                        continue;
+                }
+            }
+
+            if (frames.Count > 1)
+                return Fail("missing close parenthesis");
+            End(frame);
+            Emit(Op.Save, 1);
+            Emit(Op.Match);
+            return true;
+        }
+
+        // The end of a group or of the pattern: the jumps of its alternatives arrive here.
+        void End(Frame frame)
+        {
+            foreach (var jump in frame.Jumps)
+                a[jump] = ops.Count - jump;
+            frame.Close();
+        }
+
+        void Emit(Op op, int first = 0, int second = 0)
+        {
+            ops.Add(op);
+            a.Add(first);
+            b.Add(second);
+        }
+
+        void Insert(int at, Op op, int first, int second)
+        {
+            ops.Insert(at, op);
+            a.Insert(at, first);
+            b.Insert(at, second);
+        }
+
+        // An atom starts here: a quantifier after it repeats the instructions from here on.
+        void StartAtom()
+        {
+            atom = ops.Count;
+            previous = Previous.Atom;
+            frames[^1].Add(false);
+        }
+
+        void Anchor(Op op)
+        {
+            Emit(op);
+            previous = Previous.Anchor;
+            frames[^1].Add(true);
+        }
+
+        // \x outside a class: a literal, a shorthand class or an anchor.
+        bool TryEscape()
+        {
+            if (i + 1 == points.Length)
+                return Fail("trailing backslash");
+            var c = points[i + 1];
+            switch (c)
+            {
+                case 'b' or 'B':
+                    Anchor(c == 'b' ? Op.WordBoundary : Op.NotWordBoundary);
+                    i += 2;
+                    return true;
+                case 'd' or 'w' or 's' or 'D' or 'W' or 'S':
+                    var set = new RangeSet();
+                    set.AddShorthand(c);
+                    StartAtom();
+                    Class(set, negated: false);
+                    i += 2;
+                    return true;
+            }
+
+            if (!TryEscapedLiteral(points, ref i, out var literal, out reason))
+                return false;
+            Literal(literal);
+            return true;
+        }
+
+        // ( (?: or (?<name>: a capturing group starts with the instruction that stores its start.
+        bool TryGroup()
+        {
+            if (i + 1 < points.Length && points[i + 1] == '?')
+            {
+                if (i + 2 < points.Length && points[i + 2] == ':')
+                {
+                    i += 3;
+                    return true;
+                }
+
+                if (i + 2 < points.Length && points[i + 2] == '<')
+                {
+                    var start = i + 3;
+                    var end = start;
+                    while (end < points.Length && points[end] != '>')
+                        end++;
+                    if (end == points.Length || !IsGroupName(points, start, end))
+                        return Fail("invalid group name");
+                    var name = Text(points, start, end);
+                    if (groups.Contains(name))
+                        return Fail($"duplicate group name {name}");
+                    if (groups.Count == MaxGroups)
+                        return Fail(TooLarge);
+                    groups.Add(name);
+                    Emit(Op.Save, 2 * groups.Count);
+                    i = end + 1;
+                    return true;
+                }
+
+                return Fail("unsupported group syntax (?");
+            }
+
+            if (groups.Count == MaxGroups)
+                return Fail(TooLarge);
+            groups.Add(null);
+            Emit(Op.Save, 2 * groups.Count);
+            i++;
+            return true;
+        }
+
+        // * + ? {n} {n,} {n,m}, each optionally followed by ? (lazy).
+        bool TryQuantifier(Frame frame)
+        {
+            var c = points[i];
+            int min;
+            // -1: no maximum.
+            int max;
+            // The count of §9.10: how many times the operand is written out.
+            var count = 1;
+            if (c == '{')
+            {
+                var at = i + 1;
+                if (!TryNumber(points, ref at, out min))
+                    return Fail("'{' is not a quantifier");
+                max = min;
+                var unbounded = false;
+                if (at < points.Length && points[at] == ',')
+                {
+                    at++;
+                    if (at < points.Length && points[at] == '}')
+                        unbounded = true;
+                    else if (!TryNumber(points, ref at, out max))
+                        return Fail("'{' is not a quantifier");
+                }
+
+                if (at == points.Length || points[at] != '}')
+                    return Fail("'{' is not a quantifier");
+                if (min > MaxRepeat || !unbounded && (max > MaxRepeat || max < min))
+                    return Fail("invalid repetition count");
+                count = Math.Max(unbounded ? min : max, 1);
+                if (!measure.Multiply(count))
+                    return Fail("invalid repetition count");
+                if (unbounded)
+                    max = -1;
+                i = at + 1;
+            }
+            else
+            {
+                min = c == '+' ? 1 : 0;
+                max = c == '?' ? 1 : -1;
+                i++;
+            }
+
+            if (!measure.Repeat(count))
+                return Fail(TooLarge);
+
+            if (options.Extended)
+            {
+                while (i < points.Length && (IsExtendedSpace(points[i]) || points[i] == '#'))
+                    i = SkipExtended(points, i);
+            }
+
+            var lazy = false;
+            if (i < points.Length && points[i] == '?')
+            {
+                lazy = true;
+                i++;
+            }
+
+            return Repeat(frame, min, max, lazy);
+        }
+
+        // Repeats the last atom: its instructions min times, then a loop (no maximum) or max - min
+        // optional copies. Each copy is an iteration. When the atom can match nothing and there can be
+        // several iterations, each marks where it starts, and one that matched nothing ends the
+        // repetition, whatever its counts (§9.10): `"ca" | match("(c??){2}a")` captures "" at 1.
+        bool Repeat(Frame frame, int min, int max, bool lazy)
+        {
+            var start = atom;
+            var length = ops.Count - start;
+            var nullable = frame.Last != false;
+            var marked = nullable && (max < 0 || max > 1);
+            var iteration = length + (marked ? 2 : 0);
+            var size = min * iteration + (max < 0 ? iteration + 2 : (max - min) * (iteration + 1));
+            var body = new Body(ops.GetRange(start, length).ToArray(), a.GetRange(start, length).ToArray(), b.GetRange(start, length).ToArray(), marked ? marks++ : -1, start + size);
+            ops.RemoveRange(start, length);
+            a.RemoveRange(start, length);
+            b.RemoveRange(start, length);
+            for (var n = 0; n < min; n++)
+                Copy(body);
+            if (max < 0)
+            {
+                // again: split (iteration, end); iteration; jump again; end:
+                var again = ops.Count;
+                Emit(Op.Split, lazy ? body.End - again : 1, lazy ? 1 : body.End - again);
+                Copy(body);
+                Emit(Op.Jump, again - ops.Count);
+            }
+            else
+            {
+                // split (iteration, end); iteration; split (iteration, end); iteration; …; end:
+                for (var n = max - min; n > 0; n--)
+                {
+                    var exit = body.End - ops.Count;
+                    Emit(Op.Split, lazy ? exit : 1, lazy ? 1 : exit);
+                    Copy(body);
+                }
+            }
+
+            frame.Last = min == 0 || nullable;
+            return true;
+        }
+
+        // One iteration of a repetition: the atom, between its mark and the exit of an empty iteration.
+        void Copy(Body body)
+        {
+            if (body.Mark >= 0)
+                Emit(Op.Mark, body.Mark);
+            for (var k = 0; k < body.Ops.Length; k++)
+                Emit(body.Ops[k], body.A[k], body.B[k]);
+            if (body.Mark >= 0)
+                Emit(Op.EmptyExit, body.Mark, body.End - ops.Count);
+        }
+
+        // [...] or [^...]: literals, escapes, ranges of literals and shorthands; items is their number.
+        bool TryClass(out int items)
+        {
+            items = 0;
+            var at = i + 1;
+            var negated = at < points.Length && points[at] == '^';
+            if (negated)
+                at++;
+            var first = at;
+            var set = new RangeSet();
+            var previousLiteral = -1;
+            while (true)
+            {
+                if (at == points.Length)
+                    return Fail("missing ']'");
+                var c = points[at];
+                if (c == ']')
+                    break;
+                if (c == '[')
+                    return Fail("unescaped '[' in a class");
+
+                if (c == '-' && at != first && at + 1 < points.Length && points[at + 1] != ']')
+                {
+                    // A range: the item before must be a single literal, the one after a literal too.
+                    if (previousLiteral < 0)
+                        return Fail("'-' must be first, last, escaped or between two literals");
+                    at++;
+                    if (!TryClassLiteral(points, ref at, out var high, out reason))
+                        return false;
+                    if (high < previousLiteral)
+                        return Fail("range out of order");
+                    set.Add(previousLiteral, high);
+                    previousLiteral = -1;
+                    continue;
+                }
+
+                if (c == '\\' && at + 1 < points.Length && points[at + 1] is 'd' or 'w' or 's' or 'D' or 'W' or 'S')
+                {
+                    set.AddShorthand(points[at + 1]);
+                    previousLiteral = -1;
+                    items++;
+                    at += 2;
+                    continue;
+                }
+
+                if (!TryClassLiteral(points, ref at, out var literal, out reason))
+                    return false;
+                set.Add(literal, literal);
+                previousLiteral = literal;
+                items++;
+            }
+
+            if (at == first)
+                return Fail("empty class");
+            // The i flag folds before a negation applies: [^a] matches neither a nor A.
+            if (options.IgnoreCase)
+                set.AddAsciiCases();
+            StartAtom();
+            Class(set, negated);
+            i = at + 1;
+            return true;
+        }
+
+        // A class as a set of the program: a negated class is its complement.
+        void Class(RangeSet set, bool negated)
+        {
+            var ranges = (negated ? set.Complement() : set).Ranges;
+            var pairs = new int[2 * ranges.Count];
+            for (var k = 0; k < ranges.Count; k++)
+            {
+                pairs[2 * k] = ranges[k].Low;
+                pairs[2 * k + 1] = ranges[k].High;
+            }
+
+            sets.Add(pairs);
+            Emit(Op.Set, sets.Count - 1);
+        }
+
+        // A code point; under the i flag an ASCII letter becomes the class of its two cases.
+        void Literal(int c)
+        {
+            StartAtom();
+            if (options.IgnoreCase && c is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z'))
+            {
+                var set = new RangeSet();
+                set.Add(c, c);
+                set.AddAsciiCases();
+                Class(set, negated: false);
+                return;
+            }
+
+            Emit(Op.Char, c);
+        }
+
+        bool Fail(string text)
+        {
+            reason = text;
             return false;
-        Literal(output, literal, options);
-        previous = Previous.Atom;
-        return true;
+        }
+    }
+
+    // The instructions of a repeated atom; its mark (-1 when its iterations are not marked) and
+    // the index where the repetition ends.
+    sealed class Body(Op[] ops, int[] a, int[] b, int mark, int end)
+    {
+        public Op[] Ops { get; } = ops;
+        public int[] A { get; } = a;
+        public int[] B { get; } = b;
+        public int Mark { get; } = mark;
+        public int End { get; } = end;
     }
 
     // The escapes that stand for one code point: the metacharacters, \t \n \r \f \v and \xHH.
@@ -234,110 +651,6 @@ static class RegexSyntax
         return true;
     }
 
-    // ( (?: or (?<name>
-    static bool TryGroup(int[] points, ref int i, StringBuilder output, List<string?> groups, out string reason)
-    {
-        reason = "";
-        if (i + 1 < points.Length && points[i + 1] == '?')
-        {
-            if (i + 2 < points.Length && points[i + 2] == ':')
-            {
-                output.Append("(?:");
-                i += 3;
-                return true;
-            }
-
-            if (i + 2 < points.Length && points[i + 2] == '<')
-            {
-                var start = i + 3;
-                var end = start;
-                while (end < points.Length && points[end] != '>')
-                    end++;
-                if (end == points.Length || !IsGroupName(points, start, end))
-                    return Fail("invalid group name", out reason);
-                var name = Text(points, start, end);
-                if (groups.Contains(name))
-                    return Fail($"duplicate group name {name}", out reason);
-                if (groups.Count == MaxGroups)
-                    return Fail(TooLarge, out reason);
-                groups.Add(name);
-                output.Append('(');
-                i = end + 1;
-                return true;
-            }
-
-            return Fail("unsupported group syntax (?", out reason);
-        }
-
-        if (groups.Count == MaxGroups)
-            return Fail(TooLarge, out reason);
-        groups.Add(null);
-        output.Append('(');
-        i++;
-        return true;
-    }
-
-    // * + ? {n} {n,} {n,m}, each optionally followed by ? (lazy).
-    static bool TryQuantifier(int[] points, ref int i, StringBuilder output, Options options, Measure measure, out string reason)
-    {
-        reason = "";
-        var c = points[i];
-        // The count of §9.10: how many times the operand is written out.
-        var count = 1;
-        if (c == '{')
-        {
-            var at = i + 1;
-            if (!TryNumber(points, ref at, out var min))
-                return Fail("'{' is not a quantifier", out reason);
-            var max = min;
-            var unbounded = false;
-            if (at < points.Length && points[at] == ',')
-            {
-                at++;
-                if (at < points.Length && points[at] == '}')
-                    unbounded = true;
-                else if (!TryNumber(points, ref at, out max))
-                    return Fail("'{' is not a quantifier", out reason);
-            }
-
-            if (at == points.Length || points[at] != '}')
-                return Fail("'{' is not a quantifier", out reason);
-            if (min > MaxRepeat || !unbounded && (max > MaxRepeat || max < min))
-                return Fail("invalid repetition count", out reason);
-            count = Math.Max(unbounded ? min : max, 1);
-            if (!measure.Multiply(count))
-                return Fail("invalid repetition count", out reason);
-            output.Append('{').Append(min);
-            if (unbounded)
-                output.Append(',');
-            else if (max != min)
-                output.Append(',').Append(max);
-            output.Append('}');
-            i = at + 1;
-        }
-        else
-        {
-            output.Append((char)c);
-            i++;
-        }
-
-        if (!measure.Repeat(count))
-            return Fail(TooLarge, out reason);
-        if (options.Extended)
-        {
-            while (i < points.Length && (IsExtendedSpace(points[i]) || points[i] == '#'))
-                i = SkipExtended(points, i);
-        }
-
-        if (i < points.Length && points[i] == '?')
-        {
-            output.Append('?');
-            i++;
-        }
-
-        return true;
-    }
-
     static bool TryNumber(int[] points, ref int at, out int value)
     {
         value = 0;
@@ -351,69 +664,6 @@ static class RegexSyntax
         return at > start;
     }
 
-    // [...] or [^...]: literals, escapes, ranges of literals and shorthands; items is their number.
-    static bool TryClass(int[] points, ref int i, StringBuilder output, Options options, out int items, out string reason)
-    {
-        reason = "";
-        items = 0;
-        var at = i + 1;
-        var negated = at < points.Length && points[at] == '^';
-        if (negated)
-            at++;
-        var first = at;
-        var set = new RangeSet();
-        var previousLiteral = -1;
-        while (true)
-        {
-            if (at == points.Length)
-                return Fail("missing ']'", out reason);
-            var c = points[at];
-            if (c == ']')
-                break;
-            if (c == '[')
-                return Fail("unescaped '[' in a class", out reason);
-
-            if (c == '-' && at != first && at + 1 < points.Length && points[at + 1] != ']')
-            {
-                // A range: the item before must be a single literal, the one after a literal too.
-                if (previousLiteral < 0)
-                    return Fail("'-' must be first, last, escaped or between two literals", out reason);
-                at++;
-                if (!TryClassLiteral(points, ref at, out var high, out reason))
-                    return false;
-                if (high < previousLiteral)
-                    return Fail("range out of order", out reason);
-                set.Add(previousLiteral, high);
-                previousLiteral = -1;
-                continue;
-            }
-
-            if (c == '\\' && at + 1 < points.Length && points[at + 1] is 'd' or 'w' or 's' or 'D' or 'W' or 'S')
-            {
-                set.AddShorthand(points[at + 1]);
-                previousLiteral = -1;
-                items++;
-                at += 2;
-                continue;
-            }
-
-            if (!TryClassLiteral(points, ref at, out var literal, out reason))
-                return false;
-            set.Add(literal, literal);
-            previousLiteral = literal;
-            items++;
-        }
-
-        if (at == first)
-            return Fail("empty class", out reason);
-        // The i flag folds before a negation applies: [^a] matches neither a nor A.
-        if (options.IgnoreCase)
-            set.AddAsciiCases();
-        Class(output, set, negated);
-        i = at + 1;
-        return true;
-    }
-
     static bool TryClassLiteral(int[] points, ref int at, out int literal, out string reason)
     {
         reason = "";
@@ -425,114 +675,6 @@ static class RegexSyntax
         at++;
         return true;
     }
-
-    // A class as alternatives: a BMP class without surrogates, then the surrogate pairs of its code
-    // points above U+FFFF. A negated class keeps the host's negation for the BMP part (so that the
-    // host's case folding applies before it) and spells out the complement above U+FFFF.
-    static void Class(StringBuilder output, RangeSet set, bool negated)
-    {
-        var bmp = new StringBuilder();
-        foreach (var (low, high) in set.Ranges)
-        {
-            if (low > 0xFFFF)
-                break;
-            AppendBmpRange(bmp, low, Math.Min(high, 0xFFFF));
-        }
-
-        var alternatives = new List<string>();
-        if (negated)
-            alternatives.Add($@"[^{bmp}\uD800-\uDFFF]");
-        else if (bmp.Length > 0)
-            alternatives.Add($"[{bmp}]");
-        foreach (var (low, high) in (negated ? set.Complement() : set).Ranges)
-        {
-            if (high > 0xFFFF)
-                AppendAstralRange(alternatives, Math.Max(low, 0x10000), high);
-        }
-
-        // An empty set (a negated class of everything): a class no UTF-16 unit is in.
-        output.Append("(?:").Append(alternatives.Count == 0 ? @"[^\u0000-\uFFFF]" : string.Join('|', alternatives)).Append(')');
-    }
-
-    // A BMP range without the surrogates.
-    static void AppendBmpRange(StringBuilder output, int low, int high)
-    {
-        if (low < 0xD800)
-            AppendRange(output, low, Math.Min(high, 0xD7FF));
-        if (high > 0xDFFF)
-            AppendRange(output, Math.Max(low, 0xE000), high);
-    }
-
-    static void AppendRange(StringBuilder output, int low, int high)
-    {
-        if (low > high)
-            return;
-        Unit(output, low);
-        if (high > low)
-        {
-            output.Append('-');
-            Unit(output, high);
-        }
-    }
-
-    // The code points low..high above U+FFFF as alternatives of surrogate pairs.
-    static void AppendAstralRange(List<string> alternatives, int low, int high)
-    {
-        var (lowHigh, lowLow) = Pair(low);
-        var (highHigh, highLow) = Pair(high);
-        if (lowHigh == highHigh)
-        {
-            alternatives.Add(PairRange(lowHigh, lowHigh, lowLow, highLow));
-            return;
-        }
-
-        alternatives.Add(PairRange(lowHigh, lowHigh, lowLow, 0xDFFF));
-        if (highHigh - lowHigh > 1)
-            alternatives.Add(PairRange(lowHigh + 1, highHigh - 1, 0xDC00, 0xDFFF));
-        alternatives.Add(PairRange(highHigh, highHigh, 0xDC00, highLow));
-    }
-
-    static string PairRange(int firstLow, int firstHigh, int secondLow, int secondHigh)
-    {
-        var output = new StringBuilder("[");
-        AppendRange(output, firstLow, firstHigh);
-        output.Append("][");
-        AppendRange(output, secondLow, secondHigh);
-        return output.Append(']').ToString();
-    }
-
-    // A code point; under the i flag an ASCII letter becomes the class of its two cases.
-    static void Literal(StringBuilder output, int c, Options options)
-    {
-        if (options.IgnoreCase && c is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z'))
-        {
-            var set = new RangeSet();
-            set.Add(c, c);
-            set.AddAsciiCases();
-            Class(output, set, negated: false);
-            return;
-        }
-
-        if (c <= 0xFFFF)
-        {
-            Unit(output, c);
-            return;
-        }
-
-        var (high, low) = Pair(c);
-        output.Append("(?:");
-        Unit(output, high);
-        Unit(output, low);
-        output.Append(')');
-    }
-
-    static void Unit(StringBuilder output, int unit)
-    {
-        const string hex = "0123456789ABCDEF";
-        output.Append(@"\u").Append(hex[unit >> 12]).Append(hex[(unit >> 8) & 0xF]).Append(hex[(unit >> 4) & 0xF]).Append(hex[unit & 0xF]);
-    }
-
-    static (int High, int Low) Pair(int c) => (0xD800 + ((c - 0x10000) >> 10), 0xDC00 + ((c - 0x10000) & 0x3FF));
 
     // With the x flag: whitespace and a # comment up to the next line feed.
     static int SkipExtended(int[] points, int i)

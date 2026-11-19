@@ -26,7 +26,7 @@ const NoSpans = new Int32Array(0);
 class Search {
   constructor(
     readonly input: string,
-    readonly pattern: RegexEngine.Matcher,
+    readonly matcher: RegexEngine.RegexMatcher,
     readonly global: boolean,
     readonly skipEmpty: boolean,
   ) {}
@@ -36,7 +36,7 @@ function test(_: Interpreter, input: JqValue, args: JqValue[]): JqValue | Fail {
   const search = tryPrepare(input, args[0]!, args[1]!);
   if (search instanceof Fail) return search;
   // Whether there is a match, and nothing of it; with the n flag, a match that is not empty.
-  if (!search.skipEmpty) return RegexEngine.tryMatch(search.pattern, search.input, 0, NoSpans);
+  if (!search.skipEmpty) return search.matcher.tryMatch(search.input, 0, NoSpans);
   return next(search, new CodePointMap(search.input), new Int32Array(2), 0) >= 0;
 }
 
@@ -52,7 +52,7 @@ function match(interpreter: Interpreter, env: Env | null, args: readonly Node[],
       }
 
       const map = new CodePointMap(search.input);
-      const spans = new Int32Array(2 * (search.pattern.groups.length + 1));
+      const spans = new Int32Array(search.matcher.program.slots);
       let p = 0;
       const more: After = (stop) => {
         if (stop === null) p = next(search, map, spans, p);
@@ -105,9 +105,9 @@ function tryPrepare(input: JqValue, re: JqValue, flags: JqValue): Search | Fail 
     }
   }
 
-  const pattern = RegexEngine.tryCompile(re, { extended, dotAll, ignoreCase });
-  if (pattern instanceof RegexError) return new Fail(Errors.regexFailure(pattern.reason));
-  return new Search(input, pattern, global, skipEmpty);
+  const program = RegexEngine.tryCompile(re, { extended, dotAll, ignoreCase });
+  if (program instanceof RegexError) return new Fail(Errors.regexFailure(program.reason));
+  return new Search(input, new RegexEngine.RegexMatcher(program), global, skipEmpty);
 }
 
 /**
@@ -117,7 +117,7 @@ function tryPrepare(input: JqValue, re: JqValue, flags: JqValue): Search | Fail 
  */
 function next(search: Search, map: CodePointMap, spans: Int32Array, p: number): number {
   while (p >= 0 && p <= map.length) {
-    if (!RegexEngine.tryMatch(search.pattern, search.input, map.unit(p), spans)) return -1;
+    if (!search.matcher.tryMatch(search.input, map.unit(p), spans)) return -1;
     const start = map.codePoint(spans[0]!);
     const end = map.codePoint(spans[1]!);
     p = end > start ? end : end + 1;
@@ -128,7 +128,7 @@ function next(search: Search, map: CodePointMap, spans: Int32Array, p: number): 
 }
 
 function matchObject(search: Search, spans: Int32Array, map: CodePointMap): JqValue {
-  const groups = search.pattern.groups;
+  const groups = search.matcher.program.groups;
   const captures: JqValue[] = [];
   for (let g = 0; g < groups.length; g++) {
     const capture = new JqObjectBuilder();
