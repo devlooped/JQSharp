@@ -658,9 +658,9 @@ So:
 | `repeat/1` | N | as `def repeat(f): def _repeat: f, _repeat; _repeat;`: the outputs of `f` on the **same input**, again and again (jq 1.8.2: `[limit(4; 1 \| repeat(. + 1))]` → `[2,2,2,2]`, `[limit(4; repeat(1, 2))]` → `[1,2,1,2]`). *loop* | |
 | `reverse/0` | P | `def reverse: [.[length - 1 - range(0; length)]];` (null → `[]`; `""` → `[]`; another string: an index error, as in jq) | |
 | `sort/0` | N | stable sort by `compare` (§4.3) | `<T> (<D>) cannot be sorted, as it is not an array` |
-| `_sort_by_impl/1` | N | input and `keys` arrays of equal length: the input stably sorted by the corresponding keys | `<T> (<D>) and <T> (<D>) cannot be sorted, as they are not both arrays` |
+| `_sort_by_impl/1` | N | the input stably sorted by the corresponding `keys` | the input and `keys` not both arrays, or arrays of different lengths: `<T> (<D>) and <T> (<D>) cannot be sorted, as they are not both arrays` (the input, then `keys`) |
 | `_group_by_impl/1` | N | as `_sort_by_impl`, then consecutive elements with equal keys grouped: an array of arrays | idem |
-| `_min_by_impl/1` | N | `null` if empty; else the **first** element with the smallest key | `<T> (<D>) and <T> (<D>) cannot be iterated over` |
+| `_min_by_impl/1` | N | `null` if empty; else the **first** element with the smallest of the corresponding `keys` | the input and `keys` not both arrays: `<T> (<D>) and <T> (<D>) cannot be iterated over` (the input, then `keys`); else arrays of different lengths: `<T> (<D>) and <T> (<D>) have wrong length` |
 | `_max_by_impl/1` | N | `null` if empty; else the **last** element with the largest key | idem |
 | `sort_by/1` | P | `def sort_by(f): _sort_by_impl(map([f]));` (several outputs of `f` sort by the tuple) | |
 | `group_by/1` | P | `def group_by(f): _group_by_impl(map([f]));` | |

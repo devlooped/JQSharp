@@ -139,6 +139,8 @@ static class Errors
 
     public static JqValue CannotBeIterated(JqValue a, JqValue b) => Message($"{Describe(a)} and {Describe(b)} cannot be iterated over");
 
+    public static JqValue WrongLength(JqValue a, JqValue b) => Message($"{Describe(a)} and {Describe(b)} have wrong length");
+
     public static JqValue CannotBeSearched(JqValue value) => Message($"{Describe(value)} cannot be searched from");
 
     public static JqValue OnlyStringsParse(JqValue value) => Message($"{Describe(value)} only strings can be parsed");

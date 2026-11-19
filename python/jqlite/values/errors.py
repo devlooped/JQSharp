@@ -193,6 +193,10 @@ def cannot_be_iterated(a: JqValue, b: JqValue) -> str:
     return f"{describe(a)} and {describe(b)} cannot be iterated over"
 
 
+def wrong_length(a: JqValue, b: JqValue) -> str:
+    return f"{describe(a)} and {describe(b)} have wrong length"
+
+
 def cannot_be_searched(value: JqValue) -> str:
     return f"{describe(value)} cannot be searched from"
 

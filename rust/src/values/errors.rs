@@ -222,6 +222,10 @@ pub fn cannot_be_iterated(a: &JqValue, b: &JqValue) -> JqValue {
     message(format!("{} and {} cannot be iterated over", describe(a), describe(b)))
 }
 
+pub fn wrong_length(a: &JqValue, b: &JqValue) -> JqValue {
+    message(format!("{} and {} have wrong length", describe(a), describe(b)))
+}
+
 pub fn cannot_be_searched(value: &JqValue) -> JqValue {
     message(format!("{} cannot be searched from", describe(value)))
 }

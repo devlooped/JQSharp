@@ -190,6 +190,10 @@ export function cannotBeIterated(a: JqValue, b: JqValue): JqValue {
   return `${describe(a)} and ${describe(b)} cannot be iterated over`;
 }
 
+export function wrongLength(a: JqValue, b: JqValue): JqValue {
+  return `${describe(a)} and ${describe(b)} have wrong length`;
+}
+
 export function cannotBeSearched(value: JqValue): JqValue {
   return `${describe(value)} cannot be searched from`;
 }
